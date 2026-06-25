@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "codex": {
+      "command": "C:\\Users\\jsp0\\AppData\\Local\\OpenAI\\Codex\\bin\\38dff8711e296435\\codex.exe",
+      "args": [
+        "mcp-server"
+      ],
+      "env": {
+        "CODEX_HOME": "C:\\Users\\jsp0\\.codex"
+      }
+    },
+    "context7": {
+      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {}
+    },
+    "playwright": {
+      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+      "args": [
+        "@playwright/mcp@latest"
+      ],
+      "env": {}
+    }
+  }
+}
