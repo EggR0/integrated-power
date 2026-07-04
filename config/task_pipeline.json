@@ -1,0 +1,5 @@
+{
+  "tasks": [],
+  "schema_version": "1.0",
+  "description": "Task pipeline state machine. Each task transitions: detected → analyzing → planned → [auto_execute | awaiting_approval] → executing → verifying → done"
+}

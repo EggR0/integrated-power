@@ -1,0 +1,12 @@
+.vscode-test/
+src/
+scripts/run-headless-tests.js
+out/**/*.map
+out/test/
+package-lock.json
+list-vsix.ps1
+.gitignore
+.vscodeignore
+tsconfig.json
+vsc-extension-quickstart.md
+**/*.vsix

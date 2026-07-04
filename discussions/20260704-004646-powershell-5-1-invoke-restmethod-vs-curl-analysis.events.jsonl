@@ -1,0 +1,2 @@
+{"timestamp":"2026-07-04T00:46:46.2458489+09:00","turn_id":"20260704-004646-108-9599a100-adc2-4e8e-95a6-b2f7294bc9e3","status":"started","mode":"NativeCli","artifact_type":"durable-adr-debate"}
+{"exit_code":0,"timestamp":"2026-07-04T00:47:45.2001706+09:00","artifact_type":"durable-adr-debate","turn_id":"20260704-004646-108-9599a100-adc2-4e8e-95a6-b2f7294bc9e3","mode":"NativeCli","status":"completed"}

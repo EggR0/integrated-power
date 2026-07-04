@@ -1,0 +1,212 @@
+import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+import { DashboardController } from '../../DashboardController';
+import { RunStore } from '../../RunStore';
+import { TokenManager } from '../../TokenManager';
+import { DashboardState } from '../../types';
+import {
+  normalizeWorkspacePathForStorage,
+  workspaceStoragePathForFolder,
+} from '../../storagePath';
+
+suite('Parser and Store Test Suite', () => {
+  vscode.window.showInformationMessage('Start all tests.');
+
+  test('RunStore handles malformed JSONL safely', async () => {
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || __dirname;
+    const testFile = vscode.Uri.file(path.join(workspacePath, 'test-runs.jsonl'));
+    
+    try {
+      await vscode.workspace.fs.writeFile(
+        testFile, 
+        Buffer.from('{"id": "run-1", "title": "Good run"}\n{"bad": }\n{"id": "run-2", "title": "Good run 2"}')
+      );
+
+      const store = new RunStore();
+      const result = await store.readRuns(testFile);
+
+      assert.strictEqual(result.runs.length, 2, 'Should parse the 2 valid runs');
+      assert.strictEqual(result.runs[0].id, 'run-1', 'Runs should be sorted by time/title or reversed');
+      assert.strictEqual(result.parseErrors.length, 1, 'Should log exactly 1 parse error for the bad line');
+    } finally {
+      try {
+        await vscode.workspace.fs.delete(testFile);
+      } catch (e) {
+        // Ignore deletion errors
+      }
+    }
+  });
+
+  test('TokenManager constructs without error (smoke test)', async () => {
+    const manager = new TokenManager();
+    assert.ok(manager);
+  });
+
+  test('Workspace storage path uses Antigravity globalStorage workspace hash', () => {
+    const storageRoot = 'C:\\Users\\tester\\AppData\\Roaming\\Antigravity IDE\\User\\globalStorage\\integratedpower.antigravity-ide-dashboard';
+    const folderPath = 'C:\\Projects\\Example';
+    const expected = path.join(storageRoot, 'workspaces', '50ce1bf3906f6a0c46337bc7cac06b27');
+
+    assert.strictEqual(normalizeWorkspacePathForStorage(folderPath), 'c:\\Projects\\Example');
+    assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath), expected);
+  });
+
+  test('RunStore treats missing globalStorage runs file as empty data', async () => {
+    const store = new RunStore();
+    const missingFile = vscode.Uri.file(path.join(__dirname, 'missing-runs.jsonl'));
+    const result = await store.readRuns(missingFile);
+
+    assert.deepStrictEqual(result.runs, []);
+    assert.deepStrictEqual(result.activeRuns, []);
+    assert.deepStrictEqual(result.artifacts, []);
+    assert.deepStrictEqual(result.parseErrors, []);
+  });
+
+  test('Packaged extension sources do not contain removed workflow regressions', () => {
+    const extensionRoot = path.resolve(__dirname, '../../..');
+    const manifestPath = path.join(extensionRoot, 'package.json');
+    const webviewPath = path.join(extensionRoot, 'webview', 'main.js');
+    const stylesPath = path.join(extensionRoot, 'webview', 'styles.css');
+    const debateReferencePath = path.join(
+      extensionRoot,
+      'assets',
+      'codex-orchestrator-plugin',
+      'skills',
+      'codex-orchestrator',
+      'references',
+      'debate.md',
+    );
+
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+      contributes?: { commands?: Array<{ command?: string }> };
+    };
+    const commands = manifest.contributes?.commands?.map((entry) => entry.command) ?? [];
+    assert.deepStrictEqual(commands.sort(), [
+      'integratedPower.agentRuns.openRunsFile',
+      'integratedPower.agentRuns.refresh',
+    ]);
+
+    const webview = fs.readFileSync(webviewPath, 'utf8');
+    assert.ok(!webview.includes('tokenStatus = emptyTokenStatus()'));
+    assert.ok(webview.includes('dashboardState.isTokenLoading = true'));
+    assert.ok(webview.includes('<button type="button" data-command="refresh">Refresh</button>'));
+    assert.ok(!webview.includes('data-command="refresh" ${dashboardState.isLoading ? "disabled" : ""}'));
+
+    const styles = fs.readFileSync(stylesPath, 'utf8');
+    assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
+
+    const debateReference = fs.readFileSync(debateReferencePath, 'utf8');
+    assert.ok(debateReference.includes("globalStorage path's `discussions/`"));
+    assert.ok(debateReference.includes("globalStorage path's `sessions/<run-id>/`"));
+    assert.ok(!debateReference.includes('<repo-root>/discussions/'));
+    assert.ok(!debateReference.includes('.system_generated'));
+  });
+
+  test('DashboardController queues refresh requests made during an active refresh', async () => {
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? __dirname;
+    const globalStorageUri = vscode.Uri.file(path.join(workspacePath, '.test-global-storage'));
+    const controller = new DashboardController(
+      {
+        globalStorageUri,
+        extensionPath: path.resolve(__dirname, '../../..'),
+      } as unknown as vscode.ExtensionContext,
+      () => undefined,
+    );
+
+    let resolveFirstRead: (() => void) | undefined;
+    let readCount = 0;
+    const makeState = (): DashboardState => ({
+      workspaceName: 'Test Workspace',
+      runs: [],
+      activeRuns: [],
+      artifacts: [],
+      parseErrors: [],
+      systemErrors: [],
+      isLoading: false,
+      isTokenLoading: false,
+      isStale: false,
+      updatedAt: new Date().toISOString(),
+    });
+
+    try {
+      (controller as unknown as { refreshTokenStatus: () => Promise<void> }).refreshTokenStatus = async () => undefined;
+      (controller as unknown as { readDashboardState: () => Promise<DashboardState> }).readDashboardState = async () => {
+        readCount++;
+        if (readCount === 1) {
+          await new Promise<void>((resolve) => {
+            resolveFirstRead = resolve;
+          });
+        }
+        return makeState();
+      };
+
+      const firstRefresh = controller.refresh(false);
+      await waitFor(() => readCount === 1);
+
+      await controller.refresh(true);
+      assert.strictEqual(readCount, 1, 'Refresh while busy should be queued, not run concurrently.');
+
+      resolveFirstRead?.();
+      await firstRefresh;
+      await waitFor(() => readCount === 2);
+      assert.strictEqual(readCount, 2, 'Queued refresh should run after the active refresh completes.');
+    } finally {
+      controller.dispose();
+      try {
+        await vscode.workspace.fs.delete(globalStorageUri, { recursive: true, useTrash: false });
+      } catch {
+        // Ignore cleanup failures.
+      }
+    }
+  });
+
+  test('Extension commands use globalStorage Open Runs target', async () => {
+    const extension = vscode.extensions.getExtension('integratedpower.antigravity-ide-dashboard');
+    assert.ok(extension, 'Dashboard extension should be available in the extension host.');
+    await extension.activate();
+
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('integratedPower.agentRuns.refresh'));
+    assert.ok(commands.includes('integratedPower.agentRuns.openRunsFile'));
+    assert.ok(!commands.includes('integratedPower.agentRuns.launchAthenaLoop'));
+
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    assert.ok(workspaceRoot, 'Test host should open the extension folder as a workspace.');
+
+    const storageMarkerPath = path.join(workspaceRoot, '.agents', 'dashboard_global_storage.txt');
+    await waitFor(() => fs.existsSync(storageMarkerPath));
+
+    const storagePath = fs.readFileSync(storageMarkerPath, 'utf8').trim();
+    assert.ok(storagePath.includes('globalStorage'));
+    assert.ok(storagePath.includes(path.join('workspaces')));
+    assert.ok(!storagePath.includes('operational-data'));
+    assert.strictEqual(
+      storagePath,
+      workspaceStoragePathForFolder(path.resolve(storagePath, '..', '..'), workspaceRoot),
+    );
+
+    const runsPath = path.join(storagePath, '.agent-runs', 'runs.jsonl');
+    fs.mkdirSync(path.dirname(runsPath), { recursive: true });
+    fs.writeFileSync(runsPath, '{"id":"integration-run","title":"Integration run"}\n', 'utf8');
+
+    await vscode.commands.executeCommand('integratedPower.agentRuns.openRunsFile');
+    await waitFor(() => vscode.window.activeTextEditor?.document.uri.fsPath === runsPath);
+    assert.strictEqual(vscode.window.activeTextEditor?.document.uri.fsPath, runsPath);
+
+    if (workspaceRoot.endsWith('vscode-extension')) {
+      fs.rmSync(path.join(workspaceRoot, '.agents'), { recursive: true, force: true });
+    }
+  });
+});
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Timed out waiting for condition.');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}

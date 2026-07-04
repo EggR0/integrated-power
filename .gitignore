@@ -1,0 +1,9 @@
+.system_generated/
+vscode-extension/node_modules/
+vscode-extension/out/
+scratch_*
+help.txt
+test.txt
+reports/__temp_*
+scripts/__temp_test_*
+vscode-extension/.vscode-test/
