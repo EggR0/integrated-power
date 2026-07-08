@@ -17,20 +17,64 @@ export async function installAntigravityPlugin(context: vscode.ExtensionContext)
       fs.mkdirSync(geminiConfigPath, { recursive: true });
     }
 
-    const pluginDestPath = path.join(geminiConfigPath, 'codex-orchestrator-plugin');
-    const pluginSrcPath = path.join(context.extensionPath, 'assets', 'codex-orchestrator-plugin');
-
-    // If it doesn't exist in the extension (shouldn't happen), abort
-    if (!fs.existsSync(pluginSrcPath)) {
-      console.warn('Antigravity plugin assets not found in extension.');
+    const assetsPath = path.join(context.extensionPath, 'assets');
+    if (!fs.existsSync(assetsPath)) {
+      console.warn('Antigravity assets not found in extension.');
       return;
     }
 
-    // Mirror the plugin directory so stale skills/scripts from older releases do not remain installed.
-    await syncDir(pluginSrcPath, pluginDestPath);
-    console.log('Antigravity plugin installed/updated successfully.');
+    // Identify current official plugins in the assets directory
+    const assetEntries = fs.readdirSync(assetsPath, { withFileTypes: true });
+    const currentPlugins: string[] = [];
+    
+    for (const entry of assetEntries) {
+      if (entry.isDirectory() && fs.existsSync(path.join(assetsPath, entry.name, 'plugin.json'))) {
+        currentPlugins.push(entry.name);
+      }
+    }
+
+    // Read previously managed plugins manifest to clean up stale/renamed plugins
+    const manifestPath = path.join(geminiConfigPath, '.managed_plugins.json');
+    let previousPlugins: string[] = [];
+    if (fs.existsSync(manifestPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        if (Array.isArray(parsed)) {
+          previousPlugins = parsed;
+        }
+      } catch (e) {
+        console.warn('Failed to parse .managed_plugins.json');
+      }
+    } else {
+      // Seed legacy official plugins to ensure they are cleaned up if no longer managed
+      previousPlugins = ['codex-orchestrator-plugin'];
+    }
+
+    // Clean up old plugins that are no longer shipped by the extension
+    for (const oldPlugin of previousPlugins) {
+      if (!currentPlugins.includes(oldPlugin)) {
+        const oldPluginPath = path.join(geminiConfigPath, oldPlugin);
+        if (fs.existsSync(oldPluginPath)) {
+          fs.rmSync(oldPluginPath, { recursive: true, force: true });
+          console.log(`Removed stale managed plugin: ${oldPlugin}`);
+        }
+      }
+    }
+
+    // Mirror all current plugins
+    for (const plugin of currentPlugins) {
+      const srcPath = path.join(assetsPath, plugin);
+      const destPath = path.join(geminiConfigPath, plugin);
+      await syncDir(srcPath, destPath);
+      console.log(`Installed/updated plugin: ${plugin}`);
+    }
+
+    // Save the new manifest
+    fs.writeFileSync(manifestPath, JSON.stringify(currentPlugins, null, 2), 'utf8');
+
+    console.log('Antigravity plugin installation complete.');
   } catch (err) {
-    console.error('Failed to install Antigravity plugin:', err);
+    console.error('Failed to install Antigravity plugins:', err);
   }
 }
 

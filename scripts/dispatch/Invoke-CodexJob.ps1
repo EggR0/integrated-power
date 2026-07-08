@@ -14,67 +14,46 @@ param(
 
     [string]$CodexExe = "",
 
-    [switch]$JsonLog
+    [switch]$JsonLog,
+
+    [int]$TimeoutSeconds = 1800,
+    [int]$PollSeconds = 15,
+    [int]$IdleTimeoutSeconds = 600,
+    [string]$CompletionSentinel = "CODEX_JOB_DONE status=success"
 )
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-$repoRoot = (& git rev-parse --show-toplevel 2>$null)
-if ($repoRoot) { $repoRoot = ($repoRoot | Select-Object -First 1).Trim() }
+try {
+    $gitRoot = (& git rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -eq 0 -and ![string]::IsNullOrWhiteSpace($gitRoot)) {
+        $repoRoot = ($gitRoot | Select-Object -First 1).Trim()
+    }
+} catch {
+    $repoRoot = ""
+}
+
 if ([string]::IsNullOrWhiteSpace($repoRoot)) {
     $repoRoot = (Get-Location).Path
 }
+
 Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
+$storagePath = Get-GlobalStorage -RepoRoot $repoRoot
 
-function Resolve-CodexExe {
-    param([string]$RequestedCodexExe)
-
-    $candidates = @()
-    if (![string]::IsNullOrWhiteSpace($RequestedCodexExe)) {
-        $candidates += $RequestedCodexExe
-    }
-    if (![string]::IsNullOrWhiteSpace($env:CODEX_EXE)) {
-        $candidates += $env:CODEX_EXE
-    }
-
-    foreach ($name in @("codex.exe", "codex")) {
-        $command = Get-Command $name -ErrorAction SilentlyContinue
-        if ($command -and $command.Source) {
-            $candidates += $command.Source
-        }
-    }
-
-    if (![string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-        $codexBinRoot = Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin"
-        if (Test-Path -LiteralPath $codexBinRoot) {
-            $newest = Get-ChildItem -LiteralPath $codexBinRoot -Filter "codex.exe" -File -Recurse -ErrorAction SilentlyContinue |
-                Sort-Object LastWriteTime -Descending |
-                Select-Object -First 1
-            if ($newest) {
-                $candidates += $newest.FullName
-            }
-        }
-    }
-
-    foreach ($candidate in $candidates) {
-        if (![string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-            return (Resolve-Path -LiteralPath $candidate).Path
-        }
-    }
-
-    throw "Codex executable not found. Set -CodexExe or CODEX_EXE, or install codex.exe on PATH."
+$ensureSetup = Join-Path $PSScriptRoot "Ensure-AiDelegationSetup.ps1"
+if (!(Test-Path -LiteralPath $ensureSetup -PathType Leaf)) {
+    throw "Missing setup helper: $ensureSetup"
 }
-
-$codexExePath = Resolve-CodexExe -RequestedCodexExe $CodexExe
+$codexExe = & $ensureSetup -RequestedCodexExe $CodexExe -PassThru
 
 $promptPath = Resolve-Path -LiteralPath $PromptFile
 $prompt = Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath
 
 if ([string]::IsNullOrWhiteSpace($OutputFile)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputFile = Join-Path (Get-GlobalStorage -RepoRoot $repoRoot) "reports/codex-$stamp.md"
+    $OutputFile = Join-Path $storagePath "reports\codex-$stamp.md"
 }
 
 $outputPath = if ([System.IO.Path]::IsPathRooted($OutputFile)) {
@@ -90,35 +69,129 @@ if (![string]::IsNullOrWhiteSpace($outputDir)) {
 
 $arguments = @(
     "exec",
-    "--cd", $repoRoot,
+    "--cd", "`"$repoRoot`"",
     "--sandbox", $Sandbox,
     "--model", $Model,
     "-c", "model_reasoning_effort=`"$ReasoningEffort`"",
-    "--output-last-message", $outputPath
+    "--output-last-message", "`"$outputPath`""
 )
 
 if ($JsonLog) {
-    $logPath = [System.IO.Path]::ChangeExtension($outputPath, ".jsonl")
     $arguments += "--json"
-    $arguments += "-"
-    $prompt | & $codexExePath @arguments | Tee-Object -FilePath $logPath
-    $codexExitCode = $LASTEXITCODE
-    if ($codexExitCode -ne 0) {
-        throw "Codex failed with exit code $codexExitCode. Log: $logPath"
-    }
+}
+$arguments += "-"
 
+$logPath = [System.IO.Path]::ChangeExtension($outputPath, ".log")
+if ($JsonLog) {
+    $logPath = [System.IO.Path]::ChangeExtension($outputPath, ".jsonl")
+}
+
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$writer = New-Object System.IO.StreamWriter($logPath, $false, $Utf8NoBom)
+
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $codexExe
+$psi.Arguments = $arguments -join ' '
+$psi.RedirectStandardInput = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+
+$process = New-Object System.Diagnostics.Process
+$process.StartInfo = $psi
+
+$global:LastActivityTime = Get-Date
+
+$action = {
+    $e = $Event.SourceEventArgs
+    $w = $Event.MessageData
+    if (![string]::IsNullOrEmpty($e.Data)) {
+        [Console]::Out.WriteLine($e.Data)
+        $w.WriteLine($e.Data)
+        $w.Flush()
+        $global:LastActivityTime = Get-Date
+    }
+}
+
+$outEvent = Register-ObjectEvent -InputObject $process -EventName OutputDataReceived -MessageData $writer -Action $action
+$errEvent = Register-ObjectEvent -InputObject $process -EventName ErrorDataReceived -MessageData $writer -Action $action
+
+$process.Start() | Out-Null
+$process.BeginOutputReadLine()
+$process.BeginErrorReadLine()
+
+$promptBytes = $Utf8NoBom.GetBytes($prompt)
+$process.StandardInput.BaseStream.Write($promptBytes, 0, $promptBytes.Length)
+$process.StandardInput.Close()
+
+$startTime = Get-Date
+$status = "running"
+$stableCount = 0
+$lastSize = -1
+
+while (!$process.HasExited) {
+    Start-Sleep -Seconds $PollSeconds
+    $now = Get-Date
+    
+    if (($now - $startTime).TotalSeconds -ge $TimeoutSeconds) {
+        $status = "hard_timeout"
+        break
+    }
+    
+    if (Test-Path -LiteralPath $outputPath) {
+        $fileInfo = Get-Item -LiteralPath $outputPath
+        if ($fileInfo.Length -eq $lastSize -and $fileInfo.Length -gt 0) {
+            $stableCount++
+        } else {
+            if ($fileInfo.Length -ne $lastSize) {
+                $global:LastActivityTime = $now
+            }
+            $stableCount = 0
+            $lastSize = $fileInfo.Length
+        }
+        
+        if ($stableCount -ge 2) {
+            try {
+                $content = [System.IO.File]::ReadAllText($outputPath, $Utf8NoBom)
+                if ($content -match $CompletionSentinel) {
+                    $status = "completed_stuck"
+                    break
+                }
+            } catch { }
+        }
+    }
+    
+    if (($now - $global:LastActivityTime).TotalSeconds -ge $IdleTimeoutSeconds) {
+        $status = "idle_timeout"
+        break
+    }
+}
+
+if (!$process.HasExited) {
+    try { $process.Kill() } catch { }
+} else {
+    if ($process.ExitCode -eq 0) {
+        $status = "completed"
+    } else {
+        $status = "failed"
+    }
+}
+
+$writer.Dispose()
+
+Write-Host "Codex job finished with status: $status"
+Write-Host "Output saved to: $outputPath"
+Write-Host "Log saved to: $logPath"
+
+if ($JsonLog) {
     $usageParser = Join-Path $repoRoot "scripts\metrics\Parse-CodexUsage.ps1"
     if (Test-Path -LiteralPath $usageParser) {
         & $usageParser -JsonlPath $logPath -OperationName (Split-Path -Leaf $PromptFile) -Model $Model | Out-Null
     }
-} else {
-    $arguments += "-"
-    $prompt | & $codexExePath @arguments
-    $codexExitCode = $LASTEXITCODE
-    if ($codexExitCode -ne 0) {
-        throw "Codex failed with exit code $codexExitCode."
-    }
 }
 
-Write-Host "Codex final message: $outputPath"
+if ($status -ne "completed" -and $status -ne "completed_stuck") {
+    exit 1
+}
 

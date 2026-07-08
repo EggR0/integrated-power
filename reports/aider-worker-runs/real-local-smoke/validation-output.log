@@ -1,0 +1,6 @@
+﻿if ((Get-Content -LiteralPath 'C:\Users\jsp0\Documents\Intergrated POWER\tests\aider_worker_real_local_smoke\target.ps1
+' -Raw) -match 'ready') { exit 0 } else { Write-Error 'expected ready'; exit 1 } : expected ready
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException
+ 
+

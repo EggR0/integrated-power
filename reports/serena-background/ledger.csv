@@ -1,0 +1,13 @@
+﻿"timestamp","runId","status","maxFiles","skipLocalLlm","skipSerenaIndex","error"
+"2026-07-05T01:48:15.2940533Z","20260705-104809","failed","120","True","False","Method invocation failed because [System.IO.Path] does not contain a method named 'GetRelativePath'."
+"2026-07-05T01:48:43.8617512Z","20260705-104838","success","120","True","False",""
+"2026-07-05T01:51:31.4824154Z","20260705-104858","success","120","False","True",""
+"2026-07-05T01:52:14.7068048Z","20260705-105208","success","120","True","False",""
+"2026-07-05T01:53:45.9448162Z","20260705-105228","success","120","False","True",""
+"2026-07-05T05:15:45.6111293Z","20260705-141539","failed","120","True","False","At C:\Users\jsp0\Documents\Intergrated POWER\scripts\dispatch\Export-PowerShellSymbols.ps1:105 char:42
++             Sort-Object Count -Descending, Name |
++                                          ~
+Missing argument in parameter list."
+"2026-07-05T05:16:00.9146164Z","20260705-141555","failed","120","True","False","parsing ""SupportsShouldProcess\s*=\s*\True"" - Unrecognized escape sequence \T."
+"2026-07-05T05:16:17.1956331Z","20260705-141610","success","120","True","False",""
+"2026-07-05T05:18:23.8299165Z","20260705-141624","success","120","False","True",""

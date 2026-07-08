@@ -1,0 +1,1 @@
+﻿C:\Users\jsp0\Documents\Intergrated POWER\tests\aider_worker_adapter_e2e\target.ps1

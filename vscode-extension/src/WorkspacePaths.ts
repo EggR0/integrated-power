@@ -9,6 +9,7 @@ import {
 const RUNS_RELATIVE_PATH = ".agent-runs/runs.jsonl";
 const TOKEN_REPORT_RELATIVE_PATH = "reports/agent-dashboard.md";
 const DASHBOARD_STATE_RELATIVE_PATH = "reports/dashboard-state.json";
+const TERMINAL_QUEUE_RELATIVE_PATH = ".agents/terminal-queue.json";
 
 export { normalizeWorkspacePathForStorage, workspaceStoragePathForFolder };
 
@@ -58,6 +59,12 @@ export class WorkspacePaths {
     return this.joinGlobalStorage("reports/codex_timer_metrics.csv");
   }
 
+  public terminalQueueUri(): vscode.Uri | undefined {
+    const folder = this.primaryFolder;
+    if (!folder) return undefined;
+    return vscode.Uri.file(path.join(folder.uri.fsPath, ...TERMINAL_QUEUE_RELATIVE_PATH.split("/")));
+  }
+
   public createWatchers(onChange: () => void): vscode.Disposable[] {
     const globalStoragePath = this.workspaceStoragePath;
     if (!globalStoragePath) return [];
@@ -73,7 +80,8 @@ export class WorkspacePaths {
       new vscode.RelativePattern(globalStoragePath, TOKEN_REPORT_RELATIVE_PATH),
     );
 
-    return [
+    const folder = this.primaryFolder;
+    const watchers: vscode.Disposable[] = [
       runWatcher,
       runWatcher.onDidCreate(onChange),
       runWatcher.onDidChange(onChange),
@@ -83,6 +91,15 @@ export class WorkspacePaths {
       tokenWatcher.onDidChange(onChange),
       tokenWatcher.onDidDelete(onChange),
     ];
+
+    if (folder) {
+      const terminalWatcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(folder.uri.fsPath, TERMINAL_QUEUE_RELATIVE_PATH),
+      );
+      watchers.push(terminalWatcher);
+    }
+
+    return watchers;
   }
 
   private joinGlobalStorage(relativePath: string): vscode.Uri | undefined {

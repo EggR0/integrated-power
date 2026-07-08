@@ -51,6 +51,12 @@
       "writes_code": false,
       "default_mode": "read-only"
     },
+    "serena": {
+      "type": "local_semantic_code_toolkit",
+      "role": "read-only symbol-level repository indexing and routing-hint preparation",
+      "writes_code": false,
+      "default_mode": "background_read_only"
+    },
     "local_3090_llm": {
       "type": "local_llm",
       "role": "second local RTX 3090 for preprocessing, summarization, embeddings",
@@ -84,6 +90,10 @@
     {
       "when": "broad_noisy_context",
       "use": ["local_3090_llm", "codex_cli_exec"]
+    },
+    {
+      "when": "repo_semantic_indexing",
+      "use": ["serena", "local_3090_llm"]
     },
     {
       "when": "heavy_local_batch",

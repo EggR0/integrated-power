@@ -1,0 +1,3 @@
+﻿"Prompt","TargetFile","TaskScale","CandidateCount","EnableBreaker","KeepArtifacts","ValidatorProfile","ValidationCommand"
+"Small patch","C:\Users\jsp0\Documents\Intergrated POWER\tests\delegated_agent_task_e2e\target.ps1","Small","1","False","False","syntax",""
+"High risk large patch","C:\Users\jsp0\Documents\Intergrated POWER\tests\delegated_agent_task_e2e\target.ps1","Large","2","True","False","syntax",""

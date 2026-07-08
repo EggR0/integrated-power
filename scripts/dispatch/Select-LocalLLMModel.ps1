@@ -14,6 +14,8 @@ param(
 
     [string]$MetricsFile = "",
 
+    [switch]$NoHardwareSnapshot,
+
     [switch]$AsJson
 )
 
@@ -84,6 +86,106 @@ function Normalize-Score {
     return $Value / 10.0
 }
 
+function Get-GpuSnapshot {
+    try {
+        $raw = & nvidia-smi --query-gpu=index,name,memory.total,memory.used,memory.free,utilization.gpu --format=csv,noheader,nounits 2>$null
+        if ($LASTEXITCODE -ne 0 -or !$raw) { return @() }
+
+        return @($raw | ForEach-Object {
+            $parts = @([string]$_ -split ",")
+            if ($parts.Count -lt 6) { return }
+
+            [pscustomobject]@{
+                Index          = [int]$parts[0].Trim()
+                Name           = $parts[1].Trim()
+                MemoryTotalMb  = [int]$parts[2].Trim()
+                MemoryUsedMb   = [int]$parts[3].Trim()
+                MemoryFreeMb   = [int]$parts[4].Trim()
+                UtilizationPct = [int]$parts[5].Trim()
+            }
+        })
+    }
+    catch {
+        return @()
+    }
+}
+
+function Get-DesiredContextTokens {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Type,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Scale
+    )
+
+    $base = switch ($Scale.ToLowerInvariant()) {
+        "small" { 4096 }
+        "large" { 32768 }
+        default { 8192 }
+    }
+
+    if ($Type -in @("long_context", "coding", "reasoning", "routing_review") -and $Scale -match "^(Large|Medium)$") {
+        $base = [math]::Max($base, 16384)
+    }
+    if ($Type -eq "long_context" -or ($Type -eq "coding" -and $Scale -eq "Large")) {
+        $base = [math]::Max($base, 32768)
+    }
+
+    return $base
+}
+
+function Get-HardwareContextLimit {
+    param([object[]]$GpuSnapshot)
+
+    if ($GpuSnapshot.Count -eq 0) { return 8192 }
+
+    $bestGpu = $GpuSnapshot | Sort-Object -Property MemoryFreeMb -Descending | Select-Object -First 1
+    if ($bestGpu.MemoryFreeMb -ge 20000) { return 32768 }
+    if ($bestGpu.MemoryFreeMb -ge 12000) { return 16384 }
+    if ($bestGpu.MemoryFreeMb -ge 8000) { return 8192 }
+    return 4096
+}
+
+function Get-RecommendedNumCtx {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$RegistryRow,
+
+        [Parameter(Mandatory = $true)]
+        [int]$DesiredContextTokens,
+
+        [Parameter(Mandatory = $true)]
+        [int]$HardwareContextLimit
+    )
+
+    $registryLimit = 4096
+    $parsedLimit = 0
+    if ([int]::TryParse([string]$RegistryRow.ContextHintTokens, [ref]$parsedLimit) -and $parsedLimit -gt 0) {
+        $registryLimit = $parsedLimit
+    }
+
+    return [int]([math]::Max(1024, [math]::Min($registryLimit, [math]::Min($DesiredContextTokens, $HardwareContextLimit))))
+}
+
+function Get-RecommendedMaxTokens {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$NumCtx,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Scale
+    )
+
+    $scaleBudget = switch ($Scale.ToLowerInvariant()) {
+        "small" { 1024 }
+        "large" { 4096 }
+        default { 2048 }
+    }
+
+    return [int]([math]::Max(512, [math]::Min($scaleBudget, [math]::Floor($NumCtx / 4))))
+}
+
 $repoRoot = Get-RepoRoot
 Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
@@ -109,6 +211,11 @@ $installedSet = @{}
 foreach ($model in $installedModels) {
     $installedSet[$model] = $true
 }
+
+$gpuSnapshot = if ($NoHardwareSnapshot) { @() } else { @(Get-GpuSnapshot) }
+$desiredContextTokens = Get-DesiredContextTokens -Type $TaskType -Scale $TaskScale
+$hardwareContextLimit = Get-HardwareContextLimit -GpuSnapshot $gpuSnapshot
+$bestGpu = if ($gpuSnapshot.Count -gt 0) { $gpuSnapshot | Sort-Object -Property MemoryFreeMb -Descending | Select-Object -First 1 } else { $null }
 
 $cutoff = (Get-Date).AddDays(-1 * [math]::Max($MetricsWindowDays, 1))
 $historyByModel = @{}
@@ -146,6 +253,7 @@ $candidates = foreach ($row in $registry) {
     $successRate = $reliabilityPrior
     $avgElapsed = $null
     $tokensPerSecond = 0.0
+    $recentOomFailures = 0
     if ($historyCount -gt 0) {
         $successRows = @($history | Where-Object { ($_.PSObject.Properties.Name -contains "Success") -and ![string]::IsNullOrWhiteSpace([string]$_.Success) })
         if ($successRows.Count -gt 0) {
@@ -169,6 +277,11 @@ $candidates = foreach ($row in $registry) {
             $tokensPerSecond = ($tpsValues | Measure-Object -Average).Average
             $speedScore = [math]::Min(1.0, [math]::Max(0.1, $tokensPerSecond / 40.0))
         }
+
+        $recentOomFailures = @($history | Where-Object {
+            [string]$_.Success -match "^(false|0|no)$" -and
+            [string]$_.ErrorMessage -match "(?i)(out.of.memory|\boom\b|cuda.*memory|vram)"
+        }).Count
     }
 
     $timePenalty = 0.0
@@ -176,8 +289,13 @@ $candidates = foreach ($row in $registry) {
         $timePenalty = [math]::Min(0.25, (($avgElapsed - $MaxExpectedSeconds) / [double]$MaxExpectedSeconds) * 0.25)
     }
 
+    $recommendedNumCtx = Get-RecommendedNumCtx -RegistryRow $row -DesiredContextTokens $desiredContextTokens -HardwareContextLimit $hardwareContextLimit
+    $recommendedMaxTokens = Get-RecommendedMaxTokens -NumCtx $recommendedNumCtx -Scale $TaskScale
+    $contextFit = [math]::Min(1.0, $recommendedNumCtx / [double]$desiredContextTokens)
+    $contextBonus = 0.05 * $contextFit
+    $oomPenalty = [math]::Min(0.18, $recentOomFailures * 0.06)
     $installBonus = if ($installed) { 0.08 } else { -0.20 }
-    $score = (0.48 * $taskScore) + (0.27 * $successRate) + (0.17 * $speedScore) + (0.08 * $reliabilityPrior) + $installBonus - $timePenalty
+    $score = (0.46 * $taskScore) + (0.26 * $successRate) + (0.15 * $speedScore) + (0.08 * $reliabilityPrior) + $contextBonus + $installBonus - $timePenalty - $oomPenalty
 
     [pscustomobject]@{
         Model                  = $model
@@ -192,6 +310,12 @@ $candidates = foreach ($row in $registry) {
         SpeedScore             = [math]::Round($speedScore, 3)
         AverageElapsedSeconds  = if ($null -ne $avgElapsed) { [math]::Round($avgElapsed, 2) } else { $null }
         AverageTokensPerSecond = if ($tokensPerSecond -gt 0) { [math]::Round($tokensPerSecond, 2) } else { $null }
+        RecommendedNumCtx      = $recommendedNumCtx
+        RecommendedMaxTokens   = $recommendedMaxTokens
+        DesiredContextTokens   = $desiredContextTokens
+        HardwareContextLimit   = $hardwareContextLimit
+        ContextFit             = [math]::Round($contextFit, 3)
+        RecentOomFailures      = $recentOomFailures
         ReliabilityPrior       = [math]::Round($reliabilityPrior, 3)
         PrimaryUse             = [string]$row.PrimaryUse
         SourceUrl              = [string]$row.SourceUrl
@@ -204,14 +328,23 @@ if ($ranked.Count -eq 0) {
 }
 
 $selected = $ranked[0]
-$reason = "Selected $($selected.Model) for $($TaskType): score=$($selected.Score), task=$($selected.TaskScore), historicalSuccess=$($selected.HistoricalSuccessRate) from $($selected.HistoricalSamples) sample(s), speed=$($selected.SpeedScore), installed=$($selected.Installed)."
+$hardwareText = if ($null -ne $bestGpu) {
+    "bestGpu=$($bestGpu.Index) freeVRAM=$($bestGpu.MemoryFreeMb)MB"
+}
+else {
+    "gpuSnapshot=unavailable"
+}
+$reason = "Selected $($selected.Model) for $($TaskType): score=$($selected.Score), task=$($selected.TaskScore), historicalSuccess=$($selected.HistoricalSuccessRate) from $($selected.HistoricalSamples) sample(s), speed=$($selected.SpeedScore), installed=$($selected.Installed), recommendedNumCtx=$($selected.RecommendedNumCtx), recommendedMaxTokens=$($selected.RecommendedMaxTokens), $hardwareText."
 $result = [pscustomobject]@{
-    SelectedModel = $selected.Model
-    Provider      = $selected.Provider
-    TaskType      = $TaskType
-    TaskScale     = $TaskScale
-    Reason        = $reason
-    Candidates    = $ranked
+    SelectedModel        = $selected.Model
+    Provider             = $selected.Provider
+    TaskType             = $TaskType
+    TaskScale            = $TaskScale
+    RecommendedNumCtx    = $selected.RecommendedNumCtx
+    RecommendedMaxTokens = $selected.RecommendedMaxTokens
+    HardwareSnapshot     = $gpuSnapshot
+    Reason               = $reason
+    Candidates           = $ranked
 }
 
 if ($AsJson) {
@@ -219,5 +352,5 @@ if ($AsJson) {
 }
 else {
     Write-Host $reason
-    $ranked | Select-Object Model, Score, Installed, TaskScore, HistoricalSuccessRate, HistoricalSamples, SpeedScore, AverageElapsedSeconds, AverageTokensPerSecond, PrimaryUse | Format-Table -AutoSize
+    $ranked | Select-Object Model, Score, Installed, TaskScore, HistoricalSuccessRate, HistoricalSamples, SpeedScore, RecommendedNumCtx, RecommendedMaxTokens, ContextFit, AverageElapsedSeconds, AverageTokensPerSecond, PrimaryUse | Format-Table -AutoSize
 }

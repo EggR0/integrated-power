@@ -1,0 +1,25 @@
+{
+  "name": "ai-delegation-plugin",
+  "version": "1.0.4",
+  "description": "General AI delegation plugin for Codex, Aider, and local LLMs",
+  "author": {
+    "name": "Antigravity IDE Team"
+  },
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "orchestration",
+    "delegation",
+    "architecture",
+    "automation"
+  ],
+  "engines": {
+    "vscode": "^1.56.0"
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.56.0"
+  }
+}

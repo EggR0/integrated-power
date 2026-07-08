@@ -1,0 +1,49 @@
+# vscode-extension/webview/main.js
+
+- Serena symbols: 273
+- Top-level symbols: 44
+
+- `buildTokenMetric` kind=12 line=401
+- `clamp` kind=12 line=717
+- `dashboardState` kind=13 line=2
+- `document.addEventListener("DOMContentLoaded") callback` kind=12 line=44
+- `emptyState` kind=12 line=74
+- `emptyTokenStatus` kind=12 line=55
+- `escapeAttr` kind=12 line=782
+- `escapeHtml` kind=12 line=786
+- `formatDateTime` kind=12 line=740
+- `formatNumber` kind=12 line=736
+- `formatRefreshCountdown` kind=12 line=767
+- `formatResetTime` kind=12 line=754
+- `normalizeArtifact` kind=12 line=144
+- `normalizeRun` kind=12 line=127
+- `normalizeSectionStates` kind=12 line=118
+- `normalizeState` kind=12 line=91
+- `normalizeTaskWeight` kind=12 line=708
+- `normalizeTokenStatus` kind=12 line=158
+- `persistState` kind=12 line=669
+- `postCommand` kind=12 line=651
+- `render` kind=12 line=201
+- `renderArtifactItem` kind=12 line=578
+- `renderArtifactsPanel` kind=12 line=538
+- `renderCurrentTask` kind=12 line=496
+- `renderErrorsPanel` kind=12 line=634
+- `renderHardwareMetric` kind=12 line=457
+- `renderLoadingStrip` kind=12 line=272
+- `renderLocalLlmMetricsPanel` kind=12 line=553
+- `renderMetricsPanel` kind=12 line=609
+- `renderQueuePanel` kind=12 line=596
+- `renderRunItem` kind=12 line=524
+- `renderRunsPanel` kind=12 line=509
+- `renderSummaryCard` kind=12 line=486
+- `renderTokenMetric` kind=12 line=439
+- `renderTokenSkeleton` kind=12 line=385
+- `renderTokenStatus` kind=12 line=281
+- `root` kind=14 line=4
+- `safeRelativePath` kind=12 line=675
+- `statusClass` kind=12 line=722
+- `stringArray` kind=12 line=697
+- `stringValue` kind=12 line=693
+- `toFiniteNumber` kind=12 line=712
+- `vscode` kind=14 line=0
+- `window.addEventListener("message") callback` kind=12 line=6

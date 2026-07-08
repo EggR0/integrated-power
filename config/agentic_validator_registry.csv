@@ -1,0 +1,4 @@
+PathPattern,ValidatorProfile,ValidationCommand,StrictValidationCommand,ValidationTimeoutSeconds,StrictValidationTimeoutSeconds,Description
+vscode-extension/*,syntax_and_command,"try { Push-Location '{{RepoRoot}}\vscode-extension'; npm run compile } finally { Pop-Location }","try { Push-Location '{{RepoRoot}}\vscode-extension'; npm run test } finally { Pop-Location }",180,300,Validate VS Code extension changes with TypeScript compile by default and tests in strict mode.
+scripts/**/*.ps1,syntax,"","",120,120,PowerShell dispatch and utility scripts use built-in syntax validation.
+tests/**/*.ps1,syntax,"","",120,120,PowerShell test scripts use built-in syntax validation.

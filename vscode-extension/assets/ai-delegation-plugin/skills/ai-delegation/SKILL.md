@@ -1,0 +1,87 @@
+---
+name: ai-delegation
+description: Unified AI work router for deciding whether the main agent should work directly, delegate to Codex, delegate coding edits to the local agentic worker, or delegate preprocessing/summarization to a local OpenAI-compatible vLLM endpoint. Triggered by "use Codex", "ask Codex", "local LLM", "vLLM", "delegate this", "token-efficient", "Codex review", "Codex job", "local coding worker", or "work window".
+---
+
+# AI Work Router
+
+This is the primary routing skill for token-efficient AI work. When a task may benefit from delegation, classify the work first and choose one of three routes:
+
+- **Main Agent Direct**: small edits, local inspection, glue work, or tasks where calling another model would cost more than it saves.
+- **Codex**: hard implementation, architectural review, code review, test generation, refactors, or work that needs strong coding judgment.
+- **Local Agentic Worker**: file-writing coding tasks that should conserve Gemini/Codex output by routing through `Invoke-DelegatedAgentTask.ps1`, usually with Aider plus a local Ollama coding model.
+- **Local LLM / vLLM**: offline preprocessing, broad summarization, noisy-context reduction, draft checklists, clustering, extraction, or other low-risk transformations where local compute is preferable.
+
+Do not require the user to explicitly name Codex or local LLM. If the task is large, ambiguous, repetitive, or token-sensitive, choose the route that best preserves cloud quota while still producing a reliable artifact.
+
+Default to local-first delegation when the local machine is healthy. For file-writing coding work, local-first means the local agentic worker, not a raw one-shot local LLM completion. Codex and Antigravity should be treated as high-value resources for implementation, difficult debugging, architectural judgment, final review, and deciding how to delegate work. If weekly cloud quota reset is close, lower the threshold for useful high-quality cloud work, but keep local LLM as the default for low-risk preprocessing.
+
+## Mode Classification (Routing)
+
+Always read the detailed contract in the `references/` directory before executing a mode.
+
+0. **Routing Decision**:
+   - **Trigger**: Any non-trivial task where delegation, token conservation, or local preprocessing may help.
+   - **Action**: Decide Main Agent Direct vs Codex vs Local LLM before spending large cloud context.
+   - **Contract**: Read `references/routing.md`.
+
+1. **Debate Mode (`scripts/Invoke-CodexDebate.ps1`)**:
+   - **Trigger**: Architecture decisions, ADRs, tradeoff reviews, second opinions, read-only critique.
+   - **Action**: Generates a persistent human-readable Markdown transcript.
+   - **Contract**: Read `references/debate.md`.
+
+2. **Job Mode (`scripts/Invoke-CodexJob.ps1`)**:
+   - **Trigger**: Bounded implementation, massive refactoring, automated test generation, or tasks that need to overwrite/create files directly without an ongoing conversation.
+   - **Action**: Executes the prompt and saves the result directly, skipping human chat loops.
+   - **Contract**: Read `references/job.md`.
+
+3. **WorkWindow Mode (`scripts/Invoke-AiWorkWindow.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the `ai-work-queue.md`, iterative execution across multiple tasks, or high-level context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+
+4. **Local Agentic Worker Mode (`scripts/dispatch/Invoke-DelegatedAgentTask.ps1`)**:
+   - **Trigger**: Local LLM requested for coding, file edits, test edits, refactors, or token-efficient implementation.
+   - **Action**: Calls the workspace delegation bridge with `-WorkerBackend Auto`; the bridge chooses Aider/local Ollama worker when appropriate and records validation/rollback artifacts.
+   - **Contract**: Read `references/local-agentic-worker.md`.
+
+5. **Local LLM Mode (`scripts/Select-LocalLLMModel.ps1`, then `scripts/Invoke-LocalLLM.ps1` or `scripts/Invoke-vLLMJob.ps1`)**:
+   - **Trigger**: Summarization, preprocessing, extraction, local draft generation, broad context compression, or explicit local LLM/vLLM requests.
+   - **Action**: Selects the best local model for the task using registry priors plus measured success/time metrics, then sends the prompt to Ollama or an OpenAI-compatible local endpoint.
+   - **Contract**: Read `references/local-llm.md`.
+
+## Execution Timer and Metrics Guidelines
+
+When you dispatch a task to Codex using one of the background scripts above, the scripts will run their own native **Watchdog Loop** using `System.Diagnostics.Process` to enforce safe execution and pure UTF-8 logging.
+
+Follow these explicit rules:
+1. **Required Completion Sentinel**: You MUST explicitly tell Codex in your prompt: "When you are completely finished with all work, output exactly the phrase `CODEX_JOB_DONE status=success` at the very end of your response."
+2. **Estimate Task Scale**: Before setting your timer, estimate the scale of the task (e.g., 'Small Refactor', 'Medium Feature').
+3. **Wait for Completion**: Use the `schedule` tool to set a long wait timer. You do NOT need to poll. The script's watchdog will automatically kill Codex if it gets stuck *after* outputting the sentinel (`completed_stuck`), or if it completely idles for 10 minutes (`idle_timeout`).
+4. **Execution Time Feedback Loop (Metrics)**: 
+   - When the background script completes, observe the actual elapsed time.
+   - You MUST also retrieve the total tokens used by Codex for this job. You can find this by checking the last entry in the file defined by `dashboard_global_storage.txt`, appended with `/reports/codex_usage.csv` (the script automatically parses usage if `-JsonLog` is used, so always pass `-JsonLog $true` if you need token counts).
+   - Record the mapping of `[Timestamp, Mode, Task Scale, Estimated Wait, Actual Elapsed Time, Total Tokens]` into a persistent metrics log located at the path defined by `dashboard_global_storage.txt`, appended with `/reports/codex_timer_metrics.csv` (create it if it doesn't exist).
+   - Use this historical data CSV to continually improve your timer estimates and to compare token usage against task scale in future invocations.
+
+## General Rules
+
+- Do NOT pass repository file contents directly inside prompts when dispatching. Always pass file paths (e.g. `-ContextFile`) or let Codex use its sandbox to read them.
+- Ensure you select the appropriate `-Sandbox` permissions (`read-only`, `workspace-write`, `danger-full-access`).
+- Prefer local LLM preprocessing before sending broad noisy context to Codex.
+- Never use raw `Invoke-LocalLLM.ps1` for repository file edits. For coding/file-writing local work, use `Invoke-DelegatedAgentTask.ps1 -WorkerBackend Auto`.
+- Never call a local LLM model arbitrarily; use the selector first unless the user explicitly names an exact model and accepts bypassing measured routing.
+- If local LLM is offline, fall back to Main Agent Direct or Codex only after noting the fallback in the artifact.
+- If Codex Debate fails or is inconclusive, fall back to a narrower Main Agent Direct step or a bounded Codex Job rather than repeating broad debate prompts.
+- Every delegated route must produce an artifact: report, discussion, generated prompt, output file, metrics row, or implementation summary.
+- Record why the chosen route is token-efficient, especially when skipping local preprocessing.
+
+## Codex Installation & Executable Resolution
+
+This plugin automatically resolves the path to the Codex executable. By default, it checks:
+1. System `PATH`.
+2. `$env:CODEX_EXE`
+3. Local AppData installations (`%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`)
+4. Interactive console prompt if not found.
+
+If a user complains that Codex isn't running, advise them to either add Codex to their PATH, set the `CODEX_EXE` environment variable, or run the command directly to be prompted for the path.

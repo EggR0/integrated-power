@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "enabled": true,
+  "purpose": "Maintain a local, semantic repository memory for growing repos by combining Serena symbol-level inspection with local LLM summarization.",
+  "mode": "read_only_background_indexing",
+  "workspaceRoot": "C:\\Users\\jsp0\\Documents\\Intergrated POWER",
+  "serena": {
+    "role": "semantic_code_toolkit",
+    "requiredForPhase": 2,
+    "preferredInterface": "mcp_or_cli_adapter",
+    "allowedOperations": [
+      "project activation",
+      "symbol overview",
+      "symbol lookup",
+      "reference lookup",
+      "file structure discovery",
+      "read-only diagnostics"
+    ],
+    "forbiddenOperations": [
+      "code edits",
+      "shell execution outside the workspace",
+      "writes outside configured artifact directories"
+    ]
+  },
+  "localLlm": {
+    "role": "background summarizer and routing-hint generator",
+    "entrypoint": "scripts/dispatch/Invoke-LocalLLM.ps1",
+    "taskType": "long_context",
+    "modelSelection": "scripts/dispatch/Select-LocalLLMModel.ps1 -TaskType long_context -InstalledOnly -AsJson",
+    "writesCode": false,
+    "allowedOutputs": [
+      "module summaries",
+      "symbol cards",
+      "routing hints",
+      "change impact notes",
+      "staleness reports"
+    ]
+  },
+  "artifacts": {
+    "root": "reports/serena-background",
+    "latestManifest": "reports/serena-background/latest-manifest.json",
+    "repoMap": "reports/serena-background/repo-map.md",
+    "routingHints": "reports/serena-background/routing-hints.json",
+    "symbolCardsDir": "reports/serena-background/symbol-cards",
+    "runsDir": "reports/serena-background/runs",
+    "ledger": "reports/serena-background/ledger.csv"
+  },
+  "triggers": {
+    "manual": true,
+    "preAiRouter": true,
+    "scheduled": false,
+    "onGitDiffChange": true,
+    "minimumMinutesBetweenRuns": 15
+  },
+  "scope": {
+    "includeGlobs": [
+      "scripts/**/*.ps1",
+      "vscode-extension/**/*.ts",
+      "vscode-extension/**/*.json",
+      "config/**/*.json",
+      "config/**/*.csv",
+      ".agents/**/*.md",
+      "AGENTS.md",
+      "README.md"
+    ],
+    "excludeGlobs": [
+      ".git/**",
+      "node_modules/**",
+      ".system_generated/**",
+      "reports/**",
+      "tests/**/artifacts/**",
+      ".aider.tags.cache.v4/**"
+    ],
+    "maxChangedFilesPerRun": 24,
+    "maxSymbolCardsPerRun": 80
+  },
+  "safety": {
+    "readOnly": true,
+    "requireWorkspaceBoundary": true,
+    "useSingleRunLock": true,
+    "lockFile": "reports/serena-background/serena-background.lock",
+    "timeoutSeconds": 900,
+    "maxConsecutiveFailures": 3,
+    "cloudEscalation": "never_for_background_indexing"
+  },
+  "aiRouterIntegration": {
+    "useRoutingHintsBeforeDelegatedEdit": true,
+    "filesListCandidateSource": "reports/serena-background/routing-hints.json",
+    "neverTreatHintsAsAuthority": true,
+    "requireValidationAfterUse": true
+  }
+}

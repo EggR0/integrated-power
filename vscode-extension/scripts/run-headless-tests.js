@@ -55,9 +55,9 @@ test("webview preserves token status and keeps Refresh clickable", () => {
 test("debate documentation uses globalStorage paths", () => {
   const debateReference = readText(
     "assets",
-    "codex-orchestrator-plugin",
+    "ai-delegation-plugin",
     "skills",
-    "codex-orchestrator",
+    "ai-delegation",
     "references",
     "debate.md",
   );

@@ -149,6 +149,49 @@ export class DashboardController implements vscode.Disposable {
     }
 
     this.watchers.push(...this.paths.createWatchers(() => this.scheduleRefresh()));
+
+    const terminalQueueUri = this.paths.terminalQueueUri();
+    if (terminalQueueUri) {
+      const folder = this.paths.primaryFolder;
+      if (folder) {
+        const terminalWatcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(folder.uri.fsPath, ".agents/terminal-queue.json")
+        );
+        this.watchers.push(
+          terminalWatcher,
+          terminalWatcher.onDidCreate(() => this.processTerminalQueue()),
+          terminalWatcher.onDidChange(() => this.processTerminalQueue())
+        );
+      }
+    }
+  }
+
+  private async processTerminalQueue(): Promise<void> {
+    const uri = this.paths.terminalQueueUri();
+    if (!uri) return;
+
+    try {
+      const data = await vscode.workspace.fs.readFile(uri);
+      const content = Buffer.from(data).toString("utf8").trim();
+      if (!content) return;
+
+      const commands = JSON.parse(content);
+      if (!Array.isArray(commands) || commands.length === 0) return;
+
+      // Clear the file so we don't process it again
+      await vscode.workspace.fs.writeFile(uri, Buffer.from("[]", "utf8"));
+
+      for (const cmd of commands) {
+        if (typeof cmd.command === "string") {
+          const terminalName = cmd.name || "AI Worker";
+          const terminal = vscode.window.createTerminal(terminalName);
+          terminal.show();
+          terminal.sendText(cmd.command);
+        }
+      }
+    } catch (e) {
+      // Parse error or file not found, ignore
+    }
   }
 
   private scheduleRefresh(): void {
@@ -271,11 +314,11 @@ export class DashboardController implements vscode.Disposable {
       .filter((run) => run.status === "error" || run.status === "failed" || (run.exitCode !== undefined && run.exitCode !== 0))
       .map((run) => `Run failed: ${run.title} (ID: ${run.id})`);
 
-    const combinedSystemErrors = [
+    const combinedSystemErrors = Array.from(new Set([
       ...(this.state.systemErrors || []),
       ...(resolvedTokenStatus?.errors || []),
       ...backgroundJobErrors
-    ];
+    ]));
 
     return {
       workspaceName: this.paths.workspaceName,

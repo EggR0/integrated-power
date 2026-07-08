@@ -1,0 +1,58 @@
+INFO  2026-07-05 14:15:40,638 serena.cli:health_check:550 - Starting health check for project: C:\Users\jsp0\Documents\Intergrated POWER
+INFO  2026-07-05 14:15:40,638 serena.cli:health_check:554 - Creating SerenaAgent with disabled dashboard...
+INFO  2026-07-05 14:15:40,754 serena.agent:__init__:198 - Starting Serena server (version=0.1.4-7d0a2d3a-dirty, process id=52896, parent process id=56684)
+INFO  2026-07-05 14:15:40,754 serena.agent:__init__:199 - Configuration file: None
+INFO  2026-07-05 14:15:40,754 serena.agent:__init__:200 - Available projects: 
+INFO  2026-07-05 14:15:40,754 serena.agent:__init__:201 - Loaded tools (36): read_file, create_text_file, list_dir, find_file, replace_regex, delete_lines, replace_lines, insert_at_line, search_for_pattern, restart_language_server, get_symbols_overview, find_symbol, find_referencing_symbols, replace_symbol_body, insert_after_symbol, insert_before_symbol, write_memory, read_memory, list_memories, delete_memory, execute_shell_command, activate_project, remove_project, switch_modes, get_current_config, check_onboarding_performed, onboarding, think_about_collected_information, think_about_task_adherence, think_about_whether_you_are_done, summarize_changes, prepare_for_new_conversation, initial_instructions, jet_brains_find_symbol, jet_brains_find_referencing_symbols, jet_brains_get_symbols_overview
+INFO  2026-07-05 14:15:40,754 serena.config.serena_config:apply:106 - SerenaAgentContext[name='desktop-app'] included 1 tools: switch_modes
+INFO  2026-07-05 14:15:40,755 serena.agent:__init__:215 - Number of exposed tools: 25
+INFO  2026-07-05 14:15:40,764 serena.agent:_update_active_tools:397 - Active tools (25): activate_project, check_onboarding_performed, create_text_file, delete_memory, execute_shell_command, find_file, find_referencing_symbols, find_symbol, get_symbols_overview, insert_after_symbol, insert_before_symbol, list_dir, list_memories, onboarding, prepare_for_new_conversation, read_file, read_memory, replace_regex, replace_symbol_body, search_for_pattern, switch_modes, think_about_collected_information, think_about_task_adherence, think_about_whether_you_are_done, write_memory
+INFO  2026-07-05 14:15:40,766 serena.util.file_system:start:329 - Loading of .gitignore files starting ...
+INFO  2026-07-05 14:15:40,766 serena.util.file_system:_load_gitignore_files:143 - Processing .gitignore file: C:\Users\jsp0\Documents\Intergrated POWER\.gitignore
+INFO  2026-07-05 14:15:40,772 serena.util.file_system:stop:336 - Loading of .gitignore files completed in 0.007 seconds
+INFO  2026-07-05 14:15:40,772 serena.agent:load_project_from_path_or_name:472 - Added new project Intergrated POWER for path C:\Users\jsp0\Documents\Intergrated POWER
+INFO  2026-07-05 14:15:40,772 serena.agent:_activate_project:437 - Activating Intergrated POWER at C:\Users\jsp0\Documents\Intergrated POWER
+INFO  2026-07-05 14:15:40,772 serena.agent:_update_active_tools:397 - Active tools (25): activate_project, check_onboarding_performed, create_text_file, delete_memory, execute_shell_command, find_file, find_referencing_symbols, find_symbol, get_symbols_overview, insert_after_symbol, insert_before_symbol, list_dir, list_memories, onboarding, prepare_for_new_conversation, read_file, read_memory, replace_regex, replace_symbol_body, search_for_pattern, switch_modes, think_about_collected_information, think_about_task_adherence, think_about_whether_you_are_done, write_memory
+INFO  2026-07-05 14:15:40,772 serena.agent:issue_task:416 - Scheduling Task-1[init_language_server]
+INFO  2026-07-05 14:15:40,773 serena.agent:start:329 - Task-1[init_language_server] starting ...
+INFO  2026-07-05 14:15:40,773 serena.cli:health_check:557 - SerenaAgent created successfully
+INFO  2026-07-05 14:15:40,773 serena.agent:start:329 - Language server initialization starting ...
+INFO  2026-07-05 14:15:40,773 serena.cli:health_check:560 - Searching for analyzable files...
+INFO  2026-07-05 14:15:40,773 serena.project:create_language_server:288 - Creating language server instance for C:\Users\jsp0\Documents\Intergrated POWER.
+INFO  2026-07-05 14:15:40,805 serena.cli:health_check:569 - Found analyzable file: scripts\metrics\Get-QuotaSnapshot.mjs
+INFO  2026-07-05 14:15:40,805 serena.cli:health_check:587 - Testing GetSymbolsOverviewTool on file: scripts\metrics\Get-QuotaSnapshot.mjs
+INFO  2026-07-05 14:15:40,805 serena.agent:issue_task:416 - Scheduling Task-2[<lambda>]
+INFO  2026-07-05 14:15:40,875 solidlsp:load_cache:1658 - Loading document symbols cache from C:\Users\jsp0\Documents\Intergrated POWER\.serena\cache\typescript\document_symbols_cache_v23-06-25.pkl
+INFO  2026-07-05 14:15:40,881 solidlsp:load_cache:1662 - Loaded 32 document symbols from cache.
+INFO  2026-07-05 14:15:40,882 serena.agent:reset_language_server:589 - Starting the language server for Intergrated POWER
+INFO  2026-07-05 14:15:40,883 solidlsp:start:1704 - Starting language server with language typescript for C:\Users\jsp0\Documents\Intergrated POWER
+INFO  2026-07-05 14:15:40,883 solidlsp:_start_server:224 - Starting TypeScript server process
+INFO  2026-07-05 14:15:40,883 solidlsp.ls_handler:start:189 - Starting language server process via command: ['C:\\Users\\jsp0\\.serena\\language_servers\\static\\TypeScriptLanguageServer\\ts-lsp\\node_modules\\.bin\\typescript-language-server', '--stdio']
+INFO  2026-07-05 14:15:40,889 solidlsp:_start_server:228 - Sending initialize request from LSP client to LSP server and awaiting response
+INFO  2026-07-05 14:15:40,972 solidlsp:window_log_message:207 - LSP: window/logMessage: {"type": 3, "message": "Using Typescript version (bundled) 5.5.4 from path "C:\\Users\\jsp0\\.serena\\language_servers\\static\\TypeScriptLanguageServer\\ts-lsp\\node_modules\\typescript\\lib\\tsserver.js""}
+INFO  2026-07-05 14:15:41,985 solidlsp:_start_server:246 - Timeout waiting for TypeScript server to become ready, proceeding anyway
+INFO  2026-07-05 14:15:41,985 serena.agent:stop:336 - Language server initialization completed in 1.212 seconds
+INFO  2026-07-05 14:15:41,985 serena.agent:stop:336 - Task-1[init_language_server] completed in 1.212 seconds
+INFO  2026-07-05 14:15:41,985 serena.agent:start:329 - Task-2[<lambda>] starting ...
+INFO  2026-07-05 14:15:41,987 serena.agent:stop:336 - Task-2[<lambda>] completed in 0.002 seconds
+INFO  2026-07-05 14:15:41,987 serena.cli:health_check:590 - GetSymbolsOverviewTool returned 7 symbols
+INFO  2026-07-05 14:15:41,987 serena.cli:health_check:615 - Using symbol for testing: catch() callback (kind: 12)
+INFO  2026-07-05 14:15:41,987 serena.cli:health_check:618 - Testing FindSymbolTool for symbol: catch() callback
+INFO  2026-07-05 14:15:41,987 serena.agent:issue_task:416 - Scheduling Task-3[<lambda>]
+INFO  2026-07-05 14:15:41,987 serena.agent:start:329 - Task-3[<lambda>] starting ...
+INFO  2026-07-05 14:15:41,988 serena.agent:stop:336 - Task-3[<lambda>] completed in 0.001 seconds
+INFO  2026-07-05 14:15:41,989 serena.cli:health_check:623 - FindSymbolTool found 1 matches for symbol catch() callback
+INFO  2026-07-05 14:15:41,989 serena.cli:health_check:626 - Testing FindReferencingSymbolsTool for symbol: catch() callback
+INFO  2026-07-05 14:15:41,989 serena.agent:issue_task:416 - Scheduling Task-4[<lambda>]
+INFO  2026-07-05 14:15:41,989 serena.agent:start:329 - Task-4[<lambda>] starting ...
+INFO  2026-07-05 14:15:42,995 serena.agent:stop:336 - Task-4[<lambda>] completed in 1.006 seconds
+INFO  2026-07-05 14:15:42,995 serena.cli:health_check:630 - FindReferencingSymbolsTool found 0 references for symbol catch() callback
+INFO  2026-07-05 14:15:42,995 serena.cli:health_check:636 - Testing SearchForPatternTool for pattern: catch() callback
+INFO  2026-07-05 14:15:42,995 serena.agent:issue_task:416 - Scheduling Task-5[<lambda>]
+INFO  2026-07-05 14:15:42,995 serena.agent:start:329 - Task-5[<lambda>] starting ...
+INFO  2026-07-05 14:15:43,017 serena.text_utils:search_files:326 - Processing 16 files.
+INFO  2026-07-05 14:15:43,034 serena.text_utils:search_files:367 - Found 0 total matches across 16 files
+INFO  2026-07-05 14:15:43,034 serena.agent:stop:336 - Task-5[<lambda>] completed in 0.040 seconds
+INFO  2026-07-05 14:15:43,034 serena.cli:health_check:643 - SearchForPatternTool found 0 pattern matches for catch() callback
+WARNING 2026-07-05 14:15:43,034 serena.cli:health_check:655 - Both FindReferencingSymbolsTool and SearchForPatternTool found no matches - this might indicate an issue
+INFO  2026-07-05 14:15:43,034 serena.cli:health_check:657 - Health check completed successfully

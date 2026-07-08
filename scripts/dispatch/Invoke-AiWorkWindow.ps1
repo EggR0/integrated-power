@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$UseCalendar,
     [switch]$RunCodex,
     [string]$JobId = "",
@@ -6,18 +6,28 @@ param(
     [ValidateSet("read-only", "workspace-write", "danger-full-access")]
     [string]$Sandbox = "read-only",
     [string]$Model = "gpt-5.5",
-    [ValidateSet("minimal", "low", "medium", "high", "xhigh")]
+    [ValidateSet("minimal", "medium", "low", "high", "xhigh")]
     [string]$ReasoningEffort = "high"
 )
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
-$repoRoot = (& git rev-parse --show-toplevel 2>$null)
-if ($repoRoot) { $repoRoot = ($repoRoot | Select-Object -First 1).Trim() }
+
+$repoRoot = ""
+try {
+    $gitRoot = (& git rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -eq 0 -and ![string]::IsNullOrWhiteSpace($gitRoot)) {
+        $repoRoot = ($gitRoot | Select-Object -First 1).Trim()
+    }
+} catch {
+    $repoRoot = ""
+}
+
 if ([string]::IsNullOrWhiteSpace($repoRoot)) {
     $repoRoot = (Get-Location).Path
 }
+
 Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
 
@@ -47,9 +57,17 @@ if (Test-Path -LiteralPath $todoScript) {
     & $todoScript | Out-Null
 }
 
-$basePromptCandidate = if ([IO.Path]::IsPathRooted($PromptFile)) { $PromptFile } else { Join-Path $repoRoot $PromptFile }
-$basePromptPath = Resolve-Path -LiteralPath $basePromptCandidate
-$basePrompt = Get-Content -Raw -Encoding UTF8 -LiteralPath $basePromptPath
+$basePromptPath = if ([System.IO.Path]::IsPathRooted($PromptFile)) {
+    $PromptFile
+} else {
+    Join-Path $repoRoot $PromptFile
+}
+
+$basePrompt = if (Test-Path -LiteralPath $basePromptPath) {
+    Get-Content -Raw -Encoding UTF8 -LiteralPath $basePromptPath
+} else {
+    "# AI Work Window Dispatch`r`n`r`nSelect the highest-value next coding task from the available runtime context and execute it within the requested constraints."
+}
 
 $queuePath = Join-Path $storagePath "ai-work-queue.md"
 $contextPath = Join-Path $storagePath "reports\current_context.md"
@@ -90,7 +108,8 @@ $todosText
 "@
 
 $generatedPromptPath = Join-Path $reportsDir "window-dispatch-prompt-$stamp.md"
-[System.IO.File]::WriteAllText($generatedPromptPath, $generatedPrompt, [System.Text.Encoding]::UTF8)
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($generatedPromptPath, $generatedPrompt, $Utf8NoBom)
 
 if (!$RunCodex) {
     Write-Host "Prepared dispatch prompt:"
@@ -99,9 +118,15 @@ if (!$RunCodex) {
     exit 0
 }
 
-$runner = Join-Path $repoRoot "scripts\dispatch\Invoke-CodexJob.ps1"
-if (!(Test-Path -LiteralPath $runner)) {
-    throw "Codex runner not found: $runner"
+$runnerCandidates = @(
+    (Join-Path $PSScriptRoot "Invoke-CodexJob.ps1"),
+    (Join-Path $repoRoot "scripts\dispatch\Invoke-CodexJob.ps1")
+)
+
+$runner = $runnerCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+
+if (!$runner) {
+    throw "Codex runner not found. Checked: $($runnerCandidates -join '; ')"
 }
 
 $outputFile = Join-Path $reportsDir "window-dispatch-result-$stamp.md"

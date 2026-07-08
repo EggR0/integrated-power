@@ -1,0 +1,119 @@
+{
+    "generatedAt":  "2026-07-05T05:16:28.9079656Z",
+    "source":  "serena-cache-powershell-ast-plus-repo-inventory",
+    "neverTreatAsAuthority":  true,
+    "areas":  [
+                  {
+                      "area":  "dispatch",
+                      "fileCount":  15,
+                      "symbolCount":  79,
+                      "candidateFiles":  [
+                                             "scripts/dispatch/Export-PowerShellSymbols.ps1",
+                                             "scripts/dispatch/Invoke-AgenticLoop.ps1",
+                                             "scripts/dispatch/Invoke-AiderWorker.ps1",
+                                             "scripts/dispatch/Invoke-AiWorkWindow.ps1",
+                                             "scripts/dispatch/Invoke-CodexDebate.ps1",
+                                             "scripts/dispatch/Invoke-CodexJob.ps1",
+                                             "scripts/dispatch/Invoke-DelegatedAgentTask.ps1",
+                                             "scripts/dispatch/Invoke-LocalLLM.ps1",
+                                             "scripts/dispatch/Invoke-SerenaBackgroundJob.ps1",
+                                             "scripts/dispatch/Invoke-vLLMJob.ps1",
+                                             "scripts/dispatch/New-ContextManifest.ps1",
+                                             "scripts/dispatch/Select-AgenticDelegationMode.ps1",
+                                             "scripts/dispatch/Select-AgenticValidator.ps1",
+                                             "scripts/dispatch/Select-LocalLLMModel.ps1",
+                                             "scripts/dispatch/Test-SerenaCapability.ps1"
+                                         ],
+                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
+                  },
+                  {
+                      "area":  "metrics",
+                      "fileCount":  8,
+                      "symbolCount":  12,
+                      "candidateFiles":  [
+                                             "scripts/metrics/Count-GeminiInputTokens.ps1",
+                                             "scripts/metrics/Count-OpenAIInputTokens.ps1",
+                                             "scripts/metrics/Invoke-AntigravityUsageTool.ps1",
+                                             "scripts/metrics/Measure-AntigravityTranscript.ps1",
+                                             "scripts/metrics/Parse-CodexUsage.ps1",
+                                             "scripts/metrics/Parse-GeminiUsage.ps1",
+                                             "scripts/metrics/Track-Tokens.ps1",
+                                             "scripts/metrics/Update-LocalLLMMetric.ps1"
+                                         ],
+                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
+                  },
+                  {
+                      "area":  "root",
+                      "fileCount":  2,
+                      "symbolCount":  0,
+                      "candidateFiles":  [
+                                             "AGENTS.md",
+                                             "README.md"
+                                         ],
+                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
+                  },
+                  {
+                      "area":  "scan",
+                      "fileCount":  3,
+                      "symbolCount":  4,
+                      "candidateFiles":  [
+                                             "scripts/scan/Compare-ScanState.ps1",
+                                             "scripts/scan/Detect-ActiveWork.ps1",
+                                             "scripts/scan/Extract-Todos.ps1"
+                                         ],
+                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
+                  },
+                  {
+                      "area":  "schedule",
+                      "fileCount":  3,
+                      "symbolCount":  0,
+                      "candidateFiles":  [
+                                             "scripts/schedule/Create-TimeBlocks.ps1",
+                                             "scripts/schedule/Register-CodexScheduledJob.ps1",
+                                             "scripts/schedule/Sync-Calendar.ps1"
+                                         ],
+                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
+                  },
+                  {
+                      "area":  "util",
+                      "fileCount":  2,
+                      "symbolCount":  0,
+                      "candidateFiles":  [
+                                             "scripts/util/Extract-CodeBlock.ps1",
+                                             "scripts/util/read-agy-credential.ps1"
+                                         ],
+                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
+                  },
+                  {
+                      "area":  "vscode-extension",
+                      "fileCount":  2,
+                      "symbolCount":  0,
+                      "candidateFiles":  [
+                                             "vscode-extension/assets/codex-orchestrator-plugin/plugin.json",
+                                             "vscode-extension/assets/codex-orchestrator-plugin/skills/codex-orchestrator/references/ai_routing_policy.json"
+                                         ],
+                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
+                  },
+                  {
+                      "area":  "vscode-extension-src",
+                      "fileCount":  13,
+                      "symbolCount":  1202,
+                      "candidateFiles":  [
+                                             "vscode-extension/src/AgyQuotaClient.ts",
+                                             "vscode-extension/src/DashboardController.ts",
+                                             "vscode-extension/src/DashboardProvider.ts",
+                                             "vscode-extension/src/extension.ts",
+                                             "vscode-extension/src/installAntigravityPlugin.ts",
+                                             "vscode-extension/src/RunStore.ts",
+                                             "vscode-extension/src/storagePath.ts",
+                                             "vscode-extension/src/test/runTest.ts",
+                                             "vscode-extension/src/test/suite/index.ts",
+                                             "vscode-extension/src/test/suite/parser.test.ts",
+                                             "vscode-extension/src/TokenManager.ts",
+                                             "vscode-extension/src/types.ts",
+                                             "vscode-extension/src/WorkspacePaths.ts"
+                                         ],
+                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
+                  }
+              ]
+}

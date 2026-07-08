@@ -1,0 +1,107 @@
+﻿Detected dumb terminal, disabling fancy input and pretty output.
+
+Aider v0.86.2
+Model: ollama_chat/qwen2.5-coder:32b with diff edit format
+Git repo: .git with 125 files
+Repo-map: using 8192 tokens, auto refresh
+Added vscode-extension\src\DashboardController.ts to the chat.
+
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated POWER\AGENTS.md
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\scripts\dispatch\Invoke-AntigravityCliJob.ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\README.md
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\install\Install-Plugin.
+ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\plugin.json
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\SKILL.md
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\references\ai_routing_policy.json
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\references\debate.md
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\references\job.md
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\references\local-llm.md
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\references\local_llm_model_registry.csv
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\references\routing.md
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\references\workwindow.md
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\scripts\Ensure-CodexOrchestratorSetup.ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\scripts\Invoke-AiWorkWindow.ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\scripts\Invoke-CodexDebate.ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\scripts\Invoke-CodexJob.ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\scripts\Invoke-LocalLLM.ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\scripts\Invoke-vLLMJob.ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\scripts\Select-LocalLLMModel.ps1
+Has it been deleted from the file system but not from git?
+Repo-map can't include C:\Users\jsp0\Documents\Intergrated 
+POWER\vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrat
+or\scripts\Update-LocalLLMMetric.ps1
+Has it been deleted from the file system but not from git?
+vscode-extension\src\DashboardController.ts
+```typescript
+<<<<<<< SEARCH
+      const combinedSystemErrors = [
+        ...(this.state.systemErrors || []),
+        ...(resolvedTokenStatus?.errors || []),
+        ...backgroundJobErrors
+      ];
+=======
+      const combinedSystemErrors = Array.from(new Set([
+        ...(this.state.systemErrors || []),
+        ...(resolvedTokenStatus?.errors || []),
+        ...backgroundJobErrors
+      ]));
+>>>>>>> REPLACE
+```
+
+Tokens: 16k sent, 91 received.
+Applied edit to vscode-extension\src\DashboardController.ts
+

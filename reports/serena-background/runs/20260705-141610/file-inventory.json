@@ -1,0 +1,301 @@
+{
+    "totalFilesSeen":  325,
+    "policyCandidateCount":  48,
+    "includedCount":  48,
+    "omittedCount":  0,
+    "maxFiles":  120,
+    "omissionReason":  "",
+    "files":  [
+                  {
+                      "path":  "AGENTS.md",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".md"
+                  },
+                  {
+                      "path":  "README.md",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".md"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Export-PowerShellSymbols.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-AgenticLoop.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-AiderWorker.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-AiWorkWindow.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-CodexDebate.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-CodexJob.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-DelegatedAgentTask.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-LocalLLM.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-SerenaBackgroundJob.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Invoke-vLLMJob.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/New-ContextManifest.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Select-AgenticDelegationMode.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Select-AgenticValidator.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Select-LocalLLMModel.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/dispatch/Test-SerenaCapability.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/metrics/Count-GeminiInputTokens.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/metrics/Count-OpenAIInputTokens.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/metrics/Invoke-AntigravityUsageTool.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/metrics/Measure-AntigravityTranscript.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/metrics/Parse-CodexUsage.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/metrics/Parse-GeminiUsage.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/metrics/Track-Tokens.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/metrics/Update-LocalLLMMetric.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/scan/Compare-ScanState.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/scan/Detect-ActiveWork.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/scan/Extract-Todos.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/schedule/Create-TimeBlocks.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/schedule/Register-CodexScheduledJob.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/schedule/Sync-Calendar.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/util/Extract-CodeBlock.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "scripts/util/read-agy-credential.ps1",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ps1"
+                  },
+                  {
+                      "path":  "vscode-extension/assets/codex-orchestrator-plugin/plugin.json",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".json"
+                  },
+                  {
+                      "path":  "vscode-extension/assets/codex-orchestrator-plugin/skills/codex-orchestrator/references/ai_routing_policy.json",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".json"
+                  },
+                  {
+                      "path":  "vscode-extension/src/AgyQuotaClient.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/DashboardController.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/DashboardProvider.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/extension.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/installAntigravityPlugin.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/RunStore.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/storagePath.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/test/runTest.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/test/suite/index.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/test/suite/parser.test.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/TokenManager.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/types.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  },
+                  {
+                      "path":  "vscode-extension/src/WorkspacePaths.ts",
+                      "includedByPolicy":  true,
+                      "excludedByPolicy":  false,
+                      "extension":  ".ts"
+                  }
+              ],
+    "omittedFiles":  [
+
+                     ]
+}

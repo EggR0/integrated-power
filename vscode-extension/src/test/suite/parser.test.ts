@@ -72,9 +72,9 @@ suite('Parser and Store Test Suite', () => {
     const debateReferencePath = path.join(
       extensionRoot,
       'assets',
-      'codex-orchestrator-plugin',
+      'ai-delegation-plugin',
       'skills',
-      'codex-orchestrator',
+      'ai-delegation',
       'references',
       'debate.md',
     );

@@ -43,7 +43,8 @@ if (!$repoRoot) {
     $repoRoot = $PWD.Path
 }
 
-Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
+$scriptDir = Split-Path $MyInvocation.MyCommand.Path
+Import-Module (Join-Path $scriptDir "..\util\GlobalStorage.psm1") -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
 
 function Write-CsvRowWithRetry {
@@ -193,6 +194,24 @@ if (![string]::IsNullOrWhiteSpace($outputDir)) {
 $promptPath = Resolve-Path -LiteralPath $PromptFile
 $prompt = [string](Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath)
 
+$loopLedger = Join-Path $storagePath "reports\loop-ledger.csv"
+if (Test-Path -LiteralPath $loopLedger) {
+    try {
+        $ledgerRows = @(Import-Csv -LiteralPath $loopLedger)
+        $lastFailure = $ledgerRows |
+            Where-Object { $_.TaskTitle -eq $TaskTitle -and $_.Success -eq 'False' } |
+            Sort-Object { [datetime]$_.Timestamp } -Descending |
+            Select-Object -First 1
+
+        if ($lastFailure -and ![string]::IsNullOrWhiteSpace($lastFailure.ErrorMessage)) {
+            $SystemPrompt = "$SystemPrompt`n`nPrevious Attempt Failed: $($lastFailure.ErrorMessage)"
+        }
+    }
+    catch {
+        Write-Warning "Failed to read loop ledger for previous failure context: $($_.Exception.Message)"
+    }
+}
+
 # Ensure Ollama is running
 $ollamaUrl = "http://localhost:11434"
 $serverRunning = $false
@@ -238,6 +257,30 @@ if (-not $serverRunning -or $ForceRestart) {
 $startedAt = Get-Date
 $localMetricsFile = Join-Path $storagePath "reports\local_llm_metrics.csv"
 
+if (Test-Path -LiteralPath $loopLedger) {
+    try {
+        $cutoff = (Get-Date).AddMinutes(-5)
+        $recentTaskEntries = @(Import-Csv -LiteralPath $loopLedger |
+            Where-Object {
+                $_.TaskTitle -eq $TaskTitle -and
+                ![string]::IsNullOrWhiteSpace($_.Timestamp) -and
+                ([datetime]$_.Timestamp) -ge $cutoff
+            } |
+            Sort-Object { [datetime]$_.Timestamp } -Descending |
+            Select-Object -First 3)
+
+        if ($recentTaskEntries.Count -eq 3 -and @($recentTaskEntries | Where-Object { $_.Success -eq 'False' }).Count -eq 3) {
+            throw "BLOCKED_REPORT: Circuit Breaker Tripped - Too many failures"
+        }
+    }
+    catch {
+        if ($_.Exception.Message -like '*BLOCKED_REPORT:*') {
+            throw
+        }
+        Write-Warning "Failed to evaluate loop ledger circuit breaker: $($_.Exception.Message)"
+    }
+}
+
 Write-Host "Sending prompt to Local LLM ($Model)..."
 $bodyObject = [pscustomobject]@{
     model   = [string]$Model
@@ -270,6 +313,21 @@ try {
     if ($content) {
         $content | Out-File -FilePath $outputPath -Encoding UTF8
         Write-Host "Output saved to $outputPath"
+    }
+
+    if (Test-Path -LiteralPath $loopLedger) {
+        try {
+            $remainingLedgerRows = @(Import-Csv -LiteralPath $loopLedger | Where-Object { $_.TaskTitle -ne $TaskTitle })
+            if ($remainingLedgerRows.Count -gt 0) {
+                $remainingLedgerRows | Export-Csv -LiteralPath $loopLedger -NoTypeInformation
+            }
+            else {
+                Remove-Item -LiteralPath $loopLedger -ErrorAction SilentlyContinue
+            }
+        }
+        catch {
+            Write-Warning "Failed to clear loop ledger entries for successful task: $($_.Exception.Message)"
+        }
     }
 
     # Record Metrics
@@ -318,13 +376,29 @@ catch {
     $endedAt = Get-Date
     $elapsed = ($endedAt - $startedAt).TotalSeconds
     try {
+        $ledgerDir = Split-Path -Parent $loopLedger
+        if (![string]::IsNullOrWhiteSpace($ledgerDir)) {
+            New-Item -ItemType Directory -Force -Path $ledgerDir | Out-Null
+        }
+        [pscustomobject]@{
+            Timestamp    = (Get-Date).ToString('o')
+            TaskTitle    = [string]$TaskTitle
+            Success      = $false
+            ErrorMessage = [string]$_.Exception.Message
+        } | Export-Csv -LiteralPath $loopLedger -NoTypeInformation -Append
+    }
+    catch {
+        Write-Warning "Failed to append loop ledger failure entry: $($_.Exception.Message)"
+    }
+
+    try {
         Write-LocalLlmMetric -MetricsPath $localMetricsFile -ElapsedSeconds $elapsed -TotalTokens 0 -Content "" -Success $false -ErrorMessage ($_.Exception.Message)
     }
     catch {
         Write-Warning "Failed to record local LLM failure metric: $($_.Exception.Message)"
     }
     Write-Error "Local LLM inference failed: $_"
-    exit 1
+    throw "Local LLM inference failed: $_"
 }
 
 

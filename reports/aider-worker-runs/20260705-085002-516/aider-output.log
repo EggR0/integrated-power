@@ -1,0 +1,1247 @@
+﻿Detected dumb terminal, disabling fancy input and pretty output.
+
+Aider v0.86.2
+Model: ollama_chat/qwen2.5-coder:32b with diff edit format
+Git repo: .git with 125 files
+Repo-map: using 8192 tokens, auto refresh
+Added scripts\dispatch\Invoke-AntigravityCliJob.ps1 to the chat.
+Added scripts\dispatch\Invoke-AutonomousAgent.ps1 to the chat.
+Added scripts\dispatch\Select-AgenticDelegationMode.ps1 to the chat.
+Added 
+vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrator\SKI
+LL.md to the chat.
+
+scripts\dispatch\Invoke-AutonomousAgent.ps1
+```powershell
+<<<<<<< SEARCH
+param (
+    [Parameter(Mandatory=$true)]
+    [string]$Goal,
+
+    [string]$Workspace = ".",
+
+    [string]$Model = "qwen2.5-coder:32b",
+    
+    [int]$MaxSteps = 10,
+
+    [int]$NumCtx = 32768,
+
+    [int]$EstimatedChangedLinesPerTask = 80,
+
+    [switch]$PreferCloudTokenConservation,
+
+    [switch]$HighRisk,
+
+    [switch]$KeepArtifacts,
+
+    [ValidateSet("auto", "syntax", "syntax_and_command", "command_only", 
+"none")]
+    [string]$ValidatorProfile = "syntax",
+
+    [string]$ValidationCommand = "",
+
+    [int]$ValidationTimeoutSeconds = 120
+)
+
+
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Utility to call Local LLM for Planning
+function Get-TaskPlan {
+    param([string]$goal, [string]$workspace)
+    
+    $files = Get-ChildItem -Path $workspace -File -Recurse | Where-Object { 
+        $_.FullName -notmatch '\.git' -and $_.FullName -notmatch 'node_modules'
+-and $_.FullName -notmatch '\.system_generated' 
+    } | Select-Object -ExpandProperty FullName
+    
+    $fileList = $files -join "`n"
+    
+    $prompt = @"
+You are an Autonomous Agent Planner. 
+The user's high-level goal is: $goal
+
+Here are the available files in the workspace:
+$fileList
+
+Analyze the goal and break it down into a sequence of atomic file-edit tasks.
+Output EXACTLY a JSON array of objects. Do NOT wrap in markdown or backticks.
+Schema:
+[
+  { "Task": "Detailed description of what to change", "TargetFile": "absolute 
+or relative path" }
+]
+"@
+
+    $tmpPromptFile = Join-Path $env:TEMP 
+"planner_prompt_$([guid]::NewGuid()).md"
+    $tmpOutputFile = Join-Path $env:TEMP 
+"planner_output_$([guid]::NewGuid()).md"
+    $criticPromptFile = Join-Path $env:TEMP 
+"critic_prompt_$([guid]::NewGuid()).md"
+    $criticOutputFile = Join-Path $env:TEMP 
+"critic_output_$([guid]::NewGuid()).md"
+
+    $plannerPrompt = $prompt
+    $finalJson = ""
+
+    for ($turn = 1; $turn -le 2; $turn++) {
+        Set-Content -Path $tmpPromptFile -Value $plannerPrompt -Encoding UTF8
+        Write-Host "Calling Planner LLM ($Model) (Turn $turn)..." 
+-ForegroundColor Cyan
+        & "$scriptDir\Invoke-LocalLLM.ps1" -PromptFile $tmpPromptFile 
+-OutputFile $tmpOutputFile -TaskTitle "Planner" -Model $Model -SystemPrompt 
+"You are a JSON-only Planner. Output only raw JSON array." -NumCtx $NumCtx | 
+Out-Null
+        
+        $response = ""
+        if (Test-Path -LiteralPath $tmpOutputFile) {
+            $response = Get-Content -Path $tmpOutputFile -Raw -Encoding UTF8
+        }
+
+        # Phase 1: Critic Feedback Loop
+        Write-Host "Calling Critic LLM to evaluate the plan..." 
+-ForegroundColor Magenta
+        $criticPrompt = @"
+You are a strict Critic. The Planner has generated the following JSON task plan
+to achieve this goal:
+GOAL: $goal
+
+PLANNER JSON:
+$response
+
+Review the plan. Does it miss critical file dependencies? Are there redundant 
+steps?
+If the plan is good, output EXACTLY: [APPROVED]
+If the plan is bad, output your critique explaining why, followed by 
+[REJECTED].
+"@
+        Set-Content -Path $criticPromptFile -Value $criticPrompt -Encoding UTF8
+        & "$scriptDir\Invoke-LocalLLM.ps1" -PromptFile $criticPromptFile 
+-OutputFile $criticOutputFile -TaskTitle "Critic" -Model $Model -NumCtx $NumCtx
+| Out-Null
+        
+        $criticResponse = ""
+        if (Test-Path -LiteralPath $criticOutputFile) {
+            $criticResponse = Get-Content -Path $criticOutputFile -Raw 
+-Encoding UTF8
+        }
+        
+        if ($criticResponse -match '\[APPROVED\]') {
+            Write-Host "Critic approved the plan!" -ForegroundColor Green
+            $finalJson = $response
+            break
+        } else {
+            Write-Warning "Critic rejected the plan. Critique: $criticResponse"
+            $finalJson = $response # Save as fallback
+            $plannerPrompt = "$prompt`n`n=== PREVIOUS DRAFT 
+===`n$response`n`n=== CRITIQUE ===`n$criticResponse`nFix the JSON plan based on
+the critique."
+        }
+    }
+
+    Remove-Item -LiteralPath $tmpPromptFile, $tmpOutputFile, $criticPromptFile,
+$criticOutputFile -ErrorAction SilentlyContinue
+    
+    try {
+        # Strip markdown if LLM misbehaves
+        $json = $finalJson -replace '```json', '' -replace '```', ''
+        $tasks = $json | ConvertFrom-Json
+        return $tasks
+    } catch {
+        throw "Failed to parse Planner output as JSON. Output was: $finalJson"
+    }
+}
+
+Write-Host "========================================" -ForegroundColor Magenta
+Write-Host "Starting Autonomous Agentic Loop" -ForegroundColor Magenta
+Write-Host "Goal: $Goal" -ForegroundColor Magenta
+Write-Host "========================================" -ForegroundColor Magenta
+
+# 1. Plan
+$queue = Get-TaskPlan -goal $Goal -workspace $Workspace
+
+if ($null -eq $queue -or $queue.Count -eq 0) {
+    Write-Error "Planner returned an empty queue."
+    exit 1
+}
+
+Write-Host "Planner generated $($queue.Count) tasks:" -ForegroundColor Yellow
+$queue | Format-Table | Out-String | Write-Host
+
+# 2. Execution Loop
+$stepCount = 0
+$ledger = @()
+
+while ($queue.Count -gt 0) {
+    $task = $queue[0]
+    $queue = $queue | Select-Object -Skip 1
+    
+    $stepCount++
+    if ($stepCount -gt $MaxSteps) {
+        Write-Warning "Max steps ($MaxSteps) reached. Aborting autonomous 
+loop."
+        break
+    }
+    
+    Write-Host "----------------------------------------" -ForegroundColor Cyan
+    Write-Host "Executing Task [$stepCount]: $($task.Task)" -ForegroundColor 
+Cyan
+    Write-Host "Target File: $($task.TargetFile)" -ForegroundColor Cyan
+    
+    try {
+        # Invoke through the delegation bridge so every file-write task gets a
+        # recorded policy decision before it reaches the safe editor.
+        $delegateArgs = @{
+            Prompt                       = $task.Task
+            TargetFile                   = $task.TargetFile
+            Model                        = $Model
+            Files                        = @($task.TargetFile)
+            NumCtx                       = $NumCtx
+            EstimatedChangedLines        = $EstimatedChangedLinesPerTask
+            RequiresFileWrite            = $true
+            PreferCloudTokenConservation = 
+$PreferCloudTokenConservation.IsPresent
+            HighRisk                     = $HighRisk.IsPresent
+            KeepArtifacts                = $KeepArtifacts.IsPresent
+            ValidatorProfile             = $ValidatorProfile
+            ValidationCommand            = $ValidationCommand
+            ValidationTimeoutSeconds     = $ValidationTimeoutSeconds
+        }
+        & "$scriptDir\Invoke-DelegatedAgentTask.ps1" @delegateArgs
+        Write-Host "Task $stepCount SUCCESS" -ForegroundColor Green
+        
+        $ledger += [PSCustomObject]@{
+            Step = $stepCount
+            Task = $task.Task
+            TargetFile = $task.TargetFile
+            Status = "Success"
+        }
+    } catch {
+        Write-Error "Task $stepCount FAILED: $_"
+        $ledger += [PSCustomObject]@{
+            Step = $stepCount
+            Task = $task.Task
+            TargetFile = $task.TargetFile
+            Status = "Failed"
+            Error = $_.Exception.Message
+        }
+        
+        Write-Warning "Task failed. Triggering Dynamic Replanning..."
+        $replanningGoal = "$Goal`n`n[DYNAMIC REPLANNING] A previous task 
+failed: $($_.Exception.Message). Review the current workspace and generate a 
+new plan to achieve the goal."
+        $newQueue = Get-TaskPlan -goal $replanningGoal -workspace $Workspace
+        
+        if ($null -ne $newQueue -and $newQueue.Count -gt 0) {
+            $queue = $newQueue
+            Write-Host "Successfully replanned $($queue.Count) new tasks." 
+-ForegroundColor Yellow
+        } else {
+            Write-Warning "Dynamic Replanning failed to generate new tasks. 
+Halting."
+            break
+        }
+    }
+}
+
+Write-Host "========================================" -ForegroundColor Magenta
+Write-Host "Autonomous Loop Completed" -ForegroundColor Magenta
+Write-Host "========================================" -ForegroundColor Magenta
+
+Write-Host "Ledger Summary:" -ForegroundColor Yellow
+$ledger | Format-Table | Out-String | Write-Host
+=======
+>>>>>>> REPLACE
+```
+
+scripts\dispatch\Invoke-AntigravityCliJob.ps1
+```powershell
+<<<<<<< SEARCH
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PromptFile,
+
+    [string]$OutputFile = "",
+
+    [string]$Model = "Gemini 3.1 Pro (High)",
+
+    [int]$TimeoutSeconds = 1800,
+    [int]$PollSeconds = 15,
+    [int]$IdleTimeoutSeconds = 600
+)
+
+$ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
+$gitRoot = (& git rev-parse --show-toplevel 2>$null)
+if ($LASTEXITCODE -eq 0 -and ![string]::IsNullOrWhiteSpace($gitRoot)) {
+    $repoRoot = ($gitRoot | Select-Object -First 1).Trim()
+} else {
+    $repoRoot = (Get-Location).Path
+}
+Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") 
+-DisableNameChecking
+$storagePath = Get-GlobalStorage -RepoRoot $repoRoot
+
+$promptPath = Resolve-Path -LiteralPath $PromptFile
+$prompt = Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath
+
+if ([string]::IsNullOrWhiteSpace($OutputFile)) {
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $OutputFile = Join-Path $storagePath "reports\antigravity-$stamp.md"
+}
+
+$outputPath = if ([System.IO.Path]::IsPathRooted($OutputFile)) { $OutputFile } 
+else { Join-Path $repoRoot $OutputFile }
+$outputDir = Split-Path -Parent $outputPath
+if (![string]::IsNullOrWhiteSpace($outputDir)) { New-Item -ItemType Directory 
+-Force -Path $outputDir | Out-Null }
+
+$runId = [guid]::NewGuid().ToString()
+$runsJsonlPath = Join-Path $storagePath ".agent-runs\runs.jsonl"
+$runsJsonlDir = Split-Path -Parent $runsJsonlPath
+if (![string]::IsNullOrWhiteSpace($runsJsonlDir)) { New-Item -ItemType 
+Directory -Force -Path $runsJsonlDir | Out-Null }
+
+# Capture quota snapshot BEFORE
+$quotaBefore = 0
+try {
+    $npxExe = if ($IsWindows) { "npx.cmd" } else { "npx" }
+    $quotaJson = & $npxExe -y antigravity-usage quota --method local --json
+    $parsed = $quotaJson | ConvertFrom-Json
+    $quotaBefore = $parsed.models[0].remainingPercentage
+} catch { }
+
+function Write-RunEvent {
+    param([string]$Status, [int]$ExitCode = -1, [int]$ProcessId = -1, 
+[int]$Delta = 0)
+    $evt = @{
+        run_id = $runId
+        surface = "cli"
+        provider = "antigravity"
+        status = $Status
+        pid = $ProcessId
+        cwd = $repoRoot
+        prompt_file = $PromptFile
+        output_file = $OutputFile
+        model = $Model
+        timestamp = (Get-Date).ToString("o")
+        exit_code = $ExitCode
+        quota_delta_percentage = $Delta
+    }
+    ($evt | ConvertTo-Json -Compress) | Out-File -FilePath $runsJsonlPath 
+-Append -Encoding UTF8
+}
+
+$logPath = [System.IO.Path]::ChangeExtension($outputPath, ".log")
+
+function Quote-ProcessArgument {
+    param([Parameter(Mandatory = $true)][string]$Value)
+
+    if ($Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+$arguments = @(
+    "antigravity-cli",
+    "exec",
+    "--model", $Model,
+    "--output", $outputPath
+)
+
+$npxPath = (Get-Command npx -ErrorAction Ignore).Source
+if ([string]::IsNullOrWhiteSpace($npxPath)) {
+    $npxPath = if ($IsWindows) { "npx.cmd" } else { "npx" }
+}
+
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = "$env:LOCALAPPDATA\agy\bin\agy.exe"
+$psi.Arguments = (($arguments | ForEach-Object { Quote-ProcessArgument 
+([string]$_) }) -join ' ')
+$psi.RedirectStandardInput = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+$psi.WorkingDirectory = $repoRoot
+
+$process = New-Object System.Diagnostics.Process
+$process.StartInfo = $psi
+
+$global:LastActivityTime = Get-Date
+$global:AgyCapturedLines = New-Object System.Collections.Generic.List[string]
+
+$action = {
+    $e = $Event.SourceEventArgs
+    if (![string]::IsNullOrEmpty($e.Data)) {
+        [Console]::Out.WriteLine($e.Data)
+        $global:AgyCapturedLines.Add([string]$e.Data)
+        $e.Data | Out-File -FilePath $logPath -Append -Encoding UTF8
+        $global:LastActivityTime = Get-Date
+    }
+}
+
+$outEvent = Register-ObjectEvent -InputObject $process -EventName 
+OutputDataReceived -Action $action
+$errEvent = Register-ObjectEvent -InputObject $process -EventName 
+ErrorDataReceived -Action $action
+
+$process.Start() | Out-Null
+$process.BeginOutputReadLine()
+$process.BeginErrorReadLine()
+
+Write-RunEvent -Status "started" -ProcessId $process.Id
+
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$promptBytes = $Utf8NoBom.GetBytes($prompt)
+$process.StandardInput.BaseStream.Write($promptBytes, 0, $promptBytes.Length)
+$process.StandardInput.Close()
+
+$startTime = Get-Date
+$status = "running"
+
+while (!$process.HasExited) {
+    Start-Sleep -Seconds $PollSeconds
+    Write-RunEvent -Status "heartbeat" -ProcessId $process.Id
+    
+    $now = Get-Date
+    if (($now - $startTime).TotalSeconds -ge $TimeoutSeconds) {
+        $status = "timeout"
+        break
+    }
+    
+    if (($now - $global:LastActivityTime).TotalSeconds -ge $IdleTimeoutSeconds)
+{
+        $status = "aborted"
+        break
+    }
+}
+
+if (!$process.HasExited) {
+    try { $process.Kill() } catch { }
+} else {
+    $status = if ($process.ExitCode -eq 0) { "completed" } else { "failed" }
+}
+
+if ($status -eq "completed" -and !(Test-Path -LiteralPath $outputPath) -and 
+(Test-Path -LiteralPath $logPath)) {
+    Copy-Item -LiteralPath $logPath -Destination $outputPath -Force
+}
+if ($status -eq "completed" -and !(Test-Path -LiteralPath $outputPath) -and 
+$global:AgyCapturedLines.Count -gt 0) {
+    $global:AgyCapturedLines | Out-File -FilePath $outputPath -Encoding UTF8
+}
+
+$quotaAfter = 0
+try {
+    $npxExe = if ($IsWindows) { "npx.cmd" } else { "npx" }
+    $quotaJson = & $npxExe -y antigravity-usage quota --method local --json
+    $parsed = $quotaJson | ConvertFrom-Json
+    $quotaAfter = $parsed.models[0].remainingPercentage
+} catch { }
+
+$delta = 0
+if ($quotaBefore -gt 0 -and $quotaAfter -gt 0) {
+    $delta = $quotaBefore - $quotaAfter
+}
+
+Write-RunEvent -Status $status -ProcessId $process.Id -ExitCode 
+$process.ExitCode -Delta $delta
+
+if ($status -ne "completed") {
+    exit 1
+}
+=======
+>>>>>>> REPLACE
+```
+
+scripts\dispatch\Select-AgenticDelegationMode.ps1
+```powershell
+<<<<<<< SEARCH
+elseif ($RequiresIndependentAudit -and $TaskKind -in @("review", "planning", 
+"design")) {
+    $mode = "AntigravityHigh"
+    $reason = "Independent cloud-model opinion is more valuable than local 
+patch execution for this task."
+}
+=======
+>>>>>>> REPLACE
+```
+
+vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrator\SKI
+LL.md
+```markdown
+<<<<<<< SEARCH
+4. **Local LLM Mode (`scripts/Select-LocalLLMModel.ps1`, then 
+`scripts/Invoke-LocalLLM.ps1` or `scripts/Invoke-vLLMJob.ps1`)**:
+   - **Trigger**: Summarization, preprocessing, extraction, local draft 
+generation, broad context compression, or explicit local LLM/vLLM requests.
+   - **Action**: Selects the best local model for the task using registry 
+priors plus measured success/time metrics, then sends the prompt to Ollama or 
+an OpenAI-compatible local endpoint.
+   - **Contract**: Read `references/local-llm.md`.
+
+5. **Local Autonomous Loop (`scripts/Invoke-AutonomousAgent.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+=======
+4. **Local LLM Mode (`scripts/Select-LocalLLMModel.ps1`, then 
+`scripts/Invoke-LocalLLM.ps1` or `scripts/Invoke-vLLMJob.ps1`)**:
+   - **Trigger**: Summarization, preprocessing, extraction, local draft 
+generation, broad context compression, or explicit local LLM/vLLM requests.
+   - **Action**: Selects the best local model for the task using registry 
+priors plus measured success/time metrics, then sends the prompt to Ollama or 
+an OpenAI-compatible local endpoint.
+   - **Contract**: Read `references/local-llm.md`.
+
+5. **Local Autonomous Loop 
+(`scripts/dispatch/Invoke-DelegatedAgentTask.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+>>>>>>> REPLACE
+```
+
+```bash
+del scripts\dispatch\Invoke-AutonomousAgent.ps1
+del scripts\dispatch\Invoke-AntigravityCliJob.ps1
+```
+
+Tokens: 18k sent, 4.4k received.
+The LLM did not conform to the edit format.
+https://aider.chat/docs/troubleshooting/edit-errors.html
+
+# 3 SEARCH/REPLACE blocks failed to match!
+
+## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines 
+in scripts\dispatch\Invoke-AutonomousAgent.ps1
+<<<<<<< SEARCH
+param (
+    [Parameter(Mandatory=$true)]
+    [string]$Goal,
+
+    [string]$Workspace = ".",
+
+    [string]$Model = "qwen2.5-coder:32b",
+    
+    [int]$MaxSteps = 10,
+
+    [int]$NumCtx = 32768,
+
+    [int]$EstimatedChangedLinesPerTask = 80,
+
+    [switch]$PreferCloudTokenConservation,
+
+    [switch]$HighRisk,
+
+    [switch]$KeepArtifacts,
+
+    [ValidateSet("auto", "syntax", "syntax_and_command", "command_only", 
+"none")]
+    [string]$ValidatorProfile = "syntax",
+
+    [string]$ValidationCommand = "",
+
+    [int]$ValidationTimeoutSeconds = 120
+)
+
+
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Utility to call Local LLM for Planning
+function Get-TaskPlan {
+    param([string]$goal, [string]$workspace)
+    
+    $files = Get-ChildItem -Path $workspace -File -Recurse | Where-Object { 
+        $_.FullName -notmatch '\.git' -and $_.FullName -notmatch 'node_modules'
+-and $_.FullName -notmatch '\.system_generated' 
+    } | Select-Object -ExpandProperty FullName
+    
+    $fileList = $files -join "`n"
+    
+    $prompt = @"
+You are an Autonomous Agent Planner. 
+The user's high-level goal is: $goal
+
+Here are the available files in the workspace:
+$fileList
+
+Analyze the goal and break it down into a sequence of atomic file-edit tasks.
+Output EXACTLY a JSON array of objects. Do NOT wrap in markdown or backticks.
+Schema:
+[
+  { "Task": "Detailed description of what to change", "TargetFile": "absolute 
+or relative path" }
+]
+"@
+
+    $tmpPromptFile = Join-Path $env:TEMP 
+"planner_prompt_$([guid]::NewGuid()).md"
+    $tmpOutputFile = Join-Path $env:TEMP 
+"planner_output_$([guid]::NewGuid()).md"
+    $criticPromptFile = Join-Path $env:TEMP 
+"critic_prompt_$([guid]::NewGuid()).md"
+    $criticOutputFile = Join-Path $env:TEMP 
+"critic_output_$([guid]::NewGuid()).md"
+
+    $plannerPrompt = $prompt
+    $finalJson = ""
+
+    for ($turn = 1; $turn -le 2; $turn++) {
+        Set-Content -Path $tmpPromptFile -Value $plannerPrompt -Encoding UTF8
+        Write-Host "Calling Planner LLM ($Model) (Turn $turn)..." 
+-ForegroundColor Cyan
+        & "$scriptDir\Invoke-LocalLLM.ps1" -PromptFile $tmpPromptFile 
+-OutputFile $tmpOutputFile -TaskTitle "Planner" -Model $Model -SystemPrompt 
+"You are a JSON-only Planner. Output only raw JSON array." -NumCtx $NumCtx | 
+Out-Null
+        
+        $response = ""
+        if (Test-Path -LiteralPath $tmpOutputFile) {
+            $response = Get-Content -Path $tmpOutputFile -Raw -Encoding UTF8
+        }
+
+        # Phase 1: Critic Feedback Loop
+        Write-Host "Calling Critic LLM to evaluate the plan..." 
+-ForegroundColor Magenta
+        $criticPrompt = @"
+You are a strict Critic. The Planner has generated the following JSON task plan
+to achieve this goal:
+GOAL: $goal
+
+PLANNER JSON:
+$response
+
+Review the plan. Does it miss critical file dependencies? Are there redundant 
+steps?
+If the plan is good, output EXACTLY: [APPROVED]
+If the plan is bad, output your critique explaining why, followed by 
+[REJECTED].
+"@
+        Set-Content -Path $criticPromptFile -Value $criticPrompt -Encoding UTF8
+        & "$scriptDir\Invoke-LocalLLM.ps1" -PromptFile $criticPromptFile 
+-OutputFile $criticOutputFile -TaskTitle "Critic" -Model $Model -NumCtx $NumCtx
+| Out-Null
+        
+        $criticResponse = ""
+        if (Test-Path -LiteralPath $criticOutputFile) {
+            $criticResponse = Get-Content -Path $criticOutputFile -Raw 
+-Encoding UTF8
+        }
+        
+        if ($criticResponse -match '\[APPROVED\]') {
+            Write-Host "Critic approved the plan!" -ForegroundColor Green
+            $finalJson = $response
+            break
+        } else {
+            Write-Warning "Critic rejected the plan. Critique: $criticResponse"
+            $finalJson = $response # Save as fallback
+            $plannerPrompt = "$prompt`n`n=== PREVIOUS DRAFT 
+===`n$response`n`n=== CRITIQUE ===`n$criticResponse`nFix the JSON plan based on
+the critique."
+        }
+    }
+
+    Remove-Item -LiteralPath $tmpPromptFile, $tmpOutputFile, $criticPromptFile,
+$criticOutputFile -ErrorAction SilentlyContinue
+    
+    try {
+        # Strip markdown if LLM misbehaves
+        $json = $finalJson -replace '```json', '' -replace '```', ''
+        $tasks = $json | ConvertFrom-Json
+        return $tasks
+    } catch {
+        throw "Failed to parse Planner output as JSON. Output was: $finalJson"
+    }
+}
+
+Write-Host "========================================" -ForegroundColor Magenta
+Write-Host "Starting Autonomous Agentic Loop" -ForegroundColor Magenta
+Write-Host "Goal: $Goal" -ForegroundColor Magenta
+Write-Host "========================================" -ForegroundColor Magenta
+
+# 1. Plan
+$queue = Get-TaskPlan -goal $Goal -workspace $Workspace
+
+if ($null -eq $queue -or $queue.Count -eq 0) {
+    Write-Error "Planner returned an empty queue."
+    exit 1
+}
+
+Write-Host "Planner generated $($queue.Count) tasks:" -ForegroundColor Yellow
+$queue | Format-Table | Out-String | Write-Host
+
+# 2. Execution Loop
+$stepCount = 0
+$ledger = @()
+
+while ($queue.Count -gt 0) {
+    $task = $queue[0]
+    $queue = $queue | Select-Object -Skip 1
+    
+    $stepCount++
+    if ($stepCount -gt $MaxSteps) {
+        Write-Warning "Max steps ($MaxSteps) reached. Aborting autonomous 
+loop."
+        break
+    }
+    
+    Write-Host "----------------------------------------" -ForegroundColor Cyan
+    Write-Host "Executing Task [$stepCount]: $($task.Task)" -ForegroundColor 
+Cyan
+    Write-Host "Target File: $($task.TargetFile)" -ForegroundColor Cyan
+    
+    try {
+        # Invoke through the delegation bridge so every file-write task gets a
+        # recorded policy decision before it reaches the safe editor.
+        $delegateArgs = @{
+            Prompt                       = $task.Task
+            TargetFile                   = $task.TargetFile
+            Model                        = $Model
+            Files                        = @($task.TargetFile)
+            NumCtx                       = $NumCtx
+            EstimatedChangedLines        = $EstimatedChangedLinesPerTask
+            RequiresFileWrite            = $true
+            PreferCloudTokenConservation = 
+$PreferCloudTokenConservation.IsPresent
+            HighRisk                     = $HighRisk.IsPresent
+            KeepArtifacts                = $KeepArtifacts.IsPresent
+            ValidatorProfile             = $ValidatorProfile
+            ValidationCommand            = $ValidationCommand
+            ValidationTimeoutSeconds     = $ValidationTimeoutSeconds
+        }
+        & "$scriptDir\Invoke-DelegatedAgentTask.ps1" @delegateArgs
+        Write-Host "Task $stepCount SUCCESS" -ForegroundColor Green
+        
+        $ledger += [PSCustomObject]@{
+            Step = $stepCount
+            Task = $task.Task
+            TargetFile = $task.TargetFile
+            Status = "Success"
+        }
+    } catch {
+        Write-Error "Task $stepCount FAILED: $_"
+        $ledger += [PSCustomObject]@{
+            Step = $stepCount
+            Task = $task.Task
+            TargetFile = $task.TargetFile
+            Status = "Failed"
+            Error = $_.Exception.Message
+        }
+        
+        Write-Warning "Task failed. Triggering Dynamic Replanning..."
+        $replanningGoal = "$Goal`n`n[DYNAMIC REPLANNING] A previous task 
+failed: $($_.Exception.Message). Review the current workspace and generate a 
+new plan to achieve the goal."
+        $newQueue = Get-TaskPlan -goal $replanningGoal -workspace $Workspace
+        
+        if ($null -ne $newQueue -and $newQueue.Count -gt 0) {
+            $queue = $newQueue
+            Write-Host "Successfully replanned $($queue.Count) new tasks." 
+-ForegroundColor Yellow
+        } else {
+            Write-Warning "Dynamic Replanning failed to generate new tasks. 
+Halting."
+            break
+        }
+    }
+}
+
+Write-Host "========================================" -ForegroundColor Magenta
+Write-Host "Autonomous Loop Completed" -ForegroundColor Magenta
+Write-Host "========================================" -ForegroundColor Magenta
+
+Write-Host "Ledger Summary:" -ForegroundColor Yellow
+$ledger | Format-Table | Out-String | Write-Host
+=======
+>>>>>>> REPLACE
+
+Did you mean to match some of these actual lines from 
+scripts\dispatch\Invoke-AutonomousAgent.ps1?
+
+```
+param (
+    [Parameter(Mandatory=$true)]
+    [string]$Goal,
+
+    [string]$Workspace = ".",
+
+    [string]$Model = "qwen2.5-coder:32b",
+    
+    [int]$MaxSteps = 10,
+
+    [int]$NumCtx = 32768,
+
+    [int]$EstimatedChangedLinesPerTask = 80,
+
+    [switch]$PreferCloudTokenConservation,
+
+    [switch]$HighRisk,
+
+    [switch]$KeepArtifacts,
+
+    [ValidateSet("auto", "syntax", "syntax_and_command", "command_only", 
+"none")]
+    [string]$ValidatorProfile = "syntax",
+
+    [string]$ValidationCommand = "",
+
+    [int]$ValidationTimeoutSeconds = 120
+)
+
+
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Utility to call Local LLM for Planning
+function Get-TaskPlan {
+    param([string]$goal, [string]$workspace)
+    
+    $files = Get-ChildItem -Path $workspace -File -Recurse | Where-Object { 
+        $_.FullName -notmatch '\.git' -and $_.FullName -notmatch 'node_modules'
+-and $_.FullName -notmatch '\.system_generated' 
+    } | Select-Object -ExpandProperty FullName
+    
+    $fileList = $files -join "`n"
+    
+    $prompt = @"
+You are an Autonomous Agent Planner. 
+The user's high-level goal is: $goal
+
+Here are the available files in the workspace:
+$fileList
+
+Analyze the goal and break it down into a sequence of atomic file-edit tasks.
+Output EXACTLY a JSON array of objects. Do NOT wrap in markdown or backticks.
+Schema:
+[
+  { "Task": "Detailed description of what to change", "TargetFile": "absolute 
+or relative path" }
+]
+"@
+
+    $tmpPromptFile = Join-Path $env:TEMP 
+"planner_prompt_$([guid]::NewGuid()).md"
+    $tmpOutputFile = Join-Path $env:TEMP 
+"planner_output_$([guid]::NewGuid()).md"
+    $criticPromptFile = Join-Path $env:TEMP 
+"critic_prompt_$([guid]::NewGuid()).md"
+    $criticOutputFile = Join-Path $env:TEMP 
+"critic_output_$([guid]::NewGuid()).md"
+
+    $plannerPrompt = $prompt
+    $finalJson = ""
+
+    for ($turn = 1; $turn -le 2; $turn++) {
+        Set-Content -Path $tmpPromptFile -Value $plannerPrompt -Encoding UTF8
+        Write-Host "Calling Planner LLM ($Model) (Turn $turn)..." 
+-ForegroundColor Cyan
+        & "$scriptDir\Invoke-LocalLLM.ps1" -PromptFile $tmpPromptFile 
+-OutputFile $tmpOutputFile -TaskTitle "Planner" -Model $Model -SystemPrompt 
+"You are a JSON-only Planner. Output only raw JSON array." -NumCtx $NumCtx | 
+Out-Null
+        
+        $response = ""
+        if (Test-Path -LiteralPath $tmpOutputFile) {
+            $response = Get-Content -Path $tmpOutputFile -Raw -Encoding UTF8
+        }
+
+        # Phase 1: Critic Feedback Loop
+        Write-Host "Calling Critic LLM to evaluate the plan..." 
+-ForegroundColor Magenta
+        $criticPrompt = @"
+You are a strict Critic. The Planner has generated the following JSON task plan
+to achieve this goal:
+GOAL: $goal
+
+PLANNER JSON:
+$response
+
+Review the plan. Does it miss critical file dependencies? Are there redundant 
+steps?
+If the plan is good, output EXACTLY: [APPROVED]
+If the plan is bad, output your critique explaining why, followed by 
+[REJECTED].
+"@
+        Set-Content -Path $criticPromptFile -Value $criticPrompt -Encoding UTF8
+        & "$scriptDir\Invoke-LocalLLM.ps1" -PromptFile $criticPromptFile 
+-OutputFile $criticOutputFile -TaskTitle "Critic" -Model $Model -NumCtx $NumCtx
+| Out-Null
+        
+        $criticResponse = ""
+        if (Test-Path -LiteralPath $criticOutputFile) {
+            $criticResponse = Get-Content -Path $criticOutputFile -Raw 
+-Encoding UTF8
+        }
+        
+        if ($criticResponse -match '\[APPROVED\]') {
+            Write-Host "Critic approved the plan!" -ForegroundColor Green
+            $finalJson = $response
+            break
+        } else {
+            Write-Warning "Critic rejected the plan. Critique: $criticResponse"
+            $finalJson = $response # Save as fallback
+            $plannerPrompt = "$prompt`n`n=== PREVIOUS DRAFT 
+===`n$response`n`n=== CRITIQUE ===`n$criticResponse`nFix the JSON plan based on
+the critique."
+        }
+    }
+
+    Remove-Item -LiteralPath $tmpPromptFile, $tmpOutputFile, $criticPromptFile,
+$criticOutputFile -ErrorAction SilentlyContinue
+    
+    try {
+        # Strip markdown if LLM misbehaves
+        $json = $finalJson -replace '```json', '' -replace '```', ''
+        $tasks = $json | ConvertFrom-Json
+        return $tasks
+    } catch {
+        throw "Failed to parse Planner output as JSON. Output was: $finalJson"
+    }
+}
+
+Write-Host "========================================" -ForegroundColor Magenta
+Write-Host "Starting Autonomous Agentic Loop" -ForegroundColor Magenta
+Write-Host "Goal: $Goal" -ForegroundColor Magenta
+Write-Host "========================================" -ForegroundColor Magenta
+
+# 1. Plan
+$queue = Get-TaskPlan -goal $Goal -workspace $Workspace
+
+if ($null -eq $queue -or $queue.Count -eq 0) {
+    Write-Error "Planner returned an empty queue."
+    exit 1
+}
+
+Write-Host "Planner generated $($queue.Count) tasks:" -ForegroundColor Yellow
+$queue | Format-Table | Out-String | Write-Host
+
+# 2. Execution Loop
+$stepCount = 0
+$ledger = @()
+
+while ($queue.Count -gt 0) {
+    $task = $queue[0]
+    $queue = $queue | Select-Object -Skip 1
+    
+    $stepCount++
+    if ($stepCount -gt $MaxSteps) {
+        Write-Warning "Max steps ($MaxSteps) reached. Aborting autonomous 
+loop."
+        break
+    }
+    
+    Write-Host "----------------------------------------" -ForegroundColor Cyan
+    Write-Host "Executing Task [$stepCount]: $($task.Task)" -ForegroundColor 
+Cyan
+    Write-Host "Target File: $($task.TargetFile)" -ForegroundColor Cyan
+    
+    try {
+        # Invoke through the delegation bridge so every file-write task gets a
+        # recorded policy decision before it reaches the safe editor.
+        $delegateArgs = @{
+            Prompt                       = $task.Task
+            TargetFile                   = $task.TargetFile
+            Model                        = $Model
+            Files                        = @($task.TargetFile)
+            NumCtx                       = $NumCtx
+            EstimatedChangedLines        = $EstimatedChangedLinesPerTask
+            RequiresFileWrite            = $true
+            PreferCloudTokenConservation = 
+$PreferCloudTokenConservation.IsPresent
+            HighRisk                     = $HighRisk.IsPresent
+            KeepArtifacts                = $KeepArtifacts.IsPresent
+            ValidatorProfile             = $ValidatorProfile
+            ValidationCommand            = $ValidationCommand
+            ValidationTimeoutSeconds     = $ValidationTimeoutSeconds
+        }
+        & "$scriptDir\Invoke-DelegatedAgentTask.ps1" @delegateArgs
+        Write-Host "Task $stepCount SUCCESS" -ForegroundColor Green
+        
+        $ledger += [PSCustomObject]@{
+            Step = $stepCount
+            Task = $task.Task
+            TargetFile = $task.TargetFile
+            Status = "Success"
+        }
+    } catch {
+        Write-Error "Task $stepCount FAILED: $_"
+        $ledger += [PSCustomObject]@{
+            Step = $stepCount
+            Task = $task.Task
+            TargetFile = $task.TargetFile
+            Status = "Failed"
+            Error = $_.Exception.Message
+        }
+        
+        Write-Warning "Task failed. Triggering Dynamic Replanning..."
+        $replanningGoal = "$Goal`n`n[DYNAMIC REPLANNING] A previous task 
+failed: $($_.Exception.Message). Review the current workspace and generate a 
+new plan to achieve the goal."
+        $newQueue = Get-TaskPlan -goal $replanningGoal -workspace $Workspace
+        
+        if ($null -ne $newQueue -and $newQueue.Count -gt 0) {
+            $queue = $newQueue
+            Write-Host "Successfully replanned $($queue.Count) new tasks." 
+-ForegroundColor Yellow
+        } else {
+            Write-Warning "Dynamic Replanning failed to generate new tasks. 
+Halting."
+            break
+        }
+    }
+}
+
+Write-Host "========================================" -ForegroundColor Magenta
+Write-Host "Autonomous Loop Completed" -ForegroundColor Magenta
+Write-Host "========================================" -ForegroundColor Magenta
+
+Write-Host "Ledger Summary:" -ForegroundColor Yellow
+$ledger | Format-Table | Out-String | Write-Host
+```
+
+
+## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines 
+in scripts\dispatch\Select-AgenticDelegationMode.ps1
+<<<<<<< SEARCH
+elseif ($RequiresIndependentAudit -and $TaskKind -in @("review", "planning", 
+"design")) {
+    $mode = "AntigravityHigh"
+    $reason = "Independent cloud-model opinion is more valuable than local 
+patch execution for this task."
+}
+=======
+>>>>>>> REPLACE
+
+Did you mean to match some of these actual lines from 
+scripts\dispatch\Select-AgenticDelegationMode.ps1?
+
+```
+$enableBreaker = $false
+$recommendedWorkerBackend = "AgenticLoop"
+$workerBackendReason = "Default safe editor backend."
+$taskScale = if ($EstimatedContextTokens -gt 16384 -or $EstimatedChangedLines 
+-gt 140) { "Large" } elseif ($EstimatedChangedLines -gt 40) { "Medium" } else {
+"Small" }
+
+if ($RequiresIndependentAudit -and $TaskKind -in @("review", "planning", 
+"design")) {
+    $mode = "AntigravityHigh"
+    $reason = "Independent cloud-model opinion is more valuable than local 
+patch execution for this task."
+}
+elseif (!$RequiresFileWrite -and $TaskKind -in @("planning", "design", "docs", 
+"test_generation")) {
+    $mode = "LocalDirect"
+    $reason = "Generate an artifact or candidate content locally; Codex/Gemini 
+only reviews or applies the result."
+}
+elseif ($RequiresFileWrite -and ($HighRisk -or $changeSize -ne "Low" -or 
+$fileCount -gt 1)) {
+```
+
+
+## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines 
+in 
+vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrator\SKI
+LL.md
+<<<<<<< SEARCH
+4. **Local LLM Mode (`scripts/Select-LocalLLMModel.ps1`, then 
+`scripts/Invoke-LocalLLM.ps1` or `scripts/Invoke-vLLMJob.ps1`)**:
+   - **Trigger**: Summarization, preprocessing, extraction, local draft 
+generation, broad context compression, or explicit local LLM/vLLM requests.
+   - **Action**: Selects the best local model for the task using registry 
+priors plus measured success/time metrics, then sends the prompt to Ollama or 
+an OpenAI-compatible local endpoint.
+   - **Contract**: Read `references/local-llm.md`.
+
+5. **Local Autonomous Loop (`scripts/Invoke-AutonomousAgent.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+=======
+4. **Local LLM Mode (`scripts/Select-LocalLLMModel.ps1`, then 
+`scripts/Invoke-LocalLLM.ps1` or `scripts/Invoke-vLLMJob.ps1`)**:
+   - **Trigger**: Summarization, preprocessing, extraction, local draft 
+generation, broad context compression, or explicit local LLM/vLLM requests.
+   - **Action**: Selects the best local model for the task using registry 
+priors plus measured success/time metrics, then sends the prompt to Ollama or 
+an OpenAI-compatible local endpoint.
+   - **Contract**: Read `references/local-llm.md`.
+
+5. **Local Autonomous Loop 
+(`scripts/dispatch/Invoke-DelegatedAgentTask.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+>>>>>>> REPLACE
+
+The SEARCH section must exactly match an existing block of lines including all 
+white space, comments, indentation, docstrings, etc
+
+# The other 1 SEARCH/REPLACE block were applied successfully.
+Don't re-send them.
+Just reply with fixed versions of the blocks above that failed to match.
+
+scripts\dispatch\Select-AgenticDelegationMode.ps1
+```powershell
+<<<<<<< SEARCH
+if ($RequiresIndependentAudit -and $TaskKind -in @("review", "planning", 
+"design")) {
+    $mode = "AntigravityHigh"
+    $reason = "Independent cloud-model opinion is more valuable than local 
+patch execution for this task."
+}
+=======
+>>>>>>> REPLACE
+```
+
+vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrator\SKI
+LL.md
+```markdown
+<<<<<<< SEARCH
+5. **Local Autonomous Loop (`scripts/Invoke-AutonomousAgent.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+=======
+5. **Local Autonomous Loop 
+(`scripts/dispatch/Invoke-DelegatedAgentTask.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+>>>>>>> REPLACE
+```
+
+```bash
+del scripts\dispatch\Invoke-AutonomousAgent.ps1
+del scripts\dispatch\Invoke-AntigravityCliJob.ps1
+```
+
+Tokens: 25k sent, 334 received.
+The LLM did not conform to the edit format.
+https://aider.chat/docs/troubleshooting/edit-errors.html
+
+# 1 SEARCH/REPLACE block failed to match!
+
+## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines 
+in 
+vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrator\SKI
+LL.md
+<<<<<<< SEARCH
+5. **Local Autonomous Loop (`scripts/Invoke-AutonomousAgent.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+=======
+5. **Local Autonomous Loop 
+(`scripts/dispatch/Invoke-DelegatedAgentTask.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+>>>>>>> REPLACE
+
+Did you mean to match some of these actual lines from 
+vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrator\SKI
+LL.md?
+
+```
+2. **Job Mode (`scripts/Invoke-CodexJob.ps1`)**:
+   - **Trigger**: Bounded implementation, massive refactoring, automated test 
+generation, or tasks that need to overwrite/create files directly without an 
+ongoing conversation.
+   - **Action**: Executes the prompt and saves the result directly, skipping 
+human chat loops.
+   - **Contract**: Read `references/job.md`.
+
+3. **WorkWindow Mode (`scripts/Invoke-AiWorkWindow.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+
+4. **Local LLM Mode (`scripts/Select-LocalLLMModel.ps1`, then 
+`scripts/Invoke-LocalLLM.ps1` or `scripts/Invoke-vLLMJob.ps1`)**:
+   - **Trigger**: Summarization, preprocessing, extraction, local draft 
+generation, broad context compression, or explicit local LLM/vLLM requests.
+   - **Action**: Selects the best local model for the task using registry 
+priors plus measured success/time metrics, then sends the prompt to Ollama or 
+an OpenAI-compatible local endpoint.
+   - **Contract**: Read `references/local-llm.md`.
+```
+
+The SEARCH section must exactly match an existing block of lines including all 
+white space, comments, indentation, docstrings, etc
+
+# The other 1 SEARCH/REPLACE block were applied successfully.
+Don't re-send them.
+Just reply with fixed versions of the block above that failed to match.
+
+vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrator\SKI
+LL.md
+```markdown
+<<<<<<< SEARCH
+3. **WorkWindow Mode (`scripts/Invoke-AiWorkWindow.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+=======
+5. **Local Autonomous Loop 
+(`scripts/dispatch/Invoke-DelegatedAgentTask.ps1`)**:
+   - **Trigger**: Longer supervised coding sessions, processing the 
+`ai-work-queue.md`, iterative execution across multiple tasks, or high-level 
+context coordination.
+   - **Action**: Aggregates the local queue, calendar, and context into a 
+single mega-prompt for Codex.
+   - **Contract**: Read `references/workwindow.md`.
+>>>>>>> REPLACE
+```
+
+Tokens: 26k sent, 219 received.
+Applied edit to 
+vscode-extension\assets\codex-orchestrator-plugin\skills\codex-orchestrator\SKI
+LL.md
+
+del scripts\dispatch\Invoke-AutonomousAgent.ps1  
+del scripts\dispatch\Invoke-AntigravityCliJob.ps1
+Summarization failed for model ollama_chat/qwen2.5-coder:32b: cannot schedule new futures after shutdown
+Summarization failed for model ollama_chat/qwen2.5-coder:32b: cannot schedule new futures after shutdown
+summarizer unexpectedly failed for all models
+

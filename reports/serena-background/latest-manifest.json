@@ -1,0 +1,31 @@
+{
+    "generatedAt":  "2026-07-05T05:18:23.8211598Z",
+    "runId":  "20260705-141624",
+    "repoRoot":  "C:\\Users\\jsp0\\Documents\\Intergrated POWER",
+    "status":  "success",
+    "artifacts":  {
+                      "capability":  "reports\\serena-background\\capability.json",
+                      "runDir":  "reports\\serena-background\\runs\\20260705-141624",
+                      "inventory":  "reports\\serena-background\\runs\\20260705-141624\\file-inventory.json",
+                      "serenaSymbols":  "reports\\serena-background\\runs\\20260705-141624\\serena-symbols.json",
+                      "powerShellSymbols":  "reports\\serena-background\\runs\\20260705-141624\\powershell-symbols.json",
+                      "staticSymbols":  "reports\\serena-background\\runs\\20260705-141624\\static-symbols.json",
+                      "healthSummary":  "reports\\serena-background\\runs\\20260705-141624\\serena-health-summary.json",
+                      "repoMap":  "reports\\serena-background\\repo-map.md",
+                      "routingHints":  "reports\\serena-background\\routing-hints.json",
+                      "localLlmPrompt":  "reports\\serena-background\\runs\\20260705-141624\\local-llm-prompt.md",
+                      "localLlmSummary":  "reports\\serena-background\\runs\\20260705-141624\\local-llm-summary.md"
+                  },
+    "coverage":  {
+                     "filesSeen":  331,
+                     "policyCandidates":  48,
+                     "filesIncluded":  48,
+                     "filesOmitted":  0,
+                     "serenaSymbolFiles":  16,
+                     "serenaSymbolCount":  1567,
+                     "powerShellAstFiles":  31,
+                     "powerShellAstFunctions":  95,
+                     "powerShellParseErrorFiles":  0,
+                     "staticSymbolFiles":  33
+                 }
+}

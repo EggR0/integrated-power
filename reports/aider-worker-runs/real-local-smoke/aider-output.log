@@ -1,0 +1,20 @@
+﻿Detected dumb terminal, disabling fancy input and pretty output.
+
+Aider v0.86.2
+Model: ollama_chat/qwen2.5-coder:32b with whole edit format
+Git repo: .git with 125 files
+Repo-map: using 8192 tokens, auto refresh
+Added tests\aider_worker_real_local_smoke\target.ps1 to the chat.
+
+tests\aider_worker_real_local_smoke\target.ps1
+
+```diff
+@@ -1 +1 @@
+-﻿$status = "old"
++﻿$status = "ready"
+```
+
+
+Tokens: 9.0k sent, 24 received.
+Applied edit to tests\aider_worker_real_local_smoke\target.ps1
+
