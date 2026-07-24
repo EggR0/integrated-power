@@ -59,11 +59,11 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "tsc -p ./",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "tsc -p ./ && node ./scripts/run-headless-tests.js",
-    "test:extension": "npm run compile && node ./out/test/runTest.js"
+    "test:extension": "tsc -p ./ && node ./out/test/runTest.js"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
