@@ -62,7 +62,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node ./scripts/run-headless-tests.js",
+    "test": "tsc -p ./ && node ./scripts/run-headless-tests.js",
     "test:extension": "npm run compile && node ./out/test/runTest.js"
   },
   "devDependencies": {

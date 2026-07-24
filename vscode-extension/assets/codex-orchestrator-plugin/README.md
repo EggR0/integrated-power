@@ -8,11 +8,11 @@ It decides whether work should stay with the main agent, be delegated to OpenAI 
 2. Ensure you have the `codex.exe` CLI installed either globally on your `PATH`, or set `$env:CODEX_EXE`. The plugin will also attempt to auto-detect installations inside `%LOCALAPPDATA%\OpenAI\Codex\bin`. If it still cannot find it, it will prompt you interactively in the console.
 
 ## Global Routing Rules (Optional)
-To ensure Antigravity automatically uses this plugin for large architectural decisions and refactors, you should append the recommended routing rules to your `~/.gemini/GEMINI.md` file. 
+To ensure Antigravity automatically uses this plugin for large architectural decisions and refactors, append the recommended routing rules to your `~/.gemini/GEMINI.md` file.
 
-You can do this automatically by running:
+The skill setup script does this automatically after it resolves Codex:
 ```powershell
-& "~/.gemini/config/plugins/codex-orchestrator-plugin/install/Add-GlobalRules.ps1"
+& "~/.gemini/config/plugins/codex-orchestrator-plugin/skills/codex-orchestrator/scripts/Ensure-CodexOrchestratorSetup.ps1"
 ```
 
 ## Features
