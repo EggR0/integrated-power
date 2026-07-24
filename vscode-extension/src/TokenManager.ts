@@ -5,7 +5,6 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { JsonObject, TokenStatus, QuotaPoolStatus, LocalComputeStatus, QuotaSource, UsageConfidence, GpuStatus } from "./types";
 import { AgyQuotaClient } from "./AgyQuotaClient";
-import matter from "gray-matter";
 
 const QUOTA_CACHE_TTL_MS = 60_000;
 const MAX_SESSION_SCAN_DEPTH = 5;
@@ -135,12 +134,26 @@ export class TokenManager {
   }
 
   private parseDashboardMarkdown(text: string): { data: JsonObject; content: string } {
-    try {
-      const parsed = matter(text.replace(/^\uFEFF/, ""));
-      return { data: parsed.data as JsonObject, content: parsed.content };
-    } catch {
-      return { data: {}, content: text };
+    const normalized = text.replace(/^\uFEFF/, "");
+    const match = normalized.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+
+    if (!match) {
+      return { data: {}, content: normalized };
     }
+
+    const data: JsonObject = {};
+    for (const line of match[1].split(/\r?\n/)) {
+      const keyValue = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+      if (!keyValue) {
+        continue;
+      }
+
+      const rawValue = keyValue[2].trim();
+      const numericValue = Number(rawValue.replace(/%$/, ""));
+      data[keyValue[1]] = Number.isFinite(numericValue) && rawValue !== "" ? numericValue : rawValue.replace(/^["']|["']$/g, "");
+    }
+
+    return { data, content: normalized.slice(match[0].length) };
   }
 
   private taskFromContent(content: string): string | undefined {

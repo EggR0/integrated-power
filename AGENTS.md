@@ -22,6 +22,6 @@ This repository is the public, sanitized version of Integrated Power.
 ## Verification
 
 - Run relevant tests for code changes.
-- For the dashboard extension, run `npm test` from `vscode-extension/`.
+- For the dashboard extension, run `pnpm test` from `vscode-extension/`.
 - For scripts, run PowerShell parser checks before release.
 - Scan for private paths and secret-like strings before publishing.

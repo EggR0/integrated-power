@@ -4,6 +4,7 @@ scripts/run-headless-tests.js
 out/**/*.map
 out/test/
 package-lock.json
+pnpm-lock.yaml
 list-vsix.ps1
 .gitignore
 .vscodeignore

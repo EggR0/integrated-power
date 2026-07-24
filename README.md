@@ -52,7 +52,7 @@ Keep these files out of Git:
 - Antigravity IDE
 - Git
 - Optional: Codex CLI
-- Optional: Node.js/npm for Gemini CLI and the VS Code extension
+- Optional: Node.js/pnpm for Gemini CLI and the VS Code extension
 - Optional: Ollama or an OpenAI-compatible local vLLM endpoint
 
 ## Safety Model
@@ -63,8 +63,8 @@ Integrated Power does not pool provider quotas or credentials. Each backend keep
 
 ```powershell
 Set-Location .\vscode-extension
-npm install
-npm test
+pnpm install
+pnpm test
 ```
 
 Package artifacts such as `.vsix` files should be published through releases, not committed to the repository.

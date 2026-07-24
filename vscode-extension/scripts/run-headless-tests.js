@@ -39,6 +39,12 @@ test("package commands exclude removed Athena workflow", () => {
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
   ]);
+
+  assert.deepStrictEqual(manifest.activationEvents, [
+    "onView:integratedPower.agentRunsDashboard",
+    "onCommand:integratedPower.agentRuns.refresh",
+    "onCommand:integratedPower.agentRuns.openRunsFile",
+  ]);
 });
 
 test("webview preserves token status and keeps Refresh clickable", () => {
@@ -73,6 +79,7 @@ test("compiled runtime excludes stale path and workflow patterns", () => {
     readText("out", "extension.js"),
     readText("out", "WorkspacePaths.js"),
     readText("out", "DashboardController.js"),
+    readText("out", "TokenManager.js"),
     readText("webview", "main.js"),
   ].join("\n");
 
@@ -82,6 +89,7 @@ test("compiled runtime excludes stale path and workflow patterns", () => {
     "operational-data",
     ".system_generated",
     "tokenStatus = emptyTokenStatus()",
+    "gray-matter",
   ]) {
     assert.ok(!runtimeFiles.includes(forbidden), `Forbidden runtime pattern remained: ${forbidden}`);
   }
