@@ -1,0 +1,16 @@
+{
+  "name": "codex-orchestrator-plugin",
+  "version": "1.0.4",
+  "description": "Single AI work router skill for main-agent direct work, Codex delegation, and local vLLM preprocessing.",
+  "author": {
+    "name": "Integrated Power contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "orchestration",
+    "delegation",
+    "architecture",
+    "automation"
+  ]
+}

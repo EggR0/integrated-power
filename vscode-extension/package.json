@@ -1,0 +1,81 @@
+{
+  "name": "antigravity-ide-dashboard",
+  "publisher": "integratedpower",
+  "displayName": "Antigravity IDE Dashboard",
+  "description": "Dashboard for tracking AI agent runs and token usage",
+  "version": "0.1.3",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "integratedPower",
+          "title": "Integrated Power",
+          "icon": "$(rocket)"
+        }
+      ]
+    },
+    "views": {
+      "integratedPower": [
+        {
+          "type": "webview",
+          "id": "integratedPower.agentRunsDashboard",
+          "name": "Agent Runs Dashboard",
+          "icon": "$(dashboard)"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "integratedPower.agentRuns.refresh",
+        "title": "Refresh Agent Runs Dashboard",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "integratedPower.agentRuns.openRunsFile",
+        "title": "Open Runs JSONL File",
+        "icon": "$(json)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "integratedPower.agentRuns.refresh",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        },
+        {
+          "command": "integratedPower.agentRuns.openRunsFile",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node ./scripts/run-headless-tests.js",
+    "test:extension": "npm run compile && node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^3.0.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.6",
+    "typescript": "^5.1.3"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3"
+  }
+}

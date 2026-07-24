@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "workspace": "<repo-root>",
+  "primary_interface": "antigravity_ide",
+  "quota_policy": {
+    "can_pool_tokens_across_providers": false,
+    "strategy": "Use Antigravity IDE as the single control surface and route jobs to provider-specific backends. Track usage per backend."
+  },
+  "default_flow": [
+    "antigravity_ide",
+    "workspace_scan",
+    "job_selection",
+    "backend_routing",
+    "usage_logging",
+    "artifact_review_in_antigravity_ide"
+  ],
+  "tools": {
+    "antigravity_ide": {
+      "type": "interactive_ide",
+      "role": "human-facing code review and approval surface",
+      "writes_code": true,
+      "default_mode": "manual_review"
+    },
+    "codex_mcp": {
+      "type": "llm_mcp_server",
+      "role": "delegated coding and review worker",
+      "writes_code": true,
+      "default_mode": "plan_before_edit"
+    },
+    "codex_cli_exec": {
+      "type": "llm_cli",
+      "role": "scheduled and repeatable jobs",
+      "writes_code": false,
+      "default_mode": "read-only"
+    },
+    "context7_mcp": {
+      "type": "documentation_mcp",
+      "role": "current library and API documentation",
+      "writes_code": false,
+      "default_mode": "read-only"
+    },
+    "playwright_mcp": {
+      "type": "browser_mcp",
+      "role": "browser verification and UI reproduction",
+      "writes_code": false,
+      "default_mode": "task-specific"
+    },
+    "github_mcp": {
+      "type": "remote_devops_mcp",
+      "role": "issues, pull requests, actions, repository context",
+      "writes_code": false,
+      "default_mode": "read-only"
+    },
+    "local_llm": {
+      "type": "local_llm",
+      "role": "optional local model runtime for preprocessing, summarization, extraction, and embeddings",
+      "writes_code": false,
+      "default_mode": "local_batch"
+    },
+    "openai_compatible_local_server": {
+      "type": "local_llm_server",
+      "role": "optional OpenAI-compatible endpoint for heavier local inference and batch preprocessing",
+      "writes_code": false,
+      "default_mode": "openai_compatible_api"
+    }
+  },
+  "routing": [
+    {
+      "when": "implementation_or_bugfix",
+      "use": ["antigravity_ide", "codex_mcp", "context7_mcp"]
+    },
+    {
+      "when": "scheduled_audit",
+      "use": ["codex_cli_exec", "context7_mcp"]
+    },
+    {
+      "when": "ui_regression",
+      "use": ["antigravity_ide", "playwright_mcp", "codex_mcp"]
+    },
+    {
+      "when": "pr_or_issue_triage",
+      "use": ["github_mcp", "codex_cli_exec"]
+    },
+    {
+      "when": "broad_noisy_context",
+      "use": ["local_llm", "codex_cli_exec"]
+    },
+    {
+      "when": "heavy_local_batch",
+      "use": ["openai_compatible_local_server", "codex_cli_exec"]
+    }
+  ]
+}
