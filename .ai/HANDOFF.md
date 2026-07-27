@@ -1,9 +1,9 @@
 ---
-session_id: 20260727-eggr-first-run-wizards
+session_id: 20260727-eggr-bom-activation-fix
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: f0e5c1df8780914a526e253a5a6bba47b7320a63
+base_commit: 55124e8f1c86b77392c8a1e7425e2eb9046ee008
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
@@ -24,11 +24,17 @@ forbidden:
   - "C:/Users/test/.gemini/antigravity-ide/brain/**"
   - "C:/Users/test/AppData/Roaming/Antigravity IDE/User/globalStorage/**"
   - "../Intergrated-POWER-public/**"
-state: dashboard_installed_sources_pushed
-next_action: Reload Antigravity IDE, run EggR: Run First-Run Setup, and complete the interactive Orchestrator choices.
+state: dashboard_0_4_1_installed_pending_user_reload
+next_action: Reload the running Antigravity IDE window and verify the five EggR command-palette entries.
 ---
 
 # Handoff Log
+- **2026-07-27 Dashboard 0.4.1 activation fix**: The target is the Antigravity
+  IDE extension, not the separate Antigravity application or a Codex extension.
+  Dashboard 0.4.0 failed during activation because Windows PowerShell wrote a
+  UTF-8 BOM in `roots.json`. The extension now tolerates BOM-prefixed JSON and
+  the Windows setter writes UTF-8 without BOM. Dashboard 0.4.1 is installed;
+  the already-running IDE window still requires reload.
 - **2026-07-27 Windows deployment**: Dashboard 0.4.0 was installed into
   Antigravity IDE and its extension catalog was verified. Orchestrator 1.2.0
   remains an explicit first-run installation because provider, endpoint, local

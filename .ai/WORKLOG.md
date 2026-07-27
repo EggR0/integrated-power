@@ -1,5 +1,23 @@
 # EggR 작업 기록
 
+## 2026-07-27 — Antigravity IDE Dashboard 0.4.1 BOM 활성화 복구
+
+- 범위: 별도 Antigravity나 Codex 확장이 아니라 Antigravity IDE Dashboard 확장.
+- 원인: Windows PowerShell 5.1이 `roots.json`을 UTF-8 BOM과 함께 썼고,
+  0.4.0의 `resolveEggRStateRoot`가 BOM을 제거하지 않아 활성화 중
+  `Unexpected token '﻿'`로 종료됐다.
+- 수정: 공통 UTF-8 JSON reader가 BOM을 허용하고 `roots.json`,
+  `.eggr/workspace.json`, 설정 마법사 JSON에 적용된다.
+- 수정: 환경 구축의 `set-eggr-roots.ps1`은 BOM 없는 UTF-8을 쓴다.
+- 명칭: 사용자 명령을 `EggR: Install or Update Orchestrator`로 줄이고,
+  현재 제품 대상이 Antigravity IDE임을 문서에 명시했다.
+- 검증: headless 8개, extension-host 8개, VSIX manifest/entry point,
+  Windows Knowledge 기능 테스트와 전체 PowerShell parser 통과.
+- 설치: Dashboard 0.4.1을 Antigravity IDE 확장 카탈로그에 설치했으며,
+  실행 중인 사용자 창은 강제 종료하지 않아 reload 후 실제 명령 표시를 확인한다.
+- 인증 분리: 같은 세션의 Antigravity IDE 인증은 일시적 quota·내부 BigInt 오류
+  뒤 `signedIn`에 도달했다. 실행 중 Java는 Minecraft NeoForge였다.
+
 ## 2026-07-27 — 세 갈래 최초 실행 마법사와 로컬 모델 선택
 
 - Dashboard 0.4.0에 세 개의 독립 설정 진입점과 coordinator를 추가했다.

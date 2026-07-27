@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
+import { readUtf8JsonFile } from "./jsonFile";
 import { resolveEggRStateRoot } from "./storagePath";
 
 const DASHBOARD_SETUP_KEY = "eggr.setup.dashboard.completed.v1";
@@ -600,7 +601,7 @@ function updateRootsConfig(patch: Record<string, unknown>): void {
 
 function readJsonObject(filePath: string): Record<string, unknown> {
   if (!fs.existsSync(filePath)) return {};
-  const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const parsed: unknown = readUtf8JsonFile<unknown>(filePath);
   if (!isRecord(parsed)) {
     throw new Error(`설정 파일은 JSON object여야 합니다: ${filePath}`);
   }

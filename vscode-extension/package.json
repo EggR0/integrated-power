@@ -3,7 +3,7 @@
   "publisher": "integratedpower",
   "displayName": "Antigravity IDE Dashboard",
   "description": "Dashboard for tracking AI agent runs and token usage",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "vscode": "^1.80.0"
@@ -77,7 +77,7 @@
       },
       {
         "command": "integratedPower.eggr.installOrUpdateOrchestrator",
-        "title": "EggR: Install or Update Antigravity Orchestrator"
+        "title": "EggR: Install or Update Orchestrator"
       },
       {
         "command": "integratedPower.eggr.runFirstRunSetup",

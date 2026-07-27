@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
+import { readUtf8JsonFile } from "./jsonFile";
 
 export interface EggRWorkspaceDescriptor {
   repoRoot: string;
@@ -61,7 +62,7 @@ export function resolveEggRStateRoot(
   if (!candidate) {
     const configPath = path.join(userHome, ".config", "eggr", "roots.json");
     if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as { state_root?: unknown };
+      const config = readUtf8JsonFile<{ state_root?: unknown }>(configPath);
       if (typeof config.state_root === "string" && config.state_root.trim()) {
         candidate = config.state_root.trim();
       }
@@ -88,7 +89,7 @@ export function resolveEggRWorkspaceDescriptor(folderPath: string): EggRWorkspac
   let configuredId: string | undefined;
 
   if (fs.existsSync(workspaceConfigPath)) {
-    const config = JSON.parse(fs.readFileSync(workspaceConfigPath, "utf8")) as { id?: unknown };
+    const config = readUtf8JsonFile<{ id?: unknown }>(workspaceConfigPath);
     if (typeof config.id !== "string" || !WORKSPACE_ID_PATTERN.test(config.id)) {
       throw new Error(`Invalid EggR workspace id in ${workspaceConfigPath}.`);
     }

@@ -1,5 +1,6 @@
 const assert = require("assert");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const extensionRoot = path.resolve(__dirname, "..");
@@ -7,6 +8,7 @@ const {
   eggRWorkspaceId,
   normalizeEggRRemoteIdentity,
   normalizeWorkspacePathForStorage,
+  resolveEggRStateRoot,
   workspaceStoragePathForFolder,
 } = require("../out/storagePath");
 
@@ -36,6 +38,25 @@ test("EggR workspace identity is stable across Windows paths and Git URL forms",
   assert.strictEqual(normalizeEggRRemoteIdentity(sshRemote), "github.com/r-github04/intergrated-power");
   assert.strictEqual(workspaceId, eggRWorkspaceId("D:\\Moved\\Example", httpsRemote));
   assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath, sshRemote), expected);
+});
+
+test("EggR roots config accepts a Windows PowerShell UTF-8 BOM", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "eggr-bom-"));
+  const configDirectory = path.join(tempHome, ".config", "eggr");
+  const configuredStateRoot = path.join(tempHome, "state");
+
+  try {
+    fs.mkdirSync(configDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDirectory, "roots.json"),
+      `\uFEFF${JSON.stringify({ state_root: configuredStateRoot })}`,
+      "utf8",
+    );
+
+    assert.strictEqual(resolveEggRStateRoot({}, tempHome, "win32"), path.resolve(configuredStateRoot));
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test("package commands exclude removed Athena workflow", () => {

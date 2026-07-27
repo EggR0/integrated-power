@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { DashboardController } from '../../DashboardController';
@@ -63,6 +64,25 @@ suite('Parser and Store Test Suite', () => {
     assert.strictEqual(normalizeEggRRemoteIdentity(sshRemote), 'github.com/r-github04/intergrated-power');
     assert.strictEqual(workspaceId, eggRWorkspaceId('D:\\Moved\\Example', httpsRemote));
     assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath, sshRemote), expected);
+  });
+
+  test('EggR roots config accepts a Windows PowerShell UTF-8 BOM', () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'eggr-bom-'));
+    const configDirectory = path.join(tempHome, '.config', 'eggr');
+    const configuredStateRoot = path.join(tempHome, 'state');
+
+    try {
+      fs.mkdirSync(configDirectory, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDirectory, 'roots.json'),
+        `\uFEFF${JSON.stringify({ state_root: configuredStateRoot })}`,
+        'utf8',
+      );
+
+      assert.strictEqual(resolveEggRStateRoot({}, tempHome, 'win32'), path.resolve(configuredStateRoot));
+    } finally {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
   });
 
   test('RunStore treats missing globalStorage runs file as empty data', async () => {

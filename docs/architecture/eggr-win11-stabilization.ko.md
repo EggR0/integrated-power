@@ -41,7 +41,7 @@ EggR는 다음과 같이 논리 이름을 먼저 고정하고 실제 경로는 �
 
 예를 들어 같은 GitHub 저장소를 `C:\Work\A`와 `D:\Moved\A`에서 열어도 `git-<24 hex>`가 동일하다. 반면 Git과 명시 ID가 모두 없는 임시 폴더는 경로가 바뀌면 별개 프로젝트로 처리된다. 이것은 서로 무관한 폴더의 상태가 섞이는 것보다 안전한 후퇴 규칙이다.
 
-기존 Antigravity `globalStorage` 자료는 삭제하거나 이동하지 않는다. 사용자가 **EggR: Install or Update Antigravity Orchestrator** 명령을 실행하면 알려진 구형 대·소문자 드라이브 해시 위치에서 새 EggR 상태 경로로 없는 파일만 복사한다.
+기존 Antigravity IDE `globalStorage` 자료는 삭제하거나 이동하지 않는다. 사용자가 **EggR: Install or Update Orchestrator** 명령을 실행하면 알려진 구형 대·소문자 드라이브 해시 위치에서 새 EggR 상태 경로로 없는 파일만 복사한다.
 
 ## 4. 오케스트레이터와 대시보드를 분리한 이유
 
@@ -93,7 +93,7 @@ Git에는 원시 로그 대신 사건 요약, 재현 조건, 원인, 수정, 검
 2. Node/pnpm과 PowerShell 요구사항을 doctor로 확인한다. 실행 정책 때문에 `.ps1` 직접 실행이 막히면 서명 정책을 바꾸지 말고 현재 단계에서는 `powershell -ExecutionPolicy Bypass -File <검증된 스크립트>`를 사용한다.
 3. 확장 프로그램 테스트와 패키징을 완료한다.
 4. Antigravity에 VSIX를 설치한다.
-5. 명령 팔레트에서 **EggR: Install or Update Antigravity Orchestrator**를 한 번 실행한다.
+5. 명령 팔레트에서 **EggR: Install or Update Orchestrator**를 한 번 실행한다.
 6. `%LOCALAPPDATA%\EggR\state\workspaces`와 `.gemini\config\plugins\.eggr-backups`를 확인한다.
 7. 비공개 Git 원격과 암호화 백업을 각각 검증한다.
 

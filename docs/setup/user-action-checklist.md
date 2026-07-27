@@ -6,7 +6,7 @@
 - [ ] Win11 doctor 결과에서 failure가 없는지 확인
 - [ ] 대시보드 compile/headless test 통과
 - [ ] 검증된 VSIX 설치
-- [ ] **EggR: Install or Update Antigravity Orchestrator** 명령 1회 실행
+- [ ] **EggR: Install or Update Orchestrator** 명령 1회 실행
 - [ ] 기존 `GEMINI.md`가 보존되었는지 확인
 - [ ] `%LOCALAPPDATA%\EggR\state\workspaces`에 상태가 생성되는지 확인
 

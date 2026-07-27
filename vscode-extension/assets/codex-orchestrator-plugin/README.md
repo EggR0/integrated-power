@@ -1,10 +1,12 @@
 # EggR Codex Orchestrator Plugin
 
-This Antigravity plugin installs a single **AI work router** skill.
+This plugin is bundled for the Antigravity IDE extension and installs a single
+**AI work router** skill. It is not an extension for the separate Antigravity
+application or for Codex.
 It decides whether work should stay with the main agent, be delegated to OpenAI Codex, or be preprocessed by a local OpenAI-compatible vLLM endpoint.
 
 ## Installation
-1. Recommended: run **EggR: Install or Update Antigravity Orchestrator** from the Antigravity command palette. Installation is explicit; opening the dashboard never overwrites the orchestrator.
+1. Recommended: run **EggR: Install or Update Orchestrator** from the Antigravity IDE command palette. Installation is explicit; opening the dashboard never overwrites the orchestrator.
 2. Manual fallback: drop this folder (`codex-orchestrator-plugin`) into `~/.gemini/config/plugins/`.
 3. Run `install/Install-Plugin.ps1` for the standalone first-run wizard, or use
    the Dashboard's **EggR: Orchestrator 최초 실행 설정** command.

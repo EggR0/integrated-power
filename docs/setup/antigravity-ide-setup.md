@@ -10,7 +10,7 @@
 
 1. Antigravity IDE에서 이 저장소를 연다.
 2. 검증된 `antigravity-ide-dashboard-*.vsix`를 설치한다.
-3. 명령 팔레트에서 **EggR: Install or Update Antigravity Orchestrator**를 실행한다.
+3. 명령 팔레트에서 **EggR: Install or Update Orchestrator**를 실행한다.
 4. 기존 `~/.gemini/GEMINI.md`가 있으면 자동 덮어쓰기되지 않는다. 열린 번들 템플릿과 수동 비교한다.
 5. 설치 결과를 확인한다.
    - 활성 오케스트레이터: `~/.gemini/config/plugins/codex-orchestrator-plugin`
