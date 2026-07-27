@@ -48,7 +48,7 @@ Use `config/ai_routing_policy.json` when it exists. The default stance is **loca
 - If Codex Debate fails, times out, or returns an inconclusive result, fall back to Main Agent Direct for a narrow next step or ask Codex Job only when the implementation boundary is clear.
 - If Codex quota should be conserved, use local LLM for preprocessing where practical.
 - Keep file contents out of prompts when paths are sufficient.
-- Always leave an artifact under globalStorage `reports/` or `discussions/`, or summarize the direct local change.
+- Always leave an artifact under EggR workspace state `reports/` or `discussions/`, or summarize the direct local change.
 - Record the chosen route and reason in the artifact whenever delegation is used. Include why cheaper local preprocessing was or was not used.
 
 ## Token Efficiency Checks

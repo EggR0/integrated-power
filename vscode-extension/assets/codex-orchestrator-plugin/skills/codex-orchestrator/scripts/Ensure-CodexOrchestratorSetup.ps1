@@ -2,7 +2,7 @@
 param(
     [string]$RequestedCodexExe = "",
     [switch]$PassThru,
-    [switch]$SkipGlobalRules
+    [switch]$InstallGlobalRules
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +47,17 @@ function Resolve-CodexExeAutomatically {
     $requested = Test-CodexCandidate -Candidate $RequestedCodexExe
     if ($requested) { return $requested }
 
+    $settingsPath = Join-Path $env:USERPROFILE ".gemini\config\codex_plugin_settings.json"
+    if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
+        try {
+            $settings = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $fromSettings = Test-CodexCandidate -Candidate ([string]$settings.CodexExe)
+            if ($fromSettings) { return $fromSettings }
+        } catch {
+            # A malformed optional settings file must not block other resolution routes.
+        }
+    }
+
     foreach ($name in @("codex.exe", "codex")) {
         $fromPath = Test-CodexCandidate -Candidate $name
         if ($fromPath) { return $fromPath }
@@ -78,19 +89,6 @@ function Resolve-CodexExeAutomatically {
     }
 
     return $null
-}
-
-function Write-CodexSettings {
-    param([Parameter(Mandatory = $true)][string]$CodexExe)
-
-    $configDir = Join-Path $env:USERPROFILE ".gemini\config"
-    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
-
-    $configPath = Join-Path $configDir "codex_plugin_settings.json"
-    $json = [ordered]@{ CodexExe = $CodexExe } | ConvertTo-Json -Depth 5
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-
-    [IO.File]::WriteAllText($configPath, "$json`n", $utf8NoBom)
 }
 
 function Invoke-WithFileLock {
@@ -168,9 +166,7 @@ if (!$codexExe) {
     throw "Unable to resolve codex.exe automatically. Run the interactive installer: powershell -NoProfile -ExecutionPolicy Bypass -File `"$installerPath`""
 }
 
-Write-CodexSettings -CodexExe $codexExe
-
-if (!$SkipGlobalRules) {
+if ($InstallGlobalRules) {
     Ensure-GlobalRoutingRules
 }
 

@@ -457,7 +457,12 @@ function Invoke-SelfTest {
             "-TimeoutSeconds", "30"
         )
         $successCode = Invoke-SelfTestScriptRun -Arguments $successArgs -LogPath $successLog -WorkingDirectory $repoRoot
-        Assert-SelfTest ($successCode -eq 0) "mock Codex run exited $successCode; see $successLog"
+        $successLogText = if (Test-Path -LiteralPath $successLog) {
+            Get-Content -LiteralPath $successLog -Raw -Encoding UTF8
+        } else {
+            "<log file missing>"
+        }
+        Assert-SelfTest ($successCode -eq 0) "mock Codex run exited $successCode. Log: $successLogText"
 
         $transcripts = @(Get-ChildItem -LiteralPath $discussionRoot -Filter "*.md" -File)
         Assert-SelfTest ($transcripts.Count -eq 1) "expected one transcript, found $($transcripts.Count)"
@@ -494,7 +499,12 @@ function Invoke-SelfTest {
             "-NoHistory"
         )
         $validationCode = Invoke-SelfTestScriptRun -Arguments $validationArgs -LogPath $validationLog -WorkingDirectory $repoRoot
-        Assert-SelfTest ($validationCode -eq 2) "missing context validation exited $validationCode, expected 2; see $validationLog"
+        $validationLogText = if (Test-Path -LiteralPath $validationLog) {
+            Get-Content -LiteralPath $validationLog -Raw -Encoding UTF8
+        } else {
+            "<log file missing>"
+        }
+        Assert-SelfTest ($validationCode -eq 2) "missing context validation exited $validationCode, expected 2. Log: $validationLogText"
 
         [Console]::Out.WriteLine("SelfTest passed.")
         return $true
@@ -542,7 +552,7 @@ try {
 
     $repoRootFull = [IO.Path]::GetFullPath($repoRoot)
 
-    Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
+    Import-Module (Join-Path $PSScriptRoot "lib\EggR.Paths.psm1") -Force -DisableNameChecking
     $globalStorage = Get-GlobalStorage -RepoRoot $repoRoot
 
     if ([string]::IsNullOrWhiteSpace($DiscussionRoot)) {
@@ -814,7 +824,29 @@ $blockEnd
         $procArgs = @("exec", "--cd", "`"$repoRootFull`"", "--sandbox", $Sandbox, "--model", $Model, "-c", "model_reasoning_effort=`"$ReasoningEffort`"", "--output-last-message", "`"$responseFile`"", "-")
 
         try {
-            $proc = Start-Process -FilePath $CodexExe -ArgumentList $procArgs -RedirectStandardInput $preparedPrompt -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru -NoNewWindow
+            $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $startInfo.FileName = $CodexExe
+            $startInfo.Arguments = $procArgs -join " "
+            $startInfo.WorkingDirectory = $repoRootFull
+            $startInfo.UseShellExecute = $false
+            $startInfo.CreateNoWindow = $true
+            $startInfo.RedirectStandardInput = $true
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            $startInfo.StandardOutputEncoding = [Text.Encoding]::UTF8
+            $startInfo.StandardErrorEncoding = [Text.Encoding]::UTF8
+
+            $proc = New-Object System.Diagnostics.Process
+            $proc.StartInfo = $startInfo
+            if (!$proc.Start()) {
+                throw "Process.Start returned false."
+            }
+
+            $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+            $stderrTask = $proc.StandardError.ReadToEndAsync()
+            $promptText = [IO.File]::ReadAllText($preparedPrompt, [Text.Encoding]::UTF8)
+            $proc.StandardInput.Write($promptText)
+            $proc.StandardInput.Close()
         } catch {
             Throw-CodexDebateError "Codex is unreachable: $($_.Exception.Message)" 4
         }
@@ -822,9 +854,12 @@ $blockEnd
         $proc.WaitForExit($TimeoutSeconds * 1000) | Out-Null
         if (!$proc.HasExited) {
             try { $proc.Kill() } catch { }
+            try { $proc.WaitForExit() } catch { }
             Throw-CodexDebateError "Codex timed out after $TimeoutSeconds seconds." 3
         }
 
+        [IO.File]::WriteAllText($stdoutLog, $stdoutTask.Result, (New-Object Text.UTF8Encoding($false)))
+        [IO.File]::WriteAllText($stderrLog, $stderrTask.Result, (New-Object Text.UTF8Encoding($false)))
         $exitCode = if ($null -ne $proc.ExitCode) { $proc.ExitCode } else { 0 }
 
         if ($exitCode -ne 0) {

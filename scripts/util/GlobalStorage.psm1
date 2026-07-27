@@ -1,46 +1,8 @@
-function Get-WorkspaceStorageHash {
-    param([string]$RepoRoot)
-
-    $fullPath = [System.IO.Path]::GetFullPath($RepoRoot)
-    if ($fullPath -match '^[a-z]:') {
-        $fullPath = $fullPath.Substring(0, 1).ToUpperInvariant() + $fullPath.Substring(1)
-    }
-
-    $md5 = [System.Security.Cryptography.MD5]::Create()
-    try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($fullPath)
-        $hashBytes = $md5.ComputeHash($bytes)
-        return -join ($hashBytes | ForEach-Object { $_.ToString("x2") })
-    } finally {
-        $md5.Dispose()
-    }
-}
-
-function Get-DashboardGlobalStorageRoot {
-    if ([string]::IsNullOrWhiteSpace($env:APPDATA)) {
-        throw "APPDATA is not set; cannot resolve Antigravity dashboard globalStorage."
-    }
-
-    return Join-Path $env:APPDATA "Antigravity IDE\User\globalStorage\integratedpower.antigravity-ide-dashboard"
-}
+Import-Module (Join-Path $PSScriptRoot "EggR.Paths.psm1") -Force -DisableNameChecking
 
 function Get-GlobalStorage {
-    param([string]$RepoRoot)
+    param([string]$RepoRoot = (Get-Location).Path)
 
-    if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
-        $RepoRoot = (Get-Location).Path
-    }
-
-    $repoRootFull = [System.IO.Path]::GetFullPath($RepoRoot)
-    $storageFile = Join-Path $repoRootFull ".agents\dashboard_global_storage.txt"
-    if (Test-Path -LiteralPath $storageFile) {
-        $storagePath = (Get-Content -LiteralPath $storageFile -TotalCount 1).Trim()
-        if (![string]::IsNullOrWhiteSpace($storagePath)) {
-            return $storagePath
-        }
-    }
-
-    $hash = Get-WorkspaceStorageHash -RepoRoot $repoRootFull
-    return Join-Path (Get-DashboardGlobalStorageRoot) "workspaces\$hash"
+    return Get-EggRWorkspaceStatePath -RepoRoot $RepoRoot
 }
 Export-ModuleMember -Function Get-GlobalStorage

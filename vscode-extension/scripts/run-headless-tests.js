@@ -4,6 +4,8 @@ const path = require("path");
 
 const extensionRoot = path.resolve(__dirname, "..");
 const {
+  eggRWorkspaceId,
+  normalizeEggRRemoteIdentity,
   normalizeWorkspacePathForStorage,
   workspaceStoragePathForFolder,
 } = require("../out/storagePath");
@@ -22,13 +24,18 @@ function test(name, fn) {
   }
 }
 
-test("workspace storage path uses Antigravity globalStorage workspace hash", () => {
-  const storageRoot = "C:\\Users\\tester\\AppData\\Roaming\\Antigravity IDE\\User\\globalStorage\\integratedpower.antigravity-ide-dashboard";
+test("EggR workspace identity is stable across Windows paths and Git URL forms", () => {
+  const storageRoot = "C:\\Users\\tester\\AppData\\Local\\EggR\\state";
   const folderPath = "C:\\Projects\\Example";
-  const expected = path.join(storageRoot, "workspaces", "94d71547f4edd4dc7503da0254d1794a");
+  const sshRemote = "git@github.com:R-Github04/Intergrated-POWER.git";
+  const httpsRemote = "https://github.com/R-Github04/Intergrated-POWER.git";
+  const workspaceId = eggRWorkspaceId(folderPath, sshRemote);
+  const expected = path.join(storageRoot, "workspaces", workspaceId);
 
   assert.strictEqual(normalizeWorkspacePathForStorage(folderPath), "C:\\Projects\\Example");
-  assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath), expected);
+  assert.strictEqual(normalizeEggRRemoteIdentity(sshRemote), "github.com/r-github04/intergrated-power");
+  assert.strictEqual(workspaceId, eggRWorkspaceId("D:\\Moved\\Example", httpsRemote));
+  assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath, sshRemote), expected);
 });
 
 test("package commands exclude removed Athena workflow", () => {
@@ -39,7 +46,18 @@ test("package commands exclude removed Athena workflow", () => {
     "integratedPower.agentRuns.configureViews",
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
+    "integratedPower.eggr.installOrUpdateHarness",
   ]);
+});
+
+test("dashboard activation does not silently install or overwrite the EggR harness", () => {
+  const extensionSource = readText("src", "extension.ts");
+  const activateBlock = extensionSource.slice(extensionSource.indexOf("export function activate"));
+
+  assert.ok(!activateBlock.includes("initializeGlobalProtocol(context);"));
+  assert.ok(!activateBlock.includes("installAntigravityPlugin(context);"));
+  assert.ok(!extensionSource.includes("dashboard_global_storage.txt"));
+  assert.ok(extensionSource.includes("integratedPower.eggr.installOrUpdateHarness"));
 });
 
 test("webview preserves token status and keeps Refresh clickable", () => {
@@ -53,7 +71,7 @@ test("webview preserves token status and keeps Refresh clickable", () => {
   assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
 });
 
-test("debate documentation uses globalStorage paths", () => {
+test("debate documentation uses EggR state paths", () => {
   const debateReference = readText(
     "assets",
     "codex-orchestrator-plugin",
@@ -63,8 +81,8 @@ test("debate documentation uses globalStorage paths", () => {
     "debate.md",
   );
 
-  assert.ok(debateReference.includes("globalStorage path's `discussions/`"));
-  assert.ok(debateReference.includes("globalStorage path's `sessions/<run-id>/`"));
+  assert.ok(debateReference.includes("EggR workspace state `discussions/`"));
+  assert.ok(debateReference.includes("EggR workspace state `sessions/<run-id>/`"));
   assert.ok(!debateReference.includes("<repo-root>/discussions/"));
   assert.ok(!debateReference.includes(".system_generated"));
 });

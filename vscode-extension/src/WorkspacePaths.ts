@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import {
   normalizeWorkspacePathForStorage,
+  resolveEggRStateRoot,
+  resolveEggRWorkspaceDescriptor,
   workspaceStoragePathForFolder,
 } from "./storagePath";
 
@@ -10,7 +12,11 @@ const RUNS_RELATIVE_PATH = ".agent-runs/runs.jsonl";
 const TOKEN_REPORT_RELATIVE_PATH = "reports/agent-dashboard.md";
 const DASHBOARD_STATE_RELATIVE_PATH = "reports/dashboard-state.json";
 
-export { normalizeWorkspacePathForStorage, workspaceStoragePathForFolder };
+export {
+  normalizeWorkspacePathForStorage,
+  resolveEggRStateRoot,
+  workspaceStoragePathForFolder,
+};
 
 export class WorkspacePaths {
   constructor(private readonly context: vscode.ExtensionContext) {}
@@ -35,7 +41,13 @@ export class WorkspacePaths {
     const folder = this.primaryFolder;
     if (!folder) return undefined;
 
-    return workspaceStoragePathForFolder(this.context.globalStorageUri.fsPath, folder.uri.fsPath);
+    const descriptor = resolveEggRWorkspaceDescriptor(folder.uri.fsPath);
+    return workspaceStoragePathForFolder(
+      resolveEggRStateRoot(),
+      descriptor.repoRoot,
+      descriptor.remoteUrl,
+      descriptor.configuredId,
+    );
   }
 
   public runsFileUri(): vscode.Uri | undefined {
@@ -59,18 +71,18 @@ export class WorkspacePaths {
   }
 
   public createWatchers(onChange: () => void): vscode.Disposable[] {
-    const globalStoragePath = this.workspaceStoragePath;
-    if (!globalStoragePath) return [];
+    const workspaceStatePath = this.workspaceStoragePath;
+    if (!workspaceStatePath) return [];
 
-    if (!fs.existsSync(globalStoragePath)) {
-      fs.mkdirSync(globalStoragePath, { recursive: true });
+    if (!fs.existsSync(workspaceStatePath)) {
+      fs.mkdirSync(workspaceStatePath, { recursive: true });
     }
 
     const runWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(globalStoragePath, RUNS_RELATIVE_PATH),
+      new vscode.RelativePattern(workspaceStatePath, RUNS_RELATIVE_PATH),
     );
     const tokenWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(globalStoragePath, TOKEN_REPORT_RELATIVE_PATH),
+      new vscode.RelativePattern(workspaceStatePath, TOKEN_REPORT_RELATIVE_PATH),
     );
 
     return [

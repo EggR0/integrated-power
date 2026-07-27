@@ -1,61 +1,120 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 import { DashboardProvider } from "./DashboardProvider";
 import { installAntigravityPlugin } from "./installAntigravityPlugin";
+import {
+  legacyWorkspaceStorageCandidates,
+  resolveEggRStateRoot,
+  resolveEggRWorkspaceDescriptor,
+  workspaceStoragePathForFolder,
+} from "./storagePath";
 
-import * as os from "os";
-import { workspaceStoragePathForFolder } from "./storagePath";
-
-function initializeGlobalProtocol(context: vscode.ExtensionContext) {
+async function initializeGlobalProtocol(context: vscode.ExtensionContext): Promise<"created" | "preserved" | "missing-template"> {
   const geminiDir = path.join(os.homedir(), ".gemini");
   const globalProtocolPath = path.join(geminiDir, "GEMINI.md");
   const templatePath = path.join(context.extensionPath, "assets", "gemini.md");
 
-  if (!fs.existsSync(geminiDir)) {
-    fs.mkdirSync(geminiDir, { recursive: true });
+  if (!fs.existsSync(templatePath)) {
+    return "missing-template";
   }
 
-  if (fs.existsSync(templatePath)) {
-    if (!fs.existsSync(globalProtocolPath)) {
-      fs.copyFileSync(templatePath, globalProtocolPath);
-      vscode.window.showInformationMessage("Antigravity IDE: Global Orchestration Protocol (GEMINI.md) initialized.");
-    } else {
-      vscode.window.showInformationMessage(
-        "Antigravity IDE: A global GEMINI.md already exists. Do you want to review the latest protocol template?",
-        "Open Template"
-      ).then(selection => {
-        if (selection === "Open Template") {
-          vscode.workspace.openTextDocument(vscode.Uri.file(templatePath)).then(doc => {
-            vscode.window.showTextDocument(doc, { preview: false });
-          });
-        }
-      });
-    }
+  await fs.promises.mkdir(geminiDir, { recursive: true });
+  if (!fs.existsSync(globalProtocolPath)) {
+    await fs.promises.copyFile(templatePath, globalProtocolPath);
+    return "created";
   }
+
+  const selection = await vscode.window.showInformationMessage(
+    "EggR가 기존 GEMINI.md를 보존했습니다. 최신 라우팅 규칙 템플릿을 검토하시겠습니까?",
+    "템플릿 열기",
+  );
+  if (selection === "템플릿 열기") {
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(templatePath));
+    await vscode.window.showTextDocument(document, { preview: false });
+  }
+  return "preserved";
 }
 
-function exportGlobalStoragePath(context: vscode.ExtensionContext) {
+async function migrateLegacyDashboardState(context: vscode.ExtensionContext): Promise<number> {
   const primaryFolder = vscode.workspace.workspaceFolders?.[0];
   if (!primaryFolder) {
-    return;
+    return 0;
   }
 
-  const workspaceStoragePath = workspaceStoragePathForFolder(context.globalStorageUri.fsPath, primaryFolder.uri.fsPath);
+  const descriptor = resolveEggRWorkspaceDescriptor(primaryFolder.uri.fsPath);
+  const destination = workspaceStoragePathForFolder(
+    resolveEggRStateRoot(),
+    descriptor.repoRoot,
+    descriptor.remoteUrl,
+    descriptor.configuredId,
+  );
+  let copiedFiles = 0;
 
-  if (!fs.existsSync(workspaceStoragePath)) {
-    fs.mkdirSync(workspaceStoragePath, { recursive: true });
+  for (const source of legacyWorkspaceStorageCandidates(
+    context.globalStorageUri.fsPath,
+    primaryFolder.uri.fsPath,
+  )) {
+    if (path.resolve(source) !== path.resolve(destination) && fs.existsSync(source)) {
+      copiedFiles += await copyMissingFiles(source, destination);
+    }
   }
 
-  const agentsDir = path.join(primaryFolder.uri.fsPath, ".agents");
-  if (!fs.existsSync(agentsDir)) {
-    fs.mkdirSync(agentsDir, { recursive: true });
-  }
-  const storagePathFile = path.join(agentsDir, "dashboard_global_storage.txt");
-  fs.writeFileSync(storagePathFile, workspaceStoragePath, "utf8");
+  return copiedFiles;
 }
 
-async function configureDashboardViews() {
+async function copyMissingFiles(source: string, destination: string): Promise<number> {
+  await fs.promises.mkdir(destination, { recursive: true });
+  const entries = await fs.promises.readdir(source, { withFileTypes: true });
+  let copied = 0;
+
+  for (const entry of entries) {
+    const sourcePath = path.join(source, entry.name);
+    const destinationPath = path.join(destination, entry.name);
+    if (entry.isDirectory()) {
+      copied += await copyMissingFiles(sourcePath, destinationPath);
+    } else if (entry.isFile() && !fs.existsSync(destinationPath)) {
+      await fs.promises.copyFile(sourcePath, destinationPath);
+      copied++;
+    }
+  }
+
+  return copied;
+}
+
+async function installOrUpdateEggRHarness(
+  context: vscode.ExtensionContext,
+  provider: DashboardProvider,
+): Promise<void> {
+  try {
+    const protocolResult = await initializeGlobalProtocol(context);
+    const installResult = await installAntigravityPlugin(context);
+    const migratedFiles = await migrateLegacyDashboardState(context);
+    await provider.refresh();
+
+    if (!installResult.installed) {
+      void vscode.window.showWarningMessage(installResult.reason ?? "EggR 하네스를 설치하지 못했습니다.");
+      return;
+    }
+
+    const protocolText =
+      protocolResult === "created"
+        ? "GEMINI.md 생성"
+        : protocolResult === "preserved"
+          ? "기존 GEMINI.md 보존"
+          : "GEMINI.md 템플릿 없음";
+    void vscode.window.showInformationMessage(
+      `EggR 하네스 설치 완료 · ${protocolText} · 기존 상태 ${migratedFiles}개 파일 복사`,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(`EggR 하네스 설치 실패: ${message}`);
+    throw error;
+  }
+}
+
+async function configureDashboardViews(): Promise<void> {
   const config = vscode.workspace.getConfiguration("integratedPower.view");
   const showAntigravity = config.get<boolean>("showAntigravity", true);
   const showCodex = config.get<boolean>("showCodex", true);
@@ -64,13 +123,13 @@ async function configureDashboardViews() {
   const items: vscode.QuickPickItem[] = [
     { label: "Antigravity IDE Capacity", picked: showAntigravity, description: "Show the Antigravity IDE token capacity section" },
     { label: "Codex Capacity", picked: showCodex, description: "Show the Codex API token capacity section" },
-    { label: "Local LLM Status", picked: showLocalLlm, description: "Show the Local LLM status section" }
+    { label: "Local LLM Status", picked: showLocalLlm, description: "Show the Local LLM status section" },
   ];
 
   const selected = await vscode.window.showQuickPick(items, {
     canPickMany: true,
     placeHolder: "Select the dashboard sections you want to display",
-    title: "Configure Dashboard Views"
+    title: "Configure Dashboard Views",
   });
 
   if (selected !== undefined) {
@@ -82,28 +141,21 @@ async function configureDashboardViews() {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  initializeGlobalProtocol(context);
-  exportGlobalStoragePath(context);
-
   const provider = new DashboardProvider(context);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("integratedPower.agentRunsDashboard", provider, {
       webviewOptions: { retainContextWhenHidden: true },
-    })
-  );
-
-  context.subscriptions.push(
+    }),
     vscode.commands.registerCommand("integratedPower.agentRuns.refresh", () => provider.refresh()),
     vscode.commands.registerCommand("integratedPower.agentRuns.openRunsFile", () => provider.openRunsFile()),
     vscode.commands.registerCommand("integratedPower.agentRuns.configureViews", configureDashboardViews),
-    provider
+    vscode.commands.registerCommand(
+      "integratedPower.eggr.installOrUpdateHarness",
+      () => installOrUpdateEggRHarness(context, provider),
+    ),
+    provider,
   );
-
-  // Install the bundled Antigravity plugin for Codex Orchestrator
-  installAntigravityPlugin(context).catch(err => {
-    console.error("Failed to install Antigravity plugin", err);
-  });
 
   void provider.refresh();
 }

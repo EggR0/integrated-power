@@ -3,7 +3,8 @@
   "publisher": "integratedpower",
   "displayName": "Antigravity IDE Dashboard",
   "description": "Dashboard for tracking AI agent runs and token usage",
-  "version": "0.2.4",
+  "version": "0.3.0",
+  "packageManager": "pnpm@11.9.0",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -11,7 +12,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:integratedPower.agentRunsDashboard"
+    "onView:integratedPower.agentRunsDashboard",
+    "onCommand:integratedPower.eggr.installOrUpdateHarness"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -68,6 +70,10 @@
       {
         "command": "integratedPower.agentRuns.configureViews",
         "title": "Antigravity IDE: Configure Dashboard Views"
+      },
+      {
+        "command": "integratedPower.eggr.installOrUpdateHarness",
+        "title": "EggR: Install or Update Antigravity Harness"
       }
     ],
     "menus": {
@@ -86,19 +92,22 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npx -y esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
+    "vscode:prepublish": "node ./scripts/build-extension.js",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node ./scripts/run-headless-tests.js",
-    "test:extension": "npm run compile && node ./out/test/runTest.js"
+    "test": "pnpm run compile && node ./scripts/run-headless-tests.js",
+    "test:extension": "pnpm run compile && node ./out/test/runTest.js",
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
+    "@vscode/vsce": "^3.9.2",
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "18.x",
     "@types/vscode": "^1.80.0",
     "@vscode/test-electron": "^3.0.0",
     "glob": "^13.0.6",
+    "esbuild": "^0.28.1",
     "mocha": "^11.7.6",
     "typescript": "^5.1.3"
   },

@@ -50,13 +50,16 @@ When you dispatch a task to Codex using one of the background scripts above, the
 
 Follow these explicit rules:
 1. **Required Completion Sentinel**: You MUST explicitly tell Codex in your prompt: "When you are completely finished with all work, output exactly the phrase `CODEX_JOB_DONE status=success` at the very end of your response."
-2. **Estimate Task Scale**: Before setting your timer, estimate the scale of the task (e.g., 'Small Refactor', 'Medium Feature').
+2. **Estimate Before Start**: Before dispatch, record a token range, a point estimate, and confidence. Treat this as an estimate, never as provider-reported usage.
 3. **Wait for Completion**: Use the `schedule` tool to set a long wait timer. You do NOT need to poll. The script's watchdog will automatically kill Codex if it gets stuck *after* outputting the sentinel (`completed_stuck`), or if it completely idles for 10 minutes (`idle_timeout`).
-4. **Execution Time Feedback Loop (Metrics)**: 
+4. **Execution Time and Token Feedback Loop**:
    - When the background script completes, observe the actual elapsed time.
-   - You MUST also retrieve the total tokens used by Codex for this job. You can find this by checking the last entry in the file defined by `dashboard_global_storage.txt`, appended with `/reports/codex_usage.csv` (the script automatically parses usage if `-JsonLog` is used, so always pass `-JsonLog $true` if you need token counts).
-   - Record the mapping of `[Timestamp, Mode, Task Scale, Estimated Wait, Actual Elapsed Time, Total Tokens]` into a persistent metrics log located at the path defined by `dashboard_global_storage.txt`, appended with `/reports/codex_timer_metrics.csv` (create it if it doesn't exist).
-   - Use this historical data CSV to continually improve your timer estimates and to compare token usage against task scale in future invocations.
+   - Retrieve usage from the provider response or JSON log when available. Label the evidence as `provider_reported`, `calculated`, `estimated`, or `unavailable`; never silently substitute an estimate for actual usage.
+   - Store metrics below the EggR workspace state `reports/` directory. The bundled path module resolves it without a repository marker file.
+   - Compare the pre-start point estimate with provider-reported actual usage. Calibrate by provider, model, task class, route, and agent surface; do not claim an improvement unless the task also passed its quality checks.
+   - Report a percentage only when both the numerator and a documented capacity/budget denominator are known.
+   - Follow the repository's `docs/reference/eggr-telemetry.ko.md` and `config/eggr.telemetry.schema.json` when they are present.
+   - Use `scripts/Write-EggRTelemetryEvent.ps1` for metadata-only start, usage, waiting, completion, failure, and cancellation events.
 
 ## General Rules
 

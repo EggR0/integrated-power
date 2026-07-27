@@ -1,35 +1,49 @@
-# Antigravity IDE Global Orchestration Protocol (gemini.md)
+# EggR 전역 오케스트레이션 규약
 
-이 문서는 안티그래비티 IDE 확장 프로그램에 의해 통제되는 **전역 오케스트레이션 규칙(Rule 0-9)**입니다. 내장 모델의 자의적 판단(짐작)을 배제하고, 수치 기반의 명확한 상태 평가(JSON)와 분할 처리(CSV)를 강제하는 구조화(Algorithmic Structuring) 명세서입니다.
+이 파일은 Antigravity IDE가 EggR 하네스를 사용하는 최소 전역 규칙이다. EggR는 Codex 전용 경로나 Antigravity `globalStorage`에 종속되지 않는다.
 
-## 데이터 흐름 아키텍처
+## 1. 작업 시작
 
-확장 프로그램(`TokenManager.ts`)이 모든 하드웨어/토큰 모니터링을 백그라운드에서 수행하고, 결과를 `dashboard-state.json`으로 내보냅니다. 파이프라인 스크립트와 에이전트는 이 파일을 **유일한 상태 원본(Source of Truth)**으로 참조하여 라우팅을 결정합니다.
+비단순 작업을 시작하기 전에 다음을 확인한다.
 
+1. 현재 OS, 작업 폴더, Git 루트, 브랜치와 기존 변경
+2. 저장소의 `.ai/STATUS.md`, `.ai/HANDOFF.md`, `AGENTS.md`
+3. 성공 조건과 수정 허용 범위
+4. Main Agent, Codex, Antigravity, Local LLM 중 실행 경로
+5. 예상 토큰 범위·점 추정·confidence
+
+사용자의 목표가 하나인 연속 검사·수정·검증은 같은 작업으로 취급한다. 독립적인 위임과 재시도는 별도 attempt로 기록한다.
+
+## 2. EggR 상태 경로
+
+경로를 기억하거나 저장소에 PC 절대 경로를 기록하지 않는다. 번들 resolver를 사용한다.
+
+```powershell
+$resolver = Join-Path $HOME ".gemini\config\plugins\codex-orchestrator-plugin\skills\codex-orchestrator\scripts\lib\EggR.Paths.psm1"
+Import-Module $resolver -Force
+$workspaceState = Get-EggRWorkspaceStatePath -RepoRoot (Get-Location).Path
 ```
-[확장 프로그램] ──(nvidia-smi 호출, Codex 세션 폴링, Antigravity API 호출)──▶ dashboard-state.json
-[파이프라인 스크립트] ◀──(Read)── dashboard-state.json ──▶ 라우팅 결정 (모델 선택, 작업 분할)
-```
 
-상태 파일 위치: `.agents/dashboard_global_storage.txt`에 기록된 globalStorage 경로 아래 `reports/dashboard-state.json`
+Win11 기본 state root는 `%LOCALAPPDATA%\EggR\state`다. `EGGR_STATE_ROOT` 또는 `%USERPROFILE%\.config\eggr\roots.json`으로 override할 수 있다. 프로젝트 ID는 명시 ID, 정규화한 Git origin, 절대 경로 순으로 결정한다.
 
-## 1. 자원 및 능력 평가의 구조화 (Pipeline State Detection)
+대시보드 상태는 `<workspaceState>\reports\dashboard-state.json`, 실행 이벤트는 `<workspaceState>\.agent-runs\runs.jsonl`에 있다.
 
-모든 작업 시작 전, 파이프라인 스크립트는 아래 0~8 규칙에 따라 `dashboard-state.json`을 참조하여 현재 상태를 평가해야 합니다.
+## 3. 라우팅
 
-*   **Rule 0 (능력 점검)**: 각 모델의 코딩 능력은 웹 검색/사용자 평가 기반으로 사전에 정의된 티어를 따르며, 동적 평가 시 짐작하지 않고 이 정량 지표를 참조합니다.
-*   **Rule 1 (토큰 관제)**: 확장 프로그램이 `.agents/dashboard_global_storage.txt`에 기록한 globalStorage 경로 아래 `reports/dashboard-state.json`의 `tokenStatus` 블록(특히 `quotaPools` 배열 내 각 풀의 `remainingPercentage`, `resetTime`)을 스크립트가 파싱하여 현재 잔여량을 읽어옵니다.
-*   **Rule 2~3 (소프트 캡 여부)**: `dashboard-state.json` 내 `tokenStatus.recommendedTaskWeight`가 `restricted`이거나 토큰 잔량이 현저히 낮을 경우 소프트 캡 도달로 판정하여 안티그래비티 단독 코딩을 차단합니다.
-*   **Rule 4 (내재 모델 페널티)**: 소프트 캡에 달하지 않았으나, 사용 모델이 OPUS 4.6이나 CODEX가 아닌 Gemini(Pro/Flash)일 경우, 모델 캐파시티를 50%로 깎아 라우팅 비중을 조정합니다.
-*   **Rule 5 (로컬 GPU 가용성 검출)**: 확장 프로그램이 `nvidia-smi`를 주기적으로 호출하여 개별 GPU별 VRAM 사용량, 사용률, 전력(power.draw/power.limit)을 측정하고 `dashboard-state.json`의 `tokenStatus.localComputeStatus.gpus[]` 배열에 기록합니다. 파이프라인 스크립트는 이 데이터를 읽어 각 GPU의 잔여 VRAM을 확인하고, 게임 등 백그라운드 점유 시 해당 GPU를 로컬 LLM 라우팅에서 제외합니다.
-*   **Rule 6~8 (라우팅 알고리즘)**: `dashboard-state.json`에서 읽은 OPUS/Codex 잔량(`quotaPools`)과 GPU 가용성(`gpus`)을 종합하여, 어떤 클라우드 모델(OPUS, Codex)에 작업을 보내고 어떤 로컬 LLM(Qwen, Deepseek 등)을 혼합할지 스크립트가 결정합니다.
+- 작은 검사·명확한 수정·로컬 명령: Main Agent가 직접 처리
+- 긴 문맥의 정리·추출·분류: selector를 거친 Local LLM
+- 어려운 구현·디버깅·코드 검토: Codex Job
+- 구조적 판단과 상충하는 대안 비교: Codex Debate
+- 여러 작업을 감독하며 처리: Work Window
 
-## 2. 작업 순환 루프의 구조화 (State Machine Loop, Rule 9 a~i)
+저렴한 경로를 선택했다는 이유만으로 성공으로 보지 않는다. 결과 품질과 검증을 먼저 통과해야 한다.
 
-명령 접수 시 파이프라인은 다음의 a~i 상태 전이를 기계적으로 밟아야 합니다.
+## 4. 토큰과 완료 판정
 
-*   **[a~c] 자동 인지 및 상태 업데이트**: 명령 수령 즉시 `dashboard-state.json`을 참조(Read)하여 최신 토큰 잔여량, GPU 가용성, 소프트 캡 상태를 확인합니다. 필요 시 확장 프로그램의 대시보드 새로고침(Refresh)을 트리거하여 최신 데이터를 받습니다.
-*   **[d~e] 의사결정 및 위임 프롬프팅**: 알고리즘으로 산출된 성능표를 기반으로 최적 프로세스를 사용자에게 제안 후, 승인 시 **작업을 분할(Chunking)**하여 로컬 LLM에게 최우선 할당. 쿼터가 충분하다면 Codex에 배분 구조 검증을 의뢰.
-*   **[f~g] 계량화 타이머 및 실측 로깅**: 파이프라인은 작업 시작 전 `.csv`에 "예상 소요 시간 / 토큰 비중"을 기재. 로컬/내장 모델 병렬 작업 후, 종료 시 **실제 측정된 시간 및 토큰 변화량**을 짐작 없이 그대로 덮어씁니다.
-*   **[h] 교차 검증 파이프라인 강제**: 안티그래비티 내부 판단으로 종료를 선언하지 마십시오. 파이프라인이 추론 1위 로컬 LLM(DeepSeek)이나 Codex를 호출해 Repository를 공격적으로 교차 검증하게 하고 무결할 때만 Done 처리합니다.
-*   **[i] 구조적 리포트 반환**: 작업 완료 시 알람 트리거 및 JSON/CSV에서 추출된 워크플로우 통계(성공/실패 내역, 원인 분석)를 보고합니다.
+토큰은 `provider_reported`, `calculated`, `estimated`, `unavailable`을 구분한다. 공식 usage가 없으면 추정값을 실제값처럼 쓰지 않는다. 분모가 공식적으로 알려지지 않은 quota는 임의의 토큰 %로 변환하지 않는다.
+
+작업 완료는 산출물 생성, 검증, 변경·실패·남은 위험 정리, 필수 worklog 기록까지 끝났을 때만 선언한다. 자세한 규약은 저장소의 `docs/reference/eggr-telemetry.ko.md`를 따른다.
+
+## 5. 설치 생명주기
+
+대시보드를 열었다는 이유로 하네스나 이 파일을 덮어쓰지 않는다. 하네스 갱신은 사용자가 명령 팔레트에서 **EggR: Install or Update Antigravity Harness**를 실행했을 때만 수행한다. 기존 `GEMINI.md`가 있으면 보존하고 새 템플릿을 검토 대상으로만 연다.

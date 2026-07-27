@@ -3,58 +3,68 @@ import * as path from 'path';
 import * as os from 'os';
 import * as vscode from 'vscode';
 
-export async function installAntigravityPlugin(context: vscode.ExtensionContext) {
+export interface AntigravityPluginInstallResult {
+  installed: boolean;
+  destination?: string;
+  reason?: string;
+}
+
+export async function installAntigravityPlugin(
+  context: vscode.ExtensionContext,
+): Promise<AntigravityPluginInstallResult> {
+  const geminiRoot = path.join(os.homedir(), '.gemini');
+  const geminiConfigPath = path.join(geminiRoot, 'config', 'plugins');
+
+  if (!fs.existsSync(geminiRoot)) {
+    return {
+      installed: false,
+      reason: `Antigravity configuration directory was not found: ${geminiRoot}`,
+    };
+  }
+
+  const pluginDestPath = path.join(geminiConfigPath, 'codex-orchestrator-plugin');
+  const pluginSrcPath = path.join(context.extensionPath, 'assets', 'codex-orchestrator-plugin');
+
+  if (!fs.existsSync(pluginSrcPath)) {
+    throw new Error(`Bundled EggR harness assets were not found: ${pluginSrcPath}`);
+  }
+
+  await fs.promises.mkdir(geminiConfigPath, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const stagePath = path.join(geminiConfigPath, `.codex-orchestrator-plugin.eggr-stage-${process.pid}-${stamp}`);
+  const backupRoot = path.join(geminiConfigPath, '.eggr-backups');
+  const backupPath = path.join(backupRoot, `codex-orchestrator-plugin-${stamp}`);
+  let movedExistingInstall = false;
+
   try {
-    const geminiConfigPath = path.join(os.homedir(), '.gemini', 'config', 'plugins');
-    
-    // Only install if Antigravity config directory exists
-    if (!fs.existsSync(path.join(os.homedir(), '.gemini'))) {
-      return;
+    await copyDir(pluginSrcPath, stagePath);
+    if (fs.existsSync(pluginDestPath)) {
+      await fs.promises.mkdir(backupRoot, { recursive: true });
+      await fs.promises.rename(pluginDestPath, backupPath);
+      movedExistingInstall = true;
     }
-
-    // Ensure plugins directory exists
-    if (!fs.existsSync(geminiConfigPath)) {
-      fs.mkdirSync(geminiConfigPath, { recursive: true });
+    await fs.promises.rename(stagePath, pluginDestPath);
+    return { installed: true, destination: pluginDestPath };
+  } catch (error) {
+    if (movedExistingInstall && !fs.existsSync(pluginDestPath) && fs.existsSync(backupPath)) {
+      await fs.promises.rename(backupPath, pluginDestPath);
     }
-
-    const pluginDestPath = path.join(geminiConfigPath, 'codex-orchestrator-plugin');
-    const pluginSrcPath = path.join(context.extensionPath, 'assets', 'codex-orchestrator-plugin');
-
-    // If it doesn't exist in the extension (shouldn't happen), abort
-    if (!fs.existsSync(pluginSrcPath)) {
-      console.warn('Antigravity plugin assets not found in extension.');
-      return;
-    }
-
-    // Mirror the plugin directory so stale skills/scripts from older releases do not remain installed.
-    await syncDir(pluginSrcPath, pluginDestPath);
-    console.log('Antigravity plugin installed/updated successfully.');
-  } catch (err) {
-    console.error('Failed to install Antigravity plugin:', err);
+    throw error;
+  } finally {
+    await fs.promises.rm(stagePath, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
-async function syncDir(src: string, dest: string) {
+async function copyDir(src: string, dest: string): Promise<void> {
   await fs.promises.mkdir(dest, { recursive: true });
-  const [srcEntries, destEntries] = await Promise.all([
-    fs.promises.readdir(src, { withFileTypes: true }),
-    fs.promises.readdir(dest, { withFileTypes: true }).catch(() => [] as fs.Dirent[]),
-  ]);
-  const srcNames = new Set(srcEntries.map((entry) => entry.name));
-
-  for (const entry of destEntries) {
-    if (!srcNames.has(entry.name)) {
-      await fs.promises.rm(path.join(dest, entry.name), { recursive: true, force: true });
-    }
-  }
-
+  const srcEntries = await fs.promises.readdir(src, { withFileTypes: true });
   for (const entry of srcEntries) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
 
     if (entry.isDirectory()) {
-      await syncDir(srcPath, destPath);
-    } else {
+      await copyDir(srcPath, destPath);
+    } else if (entry.isFile()) {
       await fs.promises.copyFile(srcPath, destPath);
     }
   }

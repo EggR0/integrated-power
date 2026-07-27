@@ -13,4 +13,4 @@ Context aggregation and iterative execution across multiple tasks. Used when the
 ## Output
 - Aggregates the local queue, calendar, and context.
 - Dispatches the prompt to Codex via `Invoke-CodexJob.ps1` internally.
-- Results are saved in the dashboard globalStorage path's `reports/window-dispatch-result-<stamp>.md`.
+- Results are saved in EggR workspace state `reports/window-dispatch-result-<stamp>.md`.
