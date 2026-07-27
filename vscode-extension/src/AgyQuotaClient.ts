@@ -19,6 +19,20 @@ export interface QuotaResult {
   fetchedAt: number;
 }
 
+export class AgyNotInstalledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgyNotInstalledError';
+  }
+}
+
+export class AgyNotAuthenticatedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgyNotAuthenticatedError';
+  }
+}
+
 export class AgyQuotaClient {
   private extensionPath: string;
 
@@ -46,7 +60,7 @@ export class AgyQuotaClient {
     ].filter(Boolean) as string[];
     const found = candidates.find((candidate) => fs.existsSync(candidate));
     if (!found) {
-      throw new Error('agy.exe was not found. Install Antigravity CLI first.');
+      throw new AgyNotInstalledError('agy.exe was not found. Install Antigravity CLI first.');
     }
     return found;
   }
@@ -60,7 +74,7 @@ export class AgyQuotaClient {
     );
     const credential = JSON.parse(stdout.replace(/^\uFEFF/, ''));
     if (!credential.token) {
-      throw new Error('The agy credential does not contain a token.');
+      throw new AgyNotAuthenticatedError('The agy credential does not contain a token. Sign in to agy again.');
     }
     return credential;
   }
@@ -117,11 +131,11 @@ export class AgyQuotaClient {
   }
 
   private async refreshAccessToken(refreshToken: string, agyPath: string): Promise<QuotaToken> {
-    if (!refreshToken) throw new Error('The agy credential has no refresh token. Sign in to agy again.');
+    if (!refreshToken) throw new AgyNotAuthenticatedError('The agy credential has no refresh token. Sign in to agy again.');
     const secrets = this.clientSecretsFromBinary(agyPath);
-    if (!secrets.length) throw new Error('OAuth client information could not be read from the installed agy binary.');
+    if (!secrets.length) throw new AgyNotAuthenticatedError('OAuth client information could not be read from the installed agy binary. Sign in to agy again.');
 
-    let lastError;
+    let lastError: any;
     for (const secret of secrets) {
       const form = new URLSearchParams({
         client_id: CLIENT_ID,
@@ -148,7 +162,7 @@ export class AgyQuotaClient {
         lastError = error;
       }
     }
-    throw lastError || new Error('Failed to refresh the agy OAuth token.');
+    throw new AgyNotAuthenticatedError(lastError ? (lastError instanceof Error ? lastError.message : String(lastError.message || lastError)) : 'Failed to refresh the agy OAuth token. Sign in to agy again.');
   }
 
   private async agyVersion(agyPath: string): Promise<string> {

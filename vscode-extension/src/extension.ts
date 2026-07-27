@@ -55,6 +55,32 @@ function exportGlobalStoragePath(context: vscode.ExtensionContext) {
   fs.writeFileSync(storagePathFile, workspaceStoragePath, "utf8");
 }
 
+async function configureDashboardViews() {
+  const config = vscode.workspace.getConfiguration("integratedPower.view");
+  const showAntigravity = config.get<boolean>("showAntigravity", true);
+  const showCodex = config.get<boolean>("showCodex", true);
+  const showLocalLlm = config.get<boolean>("showLocalLlm", true);
+
+  const items: vscode.QuickPickItem[] = [
+    { label: "Antigravity IDE Capacity", picked: showAntigravity, description: "Show the Antigravity IDE token capacity section" },
+    { label: "Codex Capacity", picked: showCodex, description: "Show the Codex API token capacity section" },
+    { label: "Local LLM Status", picked: showLocalLlm, description: "Show the Local LLM status section" }
+  ];
+
+  const selected = await vscode.window.showQuickPick(items, {
+    canPickMany: true,
+    placeHolder: "Select the dashboard sections you want to display",
+    title: "Configure Dashboard Views"
+  });
+
+  if (selected !== undefined) {
+    const selectedLabels = new Set(selected.map(item => item.label));
+    await config.update("showAntigravity", selectedLabels.has("Antigravity IDE Capacity"), vscode.ConfigurationTarget.Global);
+    await config.update("showCodex", selectedLabels.has("Codex Capacity"), vscode.ConfigurationTarget.Global);
+    await config.update("showLocalLlm", selectedLabels.has("Local LLM Status"), vscode.ConfigurationTarget.Global);
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   initializeGlobalProtocol(context);
   exportGlobalStoragePath(context);
@@ -70,6 +96,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("integratedPower.agentRuns.refresh", () => provider.refresh()),
     vscode.commands.registerCommand("integratedPower.agentRuns.openRunsFile", () => provider.openRunsFile()),
+    vscode.commands.registerCommand("integratedPower.agentRuns.configureViews", configureDashboardViews),
     provider
   );
 

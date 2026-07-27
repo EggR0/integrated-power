@@ -3,15 +3,38 @@
   "publisher": "integratedpower",
   "displayName": "Antigravity IDE Dashboard",
   "description": "Dashboard for tracking AI agent runs and token usage",
-  "version": "0.1.3",
+  "version": "0.2.4",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
     "Other"
   ],
+  "activationEvents": [
+    "onView:integratedPower.agentRunsDashboard"
+  ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Integrated Power",
+      "properties": {
+        "integratedPower.view.showAntigravity": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Antigravity IDE capacity section in the dashboard."
+        },
+        "integratedPower.view.showCodex": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Codex capacity section in the dashboard."
+        },
+        "integratedPower.view.showLocalLlm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Local LLM capacity section in the dashboard."
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -41,6 +64,10 @@
         "command": "integratedPower.agentRuns.openRunsFile",
         "title": "Open Runs JSONL File",
         "icon": "$(json)"
+      },
+      {
+        "command": "integratedPower.agentRuns.configureViews",
+        "title": "Antigravity IDE: Configure Dashboard Views"
       }
     ],
     "menus": {
@@ -59,7 +86,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npx -y esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "npm run compile && node ./scripts/run-headless-tests.js",

@@ -15,7 +15,7 @@ param(
     [string]$Model = "gpt-5.5",
     [ValidateSet("minimal", "low", "medium", "high", "xhigh")]
     [string]$ReasoningEffort = "high",
-    [string]$CodexExe = "C:\Users\jsp0\AppData\Local\OpenAI\Codex\bin\38dff8711e296435\codex.exe",
+    [string]$CodexExe = "",
     [int]$TimeoutSeconds = 1800,
     [switch]$NoHistory
 )
@@ -23,6 +23,17 @@ param(
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+
+if ([string]::IsNullOrWhiteSpace($CodexExe)) {
+    $cmd = Get-Command "codex.exe", "codex" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) {
+        $CodexExe = $cmd.Source
+    } elseif (![string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $newest = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin") -Filter "codex.exe" -Recurse -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($newest) { $CodexExe = $newest.FullName }
+    }
+    if ([string]::IsNullOrWhiteSpace($CodexExe)) { $CodexExe = "codex" }
+}
 function Write-Utf8 {
     param([string]$Path, [string]$Text, [switch]$Append)
     $dir = Split-Path -Parent $Path

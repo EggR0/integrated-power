@@ -25,9 +25,9 @@ function test(name, fn) {
 test("workspace storage path uses Antigravity globalStorage workspace hash", () => {
   const storageRoot = "C:\\Users\\tester\\AppData\\Roaming\\Antigravity IDE\\User\\globalStorage\\integratedpower.antigravity-ide-dashboard";
   const folderPath = "C:\\Projects\\Example";
-  const expected = path.join(storageRoot, "workspaces", "50ce1bf3906f6a0c46337bc7cac06b27");
+  const expected = path.join(storageRoot, "workspaces", "94d71547f4edd4dc7503da0254d1794a");
 
-  assert.strictEqual(normalizeWorkspacePathForStorage(folderPath), "c:\\Projects\\Example");
+  assert.strictEqual(normalizeWorkspacePathForStorage(folderPath), "C:\\Projects\\Example");
   assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath), expected);
 });
 
@@ -36,6 +36,7 @@ test("package commands exclude removed Athena workflow", () => {
   const commands = (manifest.contributes?.commands ?? []).map((entry) => entry.command).sort();
 
   assert.deepStrictEqual(commands, [
+    "integratedPower.agentRuns.configureViews",
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
   ]);
@@ -88,6 +89,10 @@ test("compiled runtime excludes stale path and workflow patterns", () => {
 
   assert.ok(runtimeFiles.includes("pendingRefreshForce"));
   assert.ok(runtimeFiles.includes("workspaceStoragePathForFolder"));
+
+  const tokenManagerOut = readText("out", "TokenManager.js");
+  assert.ok(tokenManagerOut.includes("triggerCodexLiveRefresh"), "Expected triggerCodexLiveRefresh in TokenManager.js");
+  assert.ok(tokenManagerOut.includes("findCodexCli"), "Expected findCodexCli in TokenManager.js");
 });
 
 console.log("headless tests passed");

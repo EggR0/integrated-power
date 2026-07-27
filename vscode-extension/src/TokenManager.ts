@@ -4,7 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { JsonObject, TokenStatus, QuotaPoolStatus, LocalComputeStatus, QuotaSource, UsageConfidence, GpuStatus } from "./types";
-import { AgyQuotaClient } from "./AgyQuotaClient";
+import { AgyQuotaClient, AgyNotInstalledError, AgyNotAuthenticatedError } from "./AgyQuotaClient";
 import matter from "gray-matter";
 
 const QUOTA_CACHE_TTL_MS = 60_000;
@@ -75,6 +75,8 @@ interface StatusOptions {
 export class TokenManager {
   private quotaCache?: { lastFetchTime: number; data: QuotaData };
   private fetchPromise?: Promise<QuotaData>;
+  private hasShownAgyMissingPrompt = false;
+  private hasShownAgyAuthPrompt = false;
 
   public async getStatus(
     fileUri: vscode.Uri | undefined,
@@ -420,14 +422,16 @@ export class TokenManager {
     const fiveHourPercentage = normalizePercentage(codexPercentage);
     const weeklyPercentage = normalizePercentage(codexWeeklyPercentage);
 
-    if (fiveHourPercentage === undefined) {
+    if (fiveHourPercentage === undefined && weeklyPercentage === undefined) {
       return "unknown";
     }
 
     const effectivePercentage =
-      weeklyPercentage === undefined
-        ? fiveHourPercentage
-        : Math.min(fiveHourPercentage, weeklyPercentage);
+      fiveHourPercentage === undefined
+        ? (weeklyPercentage as number)
+        : weeklyPercentage === undefined
+          ? fiveHourPercentage
+          : Math.min(fiveHourPercentage, weeklyPercentage);
 
     if (effectivePercentage <= 15) {
       return "restricted";
@@ -459,12 +463,12 @@ export class TokenManager {
 
     if (this.fetchPromise) {
       if (forceRefresh) {
-        this.fetchPromise = this.fetchQuotaData();
+        this.fetchPromise = this.fetchQuotaData(forceRefresh);
       } else {
         activity.push("Waiting for in-flight quota telemetry request.");
       }
     } else {
-      this.fetchPromise = this.fetchQuotaData();
+      this.fetchPromise = this.fetchQuotaData(forceRefresh);
     }
 
     const currentFetch = this.fetchPromise;
@@ -513,12 +517,12 @@ export class TokenManager {
     };
   }
 
-  private async fetchQuotaData(): Promise<QuotaData> {
+  private async fetchQuotaData(forceRefresh = false): Promise<QuotaData> {
     const data: QuotaData = { errors: [], quotaPools: [] };
 
     // Use collectors to gather quota and compute metrics
     await Promise.all([
-      this.fetchCodexQuota()
+      this.fetchCodexQuota(forceRefresh)
         .then((codexQuota) => {
           data.codexPercentage = codexQuota.codexPercentage;
           data.codexResetTime = codexQuota.codexResetTime;
@@ -526,24 +530,28 @@ export class TokenManager {
           data.codexWeeklyPercentage = codexQuota.codexWeeklyPercentage;
           data.codexWeeklyResetTime = codexQuota.codexWeeklyResetTime;
           data.codexWeeklyEstimatedAbsolute = codexQuota.codexWeeklyEstimatedAbsolute;
-          data.quotaPools!.push({
-            id: "codex.5h",
-            provider: "codex",
-            remainingPercentage: codexQuota.codexPercentage,
-            remainingTokens: codexQuota.codexEstimatedAbsolute,
-            resetTime: codexQuota.codexResetTime,
-            source: "cli-json",
-            confidence: "reported-quota"
-          });
-          data.quotaPools!.push({
-            id: "codex.weekly",
-            provider: "codex",
-            remainingPercentage: codexQuota.codexWeeklyPercentage,
-            remainingTokens: codexQuota.codexWeeklyEstimatedAbsolute,
-            resetTime: codexQuota.codexWeeklyResetTime,
-            source: "cli-json",
-            confidence: "reported-quota"
-          });
+          if (codexQuota.codexPercentage !== undefined || codexQuota.codexResetTime !== undefined || codexQuota.codexEstimatedAbsolute !== undefined) {
+            data.quotaPools!.push({
+              id: "codex.5h",
+              provider: "codex",
+              remainingPercentage: codexQuota.codexPercentage,
+              remainingTokens: codexQuota.codexEstimatedAbsolute,
+              resetTime: codexQuota.codexResetTime,
+              source: "cli-json",
+              confidence: "reported-quota"
+            });
+          }
+          if (codexQuota.codexWeeklyPercentage !== undefined || codexQuota.codexWeeklyResetTime !== undefined || codexQuota.codexWeeklyEstimatedAbsolute !== undefined) {
+            data.quotaPools!.push({
+              id: "codex.weekly",
+              provider: "codex",
+              remainingPercentage: codexQuota.codexWeeklyPercentage,
+              remainingTokens: codexQuota.codexWeeklyEstimatedAbsolute,
+              resetTime: codexQuota.codexWeeklyResetTime,
+              source: "cli-json",
+              confidence: "reported-quota"
+            });
+          }
         })
         .catch((error: unknown) => {
           data.errors.push(`Codex: ${this.errorMessage(error)}`);
@@ -592,7 +600,15 @@ export class TokenManager {
           });
         })
         .catch((error: unknown) => {
-          data.errors.push(`Antigravity: ${this.errorMessage(error)}`);
+          if (error instanceof AgyNotInstalledError) {
+            this.handleAgyMissing();
+            data.errors.push(`Antigravity: CLI is missing.`);
+          } else if (error instanceof AgyNotAuthenticatedError) {
+            this.handleAgyAuthRequired();
+            data.errors.push(`Antigravity: Authentication required.`);
+          } else {
+            data.errors.push(`Antigravity: ${this.errorMessage(error)}`);
+          }
         }),
       this.fetchLocalLlmStatus()
         .then(({ localComputeStatus, quotaPool }) => {
@@ -613,7 +629,7 @@ export class TokenManager {
     try {
       const output = await this.execFileText(
         "nvidia-smi",
-        ["--query-gpu=index,name,utilization.gpu,memory.used,memory.total,power.draw,power.limit", "--format=csv,noheader,nounits"],
+        ["--query-gpu=index,name,utilization.gpu,memory.used,memory.total,power.draw,power.limit,enforced.power.limit", "--format=csv,noheader,nounits"],
         { timeoutMs: 5_000 },
       );
       const rows = output
@@ -627,6 +643,9 @@ export class TokenManager {
       }
 
       const gpus: GpuStatus[] = rows.map(parts => {
+        const powerLimit = parseFloat(parts[6]);
+        const enforcedLimit = parseFloat(parts[7]);
+        const userConfiguredLimit = Number.isFinite(powerLimit) && powerLimit > 0 ? powerLimit : (Number.isFinite(enforcedLimit) ? enforcedLimit : 0);
         return {
           id: parseInt(parts[0], 10),
           name: parts[1],
@@ -634,7 +653,7 @@ export class TokenManager {
           vramUsedMb: parseFloat(parts[3]),
           vramTotalMb: parseFloat(parts[4]),
           powerDrawW: parseFloat(parts[5]),
-          powerLimitW: parseFloat(parts[6])
+          powerLimitW: userConfiguredLimit
         };
       }).filter(gpu => Number.isFinite(gpu.utilizationPercentage));
       
@@ -719,7 +738,86 @@ export class TokenManager {
     };
   }
 
-  private async fetchCodexQuota(): Promise<
+  private findCodexCli(): string | undefined {
+    const envPath = process.env.CODEX_PATH;
+    if (envPath && fs.existsSync(envPath)) {
+      return envPath;
+    }
+
+    const localAppData = process.env.LOCALAPPDATA;
+    if (localAppData) {
+      const codexBinDir = path.join(localAppData, "OpenAI", "Codex", "bin");
+      if (fs.existsSync(codexBinDir)) {
+        try {
+          const dirs = fs
+            .readdirSync(codexBinDir, { withFileTypes: true })
+            .filter((d) => d.isDirectory())
+            .map((d) => path.join(codexBinDir, d.name, "codex.exe"))
+            .filter((p) => fs.existsSync(p));
+          if (dirs.length > 0) {
+            return dirs[0];
+          }
+        } catch {
+          // Ignore filesystem errors
+        }
+      }
+    }
+
+    const localBinExe = path.join(os.homedir(), ".local", "bin", "codex.exe");
+    if (fs.existsSync(localBinExe)) {
+      return localBinExe;
+    }
+    const localBinCmd = path.join(os.homedir(), ".local", "bin", "codex.cmd");
+    if (fs.existsSync(localBinCmd)) {
+      return localBinCmd;
+    }
+
+    return "codex";
+  }
+
+  private async triggerCodexLiveRefresh(): Promise<void> {
+    const cli = this.findCodexCli();
+    if (!cli) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+
+      const timer = setTimeout(() => {
+        try {
+          child.kill();
+        } catch {
+          // Ignore kill error
+        }
+        finish();
+      }, 12000);
+
+      const child = cp.spawn(cli, ["exec", "--skip-git-repo-check", "reply ok"], {
+        stdio: ["ignore", "ignore", "ignore"],
+        windowsHide: true,
+        shell: cli === "codex" || cli.endsWith(".cmd")
+      });
+
+      child.on("error", () => {
+        clearTimeout(timer);
+        finish();
+      });
+
+      child.on("close", () => {
+        clearTimeout(timer);
+        finish();
+      });
+    });
+  }
+
+  private async fetchCodexQuota(forceRefresh = false): Promise<
     Pick<
       QuotaData,
       | "codexPercentage"
@@ -730,6 +828,10 @@ export class TokenManager {
       | "codexWeeklyEstimatedAbsolute"
     >
   > {
+    if (forceRefresh) {
+      await this.triggerCodexLiveRefresh();
+    }
+
     const sessionsDir = path.join(os.homedir(), ".codex", "sessions");
     const files = await this.walkJsonlFiles(sessionsDir);
 
@@ -784,8 +886,16 @@ export class TokenManager {
     }
 
     const limits = [primary, secondary].filter((limit): limit is JsonObject => Boolean(limit));
-    const fiveHour = limits.find((limit) => this.numberValue(limit, ["window_minutes"]) === 300) ?? primary;
-    const weekly = limits.find((limit) => this.numberValue(limit, ["window_minutes"]) === 10080) ?? secondary;
+    const fiveHour =
+      limits.find((limit) => {
+        const win = this.numberValue(limit, ["window_minutes"]);
+        return win !== undefined && win <= 1440;
+      }) ?? (this.numberValue(primary, ["window_minutes"]) === undefined ? primary : undefined);
+    const weekly =
+      limits.find((limit) => {
+        const win = this.numberValue(limit, ["window_minutes"]);
+        return win !== undefined && win > 1440;
+      }) ?? (secondary && this.numberValue(secondary, ["window_minutes"]) === undefined ? secondary : undefined);
 
     const fiveHourQuota = this.codexWindowQuota(fiveHour);
     const weeklyQuota = this.codexWindowQuota(weekly);
@@ -969,6 +1079,9 @@ export class TokenManager {
         }
       }
     } catch (error) {
+      if (error instanceof AgyNotInstalledError || error instanceof AgyNotAuthenticatedError) {
+        throw error;
+      }
       throw new Error(`Failed to fetch agy quota natively: ${this.errorMessage(error)}`);
     }
 
@@ -1067,6 +1180,36 @@ export class TokenManager {
 
   private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private handleAgyMissing(): void {
+    if (this.hasShownAgyMissingPrompt) return;
+    this.hasShownAgyMissingPrompt = true;
+    vscode.window.showErrorMessage(
+      "Antigravity CLI (agy) is not installed. It is required for accurate quota telemetry.",
+      "Install Agy CLI"
+    ).then(selection => {
+      if (selection === "Install Agy CLI") {
+        const terminal = vscode.window.createTerminal("Install Antigravity CLI");
+        terminal.show();
+        terminal.sendText("powershell -NoProfile -ExecutionPolicy Bypass -Command \"iex ((New-Object System.Net.WebClient).DownloadString('https://antigravity.google/cli/install.ps1'))\"");
+      }
+    });
+  }
+
+  private handleAgyAuthRequired(): void {
+    if (this.hasShownAgyAuthPrompt) return;
+    this.hasShownAgyAuthPrompt = true;
+    vscode.window.showErrorMessage(
+      "Antigravity CLI is not authenticated. Please sign in to view accurate quota usage.",
+      "Sign In"
+    ).then(selection => {
+      if (selection === "Sign In") {
+        const terminal = vscode.window.createTerminal("Antigravity Auth");
+        terminal.show();
+        terminal.sendText("& \"$env:LOCALAPPDATA\\agy\\bin\\agy.exe\" auth login");
+      }
+    });
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "workspace": "C:\\Users\\jsp0\\Documents\\Intergrated POWER",
+  "workspace": "${WORKSPACE_ROOT}",
   "primary_interface": "antigravity_ide",
   "quota_policy": {
     "can_pool_tokens_across_providers": false,

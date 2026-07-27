@@ -213,12 +213,24 @@ if (-not $serverRunning -or $ForceRestart) {
         Stop-Process -Name "ollama*" -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
     }
-    $ollamaExe = "C:\Users\jsp0\AppData\Local\Programs\Ollama\ollama.exe"
-    if (Test-Path $ollamaExe) {
-        # Prioritize the second GPU (GPU 1) over the first GPU (GPU 0)
+    $ollamaCmd = Get-Command "ollama.exe", "ollama" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe" }
+
+    if (Test-Path -LiteralPath $ollamaExe) {
         $originalCuda = $env:CUDA_VISIBLE_DEVICES
-        #$env:CUDA_VISIBLE_DEVICES = "GPU-f077aeaf-f267-e4bb-f7c3-9900f14974de" #second 3090
-        $env:CUDA_VISIBLE_DEVICES = "GPU-55d96f90-5ae6-44ba-a00b-c216bd464328" #first 3090 (nvidia-smi GPU 1)
+        if ([string]::IsNullOrWhiteSpace($env:CUDA_VISIBLE_DEVICES)) {
+            try {
+                $bestGpu = nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits 2>$null | 
+                    ConvertFrom-Csv -Header "index","free" | 
+                    Sort-Object { [int]$_.free } -Descending | 
+                    Select-Object -First 1
+                if ($bestGpu) {
+                    $env:CUDA_VISIBLE_DEVICES = $bestGpu.index.ToString().Trim()
+                }
+            } catch {
+                # Rely on default system GPU routing if nvidia-smi is unavailable
+            }
+        }
         
         Start-Process -FilePath $ollamaExe -ArgumentList "serve" -WindowStyle Hidden
         Start-Sleep -Seconds 5
@@ -231,7 +243,7 @@ if (-not $serverRunning -or $ForceRestart) {
         }
     }
     else {
-        throw "Ollama executable not found at $ollamaExe"
+        throw "Ollama executable not found at $ollamaExe or in system PATH."
     }
 }
 

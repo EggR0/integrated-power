@@ -3,7 +3,7 @@ import * as path from "path";
 
 export function normalizeWorkspacePathForStorage(folderPath: string): string {
   const resolved = path.resolve(folderPath);
-  return /^[A-Z]:/.test(resolved) ? resolved[0].toLowerCase() + resolved.slice(1) : resolved;
+  return /^[a-z]:/.test(resolved) ? resolved[0].toUpperCase() + resolved.slice(1) : resolved;
 }
 
 export function workspaceStoragePathForFolder(globalStorageFsPath: string, folderPath: string): string {

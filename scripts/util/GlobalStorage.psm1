@@ -2,8 +2,8 @@ function Get-WorkspaceStorageHash {
     param([string]$RepoRoot)
 
     $fullPath = [System.IO.Path]::GetFullPath($RepoRoot)
-    if ($fullPath -match '^[A-Z]:') {
-        $fullPath = $fullPath.Substring(0, 1).ToLowerInvariant() + $fullPath.Substring(1)
+    if ($fullPath -match '^[a-z]:') {
+        $fullPath = $fullPath.Substring(0, 1).ToUpperInvariant() + $fullPath.Substring(1)
     }
 
     $md5 = [System.Security.Cryptography.MD5]::Create()
