@@ -8,6 +8,7 @@
 - EggR Orchestrator plugin: 2.1.0 관리 설치
 - skill identity: `eggr-orchestrator`
 - 전역 `GEMINI.md`: 설치 과정에서 생성·추가·교체하지 않음
+- Win11 직접 배포 ZIP: 0.6.0 생성·실설치·재실행 검증 완료
 
 ## Configuration Center
 
@@ -39,10 +40,19 @@
 - VSIX 필수 파일·개인 절대 경로·이메일·GEMINI template 검사 통과
 - 라이브 재계획: `managed-current`, `no-op`
 - 설치 전후 사용자 `GEMINI.md` 해시 동일
+- 직접 배포 PowerShell 파일: Windows PowerShell 5.1용 UTF-8 BOM 확인
+- VSIX 내부 ID·버전, Knowledge payload commit·clean source 확인
+- 압축 해제본 `VerifyOnly`, 설치, 두 번째 설치 `already-current` 통과
+- Knowledge 8개 파일 hash와 schema 2 install state 일치
+- 변조 VSIX, 잘못된 CLI, 누락·중복 manifest mapping 거부
+- ZIP 개인 경로·이메일·개발자 원격 식별자 검사 통과
+- ZIP SHA-256:
+  `FF84156C82C5C3F07BA2ACBAE0432B506679F1ECC2C6E1AB91F5E44E6976704F`
 
 ## 다음
 
-1. 실행 중인 Antigravity IDE에서 `Developer: Reload Window`
-2. `EggR: Open Configuration Center`
-3. Orchestrator 영역에서 설치 계획이 `managed-current`/`no-op`인지 확인
-4. Windows 11 별도 테스트 사용자 계정 또는 VM에서 0.4.2→0.6.0 UI 전환 확인
+1. 최종 ZIP과 `.sha256.txt`를 함께 전달
+2. 수신자는 ZIP 전체 압축 해제 후 `01-INSTALL.cmd` 실행
+3. Antigravity IDE에서 `Developer: Reload Window`
+4. `EggR: Open Configuration Center`
+5. 별도 Windows 11 사용자 계정 또는 VM에서 신규 사용자 UI 전환 확인

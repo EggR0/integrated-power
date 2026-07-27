@@ -56,6 +56,13 @@ Antigravity 애플리케이션이 시작될 수 있다.
 
 ## 설치
 
+일반 사용자에게는 저장소나 Node.js 개발 도구 대신 Win11 직접 배포 ZIP을 전달한다.
+ZIP을 전부 압축 해제한 뒤 `01-INSTALL.cmd`를 실행하면 VSIX와 Windows Private
+Knowledge 명령의 SHA-256을 확인하고 설치한다. `02-VERIFY-ONLY.cmd`는 설치 전
+진단만 수행하며 시스템을 변경하지 않는다.
+
+개발자가 VSIX만 직접 설치해야 할 때는 Antigravity IDE 명령줄 wrapper를 사용한다.
+
 Antigravity IDE 명령줄 wrapper에서 VSIX를 설치한다.
 
 ```powershell
@@ -135,6 +142,10 @@ Orchestrator는 다음 두 정책을 제공한다.
 | Ollama 또는 vLLM | 로컬 LLM 경로 사용 시 | 하지 않음 |
 | NVIDIA driver와 `nvidia-smi` | NVIDIA GPU 측정 시 | 하지 않음 |
 | Agy | Agy 사용량 연동 시 | 하지 않음 |
+
+직접 배포본은 EggR가 소유한 Private Knowledge Windows 명령만 함께 설치한다.
+Antigravity IDE, Git, GPU driver, 외부 에이전트 CLI와 로컬 모델은 자동 설치하지
+않는다.
 
 GPU driver, 모델, 서비스 포트, Git 인증과 API 자격 증명은 사용자 환경에 큰 영향을
 주므로 묵시적으로 설치하거나 변경하지 않는다. 마법사는 존재 여부를 진단하고 필요한

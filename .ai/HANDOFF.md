@@ -1,12 +1,13 @@
 ---
-session_id: 20260727-eggr-configuration-center-dependencies
+session_id: 20260727-eggr-win11-direct-distribution
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: b82b425d335547e112ff16855353c2905fc373e2
+base_commit: 7dcbf6744942312fc1f179e96999e955edb107fc
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
+  - "distribution/**"
   - "docs/**"
   - "vscode-extension/**"
   - "README.md"
@@ -23,11 +24,30 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: dashboard_0_6_0_distribution_migration_verified
-next_action: Reload Antigravity IDE and inspect the Configuration Center migration plan; the current managed plugin should report no-op.
+state: dashboard_0_6_0_win11_direct_distribution_ready
+next_action: Distribute the ZIP with its SHA-256 sidecar, then validate the first-run UI on a separate Windows 11 account or VM.
 ---
 
 # Handoff Log
+- **2026-07-27 Win11 direct distribution**: Added a self-contained release
+  builder and double-click install, verify-only, and extension-only uninstall
+  entry points. The package pins the Dashboard VSIX plus the user-owned
+  Private Knowledge Windows tools from environment-bootstrap commit
+  `eea1adf1050e1a13a93272c06aabf92ea4979db8`. Antigravity IDE and optional
+  third-party dependencies remain explicit user installations.
+- **2026-07-27 distribution hardening**: The builder verifies the VSIX internal
+  identity/version and clean Git provenance, converts PowerShell payloads to
+  UTF-8 BOM for Windows PowerShell 5.1, and records every required payload
+  hash. The installer rejects missing/duplicate mappings, reparse points,
+  unknown same-name Knowledge commands, externally modified managed commands,
+  the separate Antigravity application, and non-Antigravity IDE CLIs.
+- **2026-07-27 live direct-install verification**: The installed Dashboard
+  remained 0.6.0, eight Knowledge command files match the release, schema 2
+  state records their hashes, and the second run changed neither files nor
+  state. Extracted-ZIP verify-only, tampered-VSIX rejection, wrong-CLI rejection,
+  uninstall verify-only, private-string scan, and sidecar hash verification
+  passed. `GEMINI.md` and `roots.json` hashes remained unchanged. Final ZIP
+  SHA-256: `FF84156C82C5C3F07BA2ACBAE0432B506679F1ECC2C6E1AB91F5E44E6976704F`.
 - **2026-07-27 Dashboard 0.6.0 distribution-grade migration**: Replaced
   machine-specific recovery logic with a versioned installer that checks only
   the exact Antigravity global plugin root destinations. It validates plugin,

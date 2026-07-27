@@ -5,7 +5,8 @@ EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같�
 ## 현재 구조
 
 - `vscode-extension/`: Antigravity IDE 사용량·실행 상태 대시보드
-- `vscode-extension/assets/codex-orchestrator-plugin/`: 명시적으로 설치하는 EggR Antigravity 오케스트레이터 번들
+- `vscode-extension/assets/eggr-orchestrator-plugin/`: 명시적으로 설치하는 EggR Antigravity 오케스트레이터 번들
+- `distribution/win11/`: 해시 검증, 설치·검증·제거 진입점과 직접 배포 ZIP 생성기
 - `scripts/dispatch/`: Codex, Local LLM, Work Window 실행기
 - `scripts/util/EggR.Paths.psm1`: OS·작업 경로에 종속되지 않는 EggR resolver
 - `config/eggr.telemetry.schema.json`: 작업·토큰 이벤트 스키마
@@ -14,13 +15,36 @@ EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같�
 
 ## Win11 빠른 시작
 
-1. 이 저장소를 원하는 위치에 clone한다.
-2. `vscode-extension`에서 compile과 headless test를 실행한다.
-3. 검증된 VSIX를 Antigravity IDE에 설치한다.
-4. 명령 팔레트에서 **EggR: Install or Update Orchestrator**를 실행한다.
-5. `%LOCALAPPDATA%\EggR\state\workspaces`에 프로젝트 상태가 만들어지는지 확인한다.
+일반 사용자는 `EggR-Antigravity-IDE-Dashboard-<version>-win11.zip`을 전부 압축
+해제한 뒤 `01-INSTALL.cmd`를 실행한다. 설치기는 전체 payload SHA-256을 확인하고
+다음을 설치한다.
+
+- 고정 버전 Dashboard VSIX
+- Private Knowledge 최초 설정용 Windows 명령
+- Windows 명령 경로 `%LOCALAPPDATA%\EggR\bin`
+
+설치 후 Antigravity IDE에서 `Developer: Reload Window`와
+`EggR: Open Configuration Center`를 차례로 실행한다. Dashboard, Orchestrator,
+Private Knowledge는 같은 페이지에서 보이지만 각각 명시적으로 설정한다.
 
 대시보드를 여는 것만으로 `GEMINI.md`나 전역 오케스트레이터를 변경하지 않는다. 설치 명령은 기존 오케스트레이터를 `.gemini\config\plugins\.eggr-backups`에 보존하고 새 번들을 stage한 뒤 교체한다.
+
+## Win11 직접 배포본 생성
+
+유지관리자는 검증된 VSIX와 `environment-bootstrap` 작업 트리를 명시해 ZIP을 만든다.
+개발자 개인 Knowledge 저장소는 입력이나 payload가 아니다.
+
+```powershell
+.\distribution\win11\New-EggRWin11Release.ps1 `
+  -VsixPath .\vscode-extension\antigravity-ide-dashboard-0.6.0.vsix `
+  -KnowledgeBootstrapRoot ..\environment-bootstrap `
+  -OutputDirectory .\release
+```
+
+출력물은 ZIP과 ZIP 자체의 `.sha256.txt`다. 배포본 내부
+`release-manifest.json`은 Dashboard 버전·VSIX 해시·Knowledge 도구 원본 commit과
+설치 payload 해시를 고정한다. `02-VERIFY-ONLY.cmd`는 무변경 진단,
+`99-UNINSTALL-EXTENSION-ONLY.cmd`는 Dashboard 확장만 제거한다.
 
 ## EggR 경로 규칙
 

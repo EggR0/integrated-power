@@ -196,3 +196,25 @@
   재계획은 `managed-current`/`no-op`이며 `GEMINI.md` 해시는 변하지 않았다.
 - VSIX 0.6.0 최종 SHA-256:
   `2B000FDCFFEC4EBA1131BB0EC43BF3BB532C58285EECFBF4CBC93BFF5D6506E8`.
+
+## 2026-07-27 — Win11 직접 배포 ZIP
+
+- `distribution/win11`에 더블클릭 설치, 무변경 검증, Dashboard 확장만 제거하는
+  진입점과 재현 가능한 ZIP 생성기를 추가했다.
+- Dashboard VSIX와 `environment-bootstrap`의 사용자 소유 Private Knowledge
+  Windows 명령 8개를 한 배포본에 포함했다. Knowledge payload는 commit
+  `eea1adf1050e1a13a93272c06aabf92ea4979db8`로 고정하며 해당 source file의
+  dirty/staged 변경이 있으면 패키징을 중단한다.
+- Windows PowerShell 5.1의 UTF-8 무BOM 오해석을 막기 위해 배포되는 PowerShell
+  파일만 UTF-8 BOM으로 변환한다. 소스 파일 인코딩은 변경하지 않는다.
+- 설치기는 VSIX 내부 identity/version, 전체 필수 payload SHA-256, Knowledge
+  mapping 완전성, reparse point, Antigravity IDE CLI identity를 검증한다.
+- 기존 Knowledge 명령은 인식 가능한 EggR legacy 또는 관리 state와 hash가 맞을
+  때만 백업 후 갱신한다. 외부 수정이나 인식되지 않은 같은 이름 파일은 충돌로
+  중단한다. schema 2 state에 설치 파일별 hash, 생성 파일, PATH 추가 여부를 남긴다.
+- 이 PC에서 실제 설치 후 두 번째 실행이 완전한 `already-current`였고 state hash도
+  동일했다. `GEMINI.md`와 `roots.json` 해시는 전후 동일했다.
+- 압축 해제본 검증, 변조 VSIX 거부, 잘못된 CLI 거부, extension-only 제거 검증,
+  개인 경로·이메일·개발자 원격 식별자 검사와 ZIP sidecar 비교가 통과했다.
+- 최종 ZIP SHA-256:
+  `FF84156C82C5C3F07BA2ACBAE0432B506679F1ECC2C6E1AB91F5E44E6976704F`.

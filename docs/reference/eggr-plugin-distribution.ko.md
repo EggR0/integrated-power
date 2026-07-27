@@ -1,5 +1,23 @@
 # EggR Orchestrator 플러그인 배포·마이그레이션 규약
 
+## Win11 직접 배포 상위 경계
+
+최종 사용자용 ZIP은 `distribution/win11`에서 생성한다. 이 ZIP은 Dashboard VSIX와
+Private Knowledge Windows 명령을 고정하지만, 이 문서의 Orchestrator 설치 규약을
+우회하지 않는다. 사용자가 Configuration Center에서 설치를 명시한 뒤에만
+Antigravity IDE 전역 plugin root가 변경된다.
+
+직접 배포 설치기는 다음만 자동으로 수행한다.
+
+1. `release-manifest.json`의 설치 payload SHA-256 검증
+2. 정확한 Antigravity IDE CLI를 통한 Dashboard VSIX 설치·갱신
+3. `%LOCALAPPDATA%\EggR\bin`의 EggR 소유 Windows Knowledge 명령 설치
+4. 기존 Windows 명령이 다른 경우 시각별 폴더에 백업
+
+별도 Antigravity 애플리케이션, `GEMINI.md`, 사용자 Knowledge 내용, 로그인 정보,
+GPU driver와 외부 도구는 변경하지 않는다. 확장 제거 진입점도 Dashboard만
+제거하며 Orchestrator·Knowledge·EggR 설정과 상태를 보존한다.
+
 ## 목적
 
 이 문서는 Antigravity IDE 확장을 다른 Windows 11 사용자에게 배포할 때
