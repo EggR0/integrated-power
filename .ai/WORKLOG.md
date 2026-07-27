@@ -1,5 +1,20 @@
 # EggR 작업 기록
 
+## 2026-07-27 — Antigravity IDE Dashboard 0.4.2 README 교체
+
+- 확장 패키지에 실제 포함되는 `vscode-extension/README.md`를 전면 교체했다.
+- 첫 문단에 개발·실행 대상이 Antigravity IDE 확장임을 명시하고, 별도
+  Antigravity와 Codex 확장이 아님을 명시했다.
+- 올바른 `Antigravity IDE\bin\antigravity-ide.cmd` 설치 경로와 사용하면 안 되는
+  별도 `Programs\Antigravity\Antigravity.exe`를 함께 기록했다.
+- 세 갈래 설정, 명령, 데이터 경로, 의존성, 자동 설치하지 않는 범위, Orchestrator
+  로컬 모델 정책, Private Knowledge, 비밀값 정책, 문제 해결을 한 문서로 통합했다.
+- 같은 버전에서 내용이 다른 VSIX가 생기지 않도록 0.4.2로 올렸다.
+- 검증: headless 9개, extension-host 8개, VSIX 내부와 설치 폴더의 README 내용,
+  manifest version/displayName, 확장 카탈로그 0.4.2를 확인했다.
+- VSIX SHA-256:
+  `5316A9FF58D0F00C0F85DEE6D2B0003FA63F4E8ACDE9C8D16CAF2ED258093D45`.
+
 ## 2026-07-27 — Antigravity IDE Dashboard 0.4.1 BOM 활성화 복구
 
 - 범위: 별도 Antigravity나 Codex 확장이 아니라 Antigravity IDE Dashboard 확장.

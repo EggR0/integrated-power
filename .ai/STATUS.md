@@ -4,7 +4,7 @@
 
 - branch: `agent/codex/first-run-wizards`
 - 개발 대상: Antigravity IDE Dashboard 확장. 별도 Antigravity 또는 Codex 확장이 아님
-- Antigravity IDE Dashboard: 0.4.1 설치, 사용자 창 reload 대기
+- Antigravity IDE Dashboard: 0.4.2 설치, 사용자 창 reload 대기
 - bundled EggR Orchestrator: 1.2.0
 - telemetry schema: 1.2.0
 - 전역 Orchestrator는 명시적 IDE 명령을 실행할 때만 갱신된다.
@@ -15,7 +15,8 @@
 - headless tests: 8 passed, BOM 재현 포함
 - extension-host tests: 8 passed, BOM 재현 포함
 - VSIX manifest/entry point 검사 통과
-- installed extension catalog: `integratedpower.antigravity-ide-dashboard@0.4.1`
+- packaged/installed README의 Antigravity IDE 제품 경계 검사 통과
+- installed extension catalog: `integratedpower.antigravity-ide-dashboard@0.4.2`
 - 현재 `roots.json`은 BOM 없는 UTF-8
 
 ## Next

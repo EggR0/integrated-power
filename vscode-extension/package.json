@@ -1,9 +1,9 @@
 {
   "name": "antigravity-ide-dashboard",
   "publisher": "integratedpower",
-  "displayName": "Antigravity IDE Dashboard",
-  "description": "Dashboard for tracking AI agent runs and token usage",
-  "version": "0.4.1",
+  "displayName": "EggR Antigravity IDE Dashboard",
+  "description": "Antigravity IDE extension for EggR usage, agent-run, and local compute status",
+  "version": "0.4.2",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "vscode": "^1.80.0"

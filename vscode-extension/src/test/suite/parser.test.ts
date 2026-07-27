@@ -99,6 +99,7 @@ suite('Parser and Store Test Suite', () => {
   test('Packaged extension sources do not contain removed workflow regressions', () => {
     const extensionRoot = path.resolve(__dirname, '../../..');
     const manifestPath = path.join(extensionRoot, 'package.json');
+    const readmePath = path.join(extensionRoot, 'README.md');
     const webviewPath = path.join(extensionRoot, 'webview', 'main.js');
     const stylesPath = path.join(extensionRoot, 'webview', 'styles.css');
     const debateReferencePath = path.join(
@@ -125,6 +126,13 @@ suite('Parser and Store Test Suite', () => {
       'integratedPower.eggr.runOrchestratorSetup',
       'integratedPower.eggr.runPrivateKnowledgeSetup',
     ]);
+
+    const readme = fs.readFileSync(readmePath, 'utf8');
+    assert.ok(readme.includes('Antigravity IDE에서 실행되는 확장 프로그램'));
+    assert.ok(readme.includes('%LOCALAPPDATA%\\Programs\\Antigravity IDE\\bin\\antigravity-ide.cmd'));
+    assert.ok(readme.includes('%LOCALAPPDATA%\\Programs\\Antigravity\\Antigravity.exe'));
+    assert.ok(readme.includes('Codex용 확장도 아니다'));
+    assert.ok(!readme.includes('comprehensive VS Code extension'));
 
     const webview = fs.readFileSync(webviewPath, 'utf8');
     assert.ok(!webview.includes('tokenStatus = emptyTokenStatus()'));

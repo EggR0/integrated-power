@@ -86,6 +86,16 @@ test("first-run setup keeps three independent entry points", () => {
   assert.ok(fs.existsSync(path.join(extensionRoot, "assets", "private-git-knowledge.md")));
 });
 
+test("extension README identifies the Antigravity IDE product boundary", () => {
+  const readme = readText("README.md");
+
+  assert.ok(readme.includes("Antigravity IDE에서 실행되는 확장 프로그램"));
+  assert.ok(readme.includes("%LOCALAPPDATA%\\Programs\\Antigravity IDE\\bin\\antigravity-ide.cmd"));
+  assert.ok(readme.includes("%LOCALAPPDATA%\\Programs\\Antigravity\\Antigravity.exe"));
+  assert.ok(readme.includes("Codex용 확장도 아니다"));
+  assert.ok(!readme.includes("comprehensive VS Code extension"));
+});
+
 test("dashboard activation does not silently install or overwrite the EggR orchestrator", () => {
   const extensionSource = readText("src", "extension.ts");
   const activateBlock = extensionSource.slice(extensionSource.indexOf("export function activate"));

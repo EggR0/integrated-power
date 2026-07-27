@@ -55,6 +55,10 @@ Windows PowerShell 5.1의 `Set-Content -Encoding UTF8`은 UTF-8 BOM을 쓴다.
   만들어 경로 해석을 검증한다.
 - Windows Knowledge 기능 테스트가 저장된 JSON의 첫 바이트와 유효성을 확인한다.
 
+0.4.2에서는 확장에 표시되는 README를 전면 교체해 Antigravity IDE 전용 대상,
+별도 Antigravity 실행 금지, Codex 확장이 아님, 올바른 CLI wrapper와 세 갈래
+설정 범위를 첫 문서에서 확인할 수 있게 했다.
+
 ## 확인 절차
 
 1. `roots.json`의 첫 바이트가 `{`인 `7B`인지 확인한다.

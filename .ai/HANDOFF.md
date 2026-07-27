@@ -1,9 +1,9 @@
 ---
-session_id: 20260727-eggr-bom-activation-fix
+session_id: 20260727-antigravity-ide-extension-readme
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: 55124e8f1c86b77392c8a1e7425e2eb9046ee008
+base_commit: fcc2929185c7ee89cf6fe24ed67938cfd1ce770f
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
@@ -24,11 +24,17 @@ forbidden:
   - "C:/Users/test/.gemini/antigravity-ide/brain/**"
   - "C:/Users/test/AppData/Roaming/Antigravity IDE/User/globalStorage/**"
   - "../Intergrated-POWER-public/**"
-state: dashboard_0_4_1_installed_pending_user_reload
-next_action: Reload the running Antigravity IDE window and verify the five EggR command-palette entries.
+state: dashboard_0_4_2_readme_installed_pending_user_reload
+next_action: Reload the running Antigravity IDE window and verify the packaged README and five EggR command-palette entries.
 ---
 
 # Handoff Log
+- **2026-07-27 Dashboard 0.4.2 README replacement**: The packaged extension
+  README now states that the product is an Antigravity IDE extension, not an
+  extension for the separate Antigravity application or for Codex. It documents
+  the only valid CLI wrapper, three independent setup tracks, dependencies,
+  state paths, privacy boundaries, and troubleshooting. Source, VSIX, installed
+  folder, and catalog version were verified.
 - **2026-07-27 Dashboard 0.4.1 activation fix**: The target is the Antigravity
   IDE extension, not the separate Antigravity application or a Codex extension.
   Dashboard 0.4.0 failed during activation because Windows PowerShell wrote a
