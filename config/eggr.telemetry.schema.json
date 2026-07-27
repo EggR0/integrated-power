@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://eggr.local/schemas/telemetry/1.0.0",
+  "$id": "https://eggr.local/schemas/telemetry/1.1.0",
   "title": "EggR task telemetry event",
   "type": "object",
   "additionalProperties": false,
@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "1.0.0"
+      "const": "1.1.0"
     },
     "event_id": {
       "type": "string",
@@ -57,7 +57,7 @@
         "agent_surface": { "type": "string", "minLength": 1 },
         "provider": { "type": ["string", "null"] },
         "model": { "type": ["string", "null"] },
-        "harness_version": { "type": ["string", "null"] }
+        "orchestrator_version": { "type": ["string", "null"] }
       }
     },
     "task": {

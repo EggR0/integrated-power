@@ -76,9 +76,9 @@ if ($EventType -eq "task_completed" -and [string]::IsNullOrWhiteSpace($Success))
     throw "task_completed requires -Success true or -Success false."
 }
 if ($EventType -eq "token_usage") {
-    $providedUsageValues = @(
+    $providedUsageValues = @(@(
         $InputTokens, $OutputTokens, $CachedTokens, $ReasoningTokens, $TotalTokens, $BillableTokens
-    ) | Where-Object { $_ -ge 0 }
+    ) | Where-Object { $_ -ge 0 })
     if ($Evidence -eq "unavailable" -and $providedUsageValues.Count -gt 0) {
         throw "Evidence unavailable cannot include token values."
     }
@@ -115,11 +115,11 @@ $producer = [ordered]@{
     agent_surface = $AgentSurface
     provider = if ([string]::IsNullOrWhiteSpace($Provider)) { $null } else { $Provider }
     model = if ([string]::IsNullOrWhiteSpace($Model)) { $null } else { $Model }
-    harness_version = "1.1.0"
+    orchestrator_version = "1.1.1"
 }
 
 $event = [ordered]@{
-    schema_version = "1.0.0"
+    schema_version = "1.1.0"
     event_id = [Guid]::NewGuid().ToString()
     task_id = $TaskId
     attempt_id = $AttemptId

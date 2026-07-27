@@ -100,7 +100,7 @@ provider-reported 실제 총량이 있을 때만 정확도 지표를 계산한�
 
 이벤트는 EggR workspace state의 `telemetry/events.jsonl`에 한 줄 JSON으로 추가한다. 스키마는 `config/eggr.telemetry.schema.json`을 사용한다. 향후 OpenTelemetry exporter는 이 원본 이벤트를 span/metric으로 변환하되, 스키마 버전과 증거 등급을 잃지 않아야 한다.
 
-workspace에서는 `scripts/metrics/Write-EggRTelemetryEvent.ps1`, 설치된 하네스에서는 skill의 `scripts/Write-EggRTelemetryEvent.ps1`을 사용한다.
+workspace에서는 `scripts/metrics/Write-EggRTelemetryEvent.ps1`, 설치된 오케스트레이터에서는 skill의 `scripts/Write-EggRTelemetryEvent.ps1`을 사용한다.
 
 ```powershell
 .\scripts\metrics\Write-EggRTelemetryEvent.ps1 `

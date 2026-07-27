@@ -26,7 +26,7 @@ export async function installAntigravityPlugin(
   const pluginSrcPath = path.join(context.extensionPath, 'assets', 'codex-orchestrator-plugin');
 
   if (!fs.existsSync(pluginSrcPath)) {
-    throw new Error(`Bundled EggR harness assets were not found: ${pluginSrcPath}`);
+    throw new Error(`Bundled EggR orchestrator assets were not found: ${pluginSrcPath}`);
   }
 
   await fs.promises.mkdir(geminiConfigPath, { recursive: true });

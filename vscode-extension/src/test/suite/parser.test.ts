@@ -99,7 +99,7 @@ suite('Parser and Store Test Suite', () => {
       'integratedPower.agentRuns.configureViews',
       'integratedPower.agentRuns.openRunsFile',
       'integratedPower.agentRuns.refresh',
-      'integratedPower.eggr.installOrUpdateHarness',
+      'integratedPower.eggr.installOrUpdateOrchestrator',
     ]);
 
     const webview = fs.readFileSync(webviewPath, 'utf8');
@@ -184,7 +184,7 @@ suite('Parser and Store Test Suite', () => {
     const commands = await vscode.commands.getCommands(true);
     assert.ok(commands.includes('integratedPower.agentRuns.refresh'));
     assert.ok(commands.includes('integratedPower.agentRuns.openRunsFile'));
-    assert.ok(commands.includes('integratedPower.eggr.installOrUpdateHarness'));
+    assert.ok(commands.includes('integratedPower.eggr.installOrUpdateOrchestrator'));
     assert.ok(!commands.includes('integratedPower.agentRuns.launchAthenaLoop'));
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;

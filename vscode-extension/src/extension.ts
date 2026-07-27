@@ -83,7 +83,7 @@ async function copyMissingFiles(source: string, destination: string): Promise<nu
   return copied;
 }
 
-async function installOrUpdateEggRHarness(
+async function installOrUpdateEggROrchestrator(
   context: vscode.ExtensionContext,
   provider: DashboardProvider,
 ): Promise<void> {
@@ -94,7 +94,7 @@ async function installOrUpdateEggRHarness(
     await provider.refresh();
 
     if (!installResult.installed) {
-      void vscode.window.showWarningMessage(installResult.reason ?? "EggR 하네스를 설치하지 못했습니다.");
+      void vscode.window.showWarningMessage(installResult.reason ?? "EggR 오케스트레이터를 설치하지 못했습니다.");
       return;
     }
 
@@ -105,11 +105,11 @@ async function installOrUpdateEggRHarness(
           ? "기존 GEMINI.md 보존"
           : "GEMINI.md 템플릿 없음";
     void vscode.window.showInformationMessage(
-      `EggR 하네스 설치 완료 · ${protocolText} · 기존 상태 ${migratedFiles}개 파일 복사`,
+      `EggR 오케스트레이터 설치 완료 · ${protocolText} · 기존 상태 ${migratedFiles}개 파일 복사`,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    void vscode.window.showErrorMessage(`EggR 하네스 설치 실패: ${message}`);
+    void vscode.window.showErrorMessage(`EggR 오케스트레이터 설치 실패: ${message}`);
     throw error;
   }
 }
@@ -151,8 +151,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("integratedPower.agentRuns.openRunsFile", () => provider.openRunsFile()),
     vscode.commands.registerCommand("integratedPower.agentRuns.configureViews", configureDashboardViews),
     vscode.commands.registerCommand(
-      "integratedPower.eggr.installOrUpdateHarness",
-      () => installOrUpdateEggRHarness(context, provider),
+      "integratedPower.eggr.installOrUpdateOrchestrator",
+      () => installOrUpdateEggROrchestrator(context, provider),
     ),
     provider,
   );

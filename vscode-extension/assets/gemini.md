@@ -1,6 +1,6 @@
 # EggR 전역 오케스트레이션 규약
 
-이 파일은 Antigravity IDE가 EggR 하네스를 사용하는 최소 전역 규칙이다. EggR는 Codex 전용 경로나 Antigravity `globalStorage`에 종속되지 않는다.
+이 파일은 Antigravity IDE가 EggR 오케스트레이터를 사용하는 최소 전역 규칙이다. EggR는 Codex 전용 경로나 Antigravity `globalStorage`에 종속되지 않는다.
 
 ## 1. 작업 시작
 
@@ -46,4 +46,4 @@ Win11 기본 state root는 `%LOCALAPPDATA%\EggR\state`다. `EGGR_STATE_ROOT` 또
 
 ## 5. 설치 생명주기
 
-대시보드를 열었다는 이유로 하네스나 이 파일을 덮어쓰지 않는다. 하네스 갱신은 사용자가 명령 팔레트에서 **EggR: Install or Update Antigravity Harness**를 실행했을 때만 수행한다. 기존 `GEMINI.md`가 있으면 보존하고 새 템플릿을 검토 대상으로만 연다.
+대시보드를 열었다는 이유로 오케스트레이터나 이 파일을 덮어쓰지 않는다. 오케스트레이터 갱신은 사용자가 명령 팔레트에서 **EggR: Install or Update Antigravity Orchestrator**를 실행했을 때만 수행한다. 기존 `GEMINI.md`가 있으면 보존하고 새 템플릿을 검토 대상으로만 연다.

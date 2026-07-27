@@ -1,11 +1,11 @@
 # Integrated POWER / EggR
 
-EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같은 프로젝트 상태와 작업 기록을 이어받도록 만드는 프레임워크 중립 하네스다. 이 저장소는 비공개 canonical source이며, 현재는 Windows 11에서 Antigravity 대시보드와 Codex orchestrator를 먼저 안정화한다.
+EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같은 프로젝트 상태와 작업 기록을 이어받도록 만드는 프레임워크 중립 실행 기반이다. 이 저장소는 비공개 canonical source이며, 현재는 Windows 11에서 Antigravity 대시보드와 Codex 오케스트레이터를 먼저 안정화한다.
 
 ## 현재 구조
 
 - `vscode-extension/`: Antigravity IDE 사용량·실행 상태 대시보드
-- `vscode-extension/assets/codex-orchestrator-plugin/`: 명시적으로 설치하는 EggR Antigravity 하네스 번들
+- `vscode-extension/assets/codex-orchestrator-plugin/`: 명시적으로 설치하는 EggR Antigravity 오케스트레이터 번들
 - `scripts/dispatch/`: Codex, Local LLM, Work Window 실행기
 - `scripts/util/EggR.Paths.psm1`: OS·작업 경로에 종속되지 않는 EggR resolver
 - `config/eggr.telemetry.schema.json`: 작업·토큰 이벤트 스키마
@@ -17,10 +17,10 @@ EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같�
 1. 이 저장소를 원하는 위치에 clone한다.
 2. `vscode-extension`에서 compile과 headless test를 실행한다.
 3. 검증된 VSIX를 Antigravity IDE에 설치한다.
-4. 명령 팔레트에서 **EggR: Install or Update Antigravity Harness**를 실행한다.
+4. 명령 팔레트에서 **EggR: Install or Update Antigravity Orchestrator**를 실행한다.
 5. `%LOCALAPPDATA%\EggR\state\workspaces`에 프로젝트 상태가 만들어지는지 확인한다.
 
-대시보드를 여는 것만으로 `GEMINI.md`나 전역 하네스를 변경하지 않는다. 설치 명령은 기존 하네스를 `.gemini\config\plugins\.eggr-backups`에 보존하고 새 번들을 stage한 뒤 교체한다.
+대시보드를 여는 것만으로 `GEMINI.md`나 전역 오케스트레이터를 변경하지 않는다. 설치 명령은 기존 오케스트레이터를 `.gemini\config\plugins\.eggr-backups`에 보존하고 새 번들을 stage한 뒤 교체한다.
 
 ## EggR 경로 규칙
 

@@ -6,7 +6,7 @@
 - [ ] Win11 doctor 결과에서 failure가 없는지 확인
 - [ ] 대시보드 compile/headless test 통과
 - [ ] 검증된 VSIX 설치
-- [ ] **EggR: Install or Update Antigravity Harness** 명령 1회 실행
+- [ ] **EggR: Install or Update Antigravity Orchestrator** 명령 1회 실행
 - [ ] 기존 `GEMINI.md`가 보존되었는지 확인
 - [ ] `%LOCALAPPDATA%\EggR\state\workspaces`에 상태가 생성되는지 확인
 
@@ -35,5 +35,5 @@
 - [ ] environment-bootstrap doctor 실행
 - [ ] 필요하면 `%USERPROFILE%\.config\eggr\roots.json` 복원
 - [ ] 암호화 백업에서 EggR state와 원시 로그 복구
-- [ ] VSIX와 하네스를 설치한 뒤 workspace-id가 이전 PC와 같은지 확인
+- [ ] VSIX와 오케스트레이터를 설치한 뒤 workspace-id가 이전 PC와 같은지 확인
 - [ ] public 미러는 복구 기준으로 사용하지 않음

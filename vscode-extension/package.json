@@ -3,7 +3,7 @@
   "publisher": "integratedpower",
   "displayName": "Antigravity IDE Dashboard",
   "description": "Dashboard for tracking AI agent runs and token usage",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "vscode": "^1.80.0"
@@ -13,7 +13,7 @@
   ],
   "activationEvents": [
     "onView:integratedPower.agentRunsDashboard",
-    "onCommand:integratedPower.eggr.installOrUpdateHarness"
+    "onCommand:integratedPower.eggr.installOrUpdateOrchestrator"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -72,8 +72,8 @@
         "title": "Antigravity IDE: Configure Dashboard Views"
       },
       {
-        "command": "integratedPower.eggr.installOrUpdateHarness",
-        "title": "EggR: Install or Update Antigravity Harness"
+        "command": "integratedPower.eggr.installOrUpdateOrchestrator",
+        "title": "EggR: Install or Update Antigravity Orchestrator"
       }
     ],
     "menus": {

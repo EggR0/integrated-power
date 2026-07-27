@@ -46,18 +46,18 @@ test("package commands exclude removed Athena workflow", () => {
     "integratedPower.agentRuns.configureViews",
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
-    "integratedPower.eggr.installOrUpdateHarness",
+    "integratedPower.eggr.installOrUpdateOrchestrator",
   ]);
 });
 
-test("dashboard activation does not silently install or overwrite the EggR harness", () => {
+test("dashboard activation does not silently install or overwrite the EggR orchestrator", () => {
   const extensionSource = readText("src", "extension.ts");
   const activateBlock = extensionSource.slice(extensionSource.indexOf("export function activate"));
 
   assert.ok(!activateBlock.includes("initializeGlobalProtocol(context);"));
   assert.ok(!activateBlock.includes("installAntigravityPlugin(context);"));
   assert.ok(!extensionSource.includes("dashboard_global_storage.txt"));
-  assert.ok(extensionSource.includes("integratedPower.eggr.installOrUpdateHarness"));
+  assert.ok(extensionSource.includes("integratedPower.eggr.installOrUpdateOrchestrator"));
 });
 
 test("webview preserves token status and keeps Refresh clickable", () => {

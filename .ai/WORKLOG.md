@@ -1,6 +1,6 @@
 # EggR 작업 기록
 
-## 2026-07-27 — Win11 경로·하네스 안정화
+## 2026-07-27 — Win11 경로·오케스트레이터 안정화
 
 ### 범위
 
@@ -27,11 +27,11 @@
   - Win11 기본: `%LOCALAPPDATA%\EggR\state`
   - override: `EGGR_STATE_ROOT`, `%USERPROFILE%\.config\eggr\roots.json`
   - workspace ID: 명시 ID → 정규화한 Git origin SHA-256 → 경로 SHA-256
-- 번들 하네스에 self-contained resolver 포함
+- 번들 오케스트레이터에 self-contained resolver 포함
 - `.agents/dashboard_global_storage.txt` tracking 제거, 실제 로컬 파일과 기존 runtime 자료는 보존
-- 확장 0.3.0과 하네스 1.1.0 분리
-  - 활성화 시 전역 하네스/GEMINI 자동 변경 제거
-  - **EggR: Install or Update Antigravity Harness** 명령에서만 설치
+- 확장 0.3.0과 오케스트레이터 1.1.0 분리
+  - 활성화 시 전역 오케스트레이터/GEMINI 자동 변경 제거
+  - 명시적인 EggR 오케스트레이터 설치 명령에서만 설치
   - stage 후 교체, 기존 플러그인은 `.eggr-backups`에 보존, 실패 시 rollback
   - legacy 상태는 새 위치에 없는 파일만 복사
 - 실행 helper를 read-only resolver로 변경하고 global rule 추가는 명시적 `-InstallGlobalRules`에서만 허용
@@ -54,7 +54,7 @@
 - VSIX SHA-256: `54C6F422DF5559E9290D3EBF04216571B969D5ABD305998E314B840031D63BA4`
 - VSIX 필수 resolver/writer 포함, `C:\Users\jsp0`, marker 파일명, target-repo module 경로 검출 0
 - Antigravity IDE extension catalog에 0.3.0 설치, 설치된 `out/extension.js`와 빌드 결과 hash 일치
-- VSIX 설치 직후 global harness는 1.0.4로 유지됨: 대시보드 설치만으로 하네스를 자동 덮어쓰지 않는 생명주기 분리 확인
+- VSIX 설치 직후 global orchestrator는 1.0.4로 유지됨: 대시보드 설치만으로 오케스트레이터를 자동 덮어쓰지 않는 생명주기 분리 확인
 
 ### 근거와 결정
 
@@ -69,9 +69,25 @@
 ### 남은 작업
 
 1. 원격 `https://github.com/R-Github04/Intergrated-POWER.git`이 신뢰 가능한 비공개 canonical 원격이라는 사용자 확인 후 agent 브랜치 push
-2. Antigravity IDE를 재시작하고 명시적 EggR 설치 명령을 실행해 global harness 1.1.0·backup·legacy state 복사를 smoke test
+2. Antigravity IDE를 재시작하고 명시적 EggR 설치 명령을 실행해 global orchestrator 1.1.0·backup·legacy state 복사를 smoke test
 3. marketplace/public 배포 전 repository metadata와 LICENSE 결정
 4. public mirror sanitization pipeline과 Win11 암호화 backup/save-agent-worklog 구현
 5. Linux/macOS resolver·installer 실제 검증
 
 중앙 `Knowledge/00 Inbox/Agent Worklog.md`에는 한 줄 audit를 추가했다. 다만 이 Win11 환경에는 `save-agent-worklog` 명령이 설치되어 있지 않아 실행이 `CommandNotFoundException`으로 끝났다. bootstrap에 있는 구현은 Linux `$HOME/Knowledge` 전용이며 `main`에 직접 push하므로, 기존 Knowledge 사용자 변경을 섞지 않는 Windows용 동등 구현이 필요하다.
+
+## 2026-07-27 — 오케스트레이터 명칭과 0.3.1 검증
+
+- Decision: 사용자가 만든 `codex-orchestrator` 기능은 오케스트레이터라고만 부른다.
+  더 큰 실행 프레임워크나 외부 제품 개념과 혼동되는 명칭을 이 기능에 사용하지 않는다.
+- Outcome: 표시 명칭, command ID, 함수명, 설치 오류, 문서, 테스트, telemetry
+  producer 필드를 `orchestrator` 기준으로 통일했다.
+- Outcome: 확장 0.3.1과 번들 오케스트레이터 1.1.1을 패키징하고 Antigravity
+  IDE에 설치했다. 대시보드 설치는 전역 오케스트레이터를 자동 교체하지 않는다.
+- Fix: 사용량 값이 없는 telemetry 이벤트에서 빈 배열의 `.Count`가 실패하던
+  PowerShell 버그를 canonical/bundled writer 모두 수정했다.
+- Verification: headless 6개, extension-host 7개, PowerShell parser 33개,
+  Debate SelfTest, telemetry unavailable/estimated round-trip, VSIX 내부 문자열·버전
+  검사 통과.
+- Artifact: `antigravity-ide-dashboard-0.3.1.vsix`,
+  SHA-256 `6BBB6877473E87211E8D0171F2A5E9E2BBAFE426003A0323F9BD1C1C61910ECC`.
