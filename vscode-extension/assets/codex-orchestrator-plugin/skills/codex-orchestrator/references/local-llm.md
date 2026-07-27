@@ -35,6 +35,28 @@ Use the selected model and pass the selector reason into the invocation with `-S
 - `reports/local_llm_metrics.csv` for local measured success rate, elapsed time, and tokens/second.
 - Ollama `/api/tags` to prefer models that are actually installed when `-InstalledOnly` is used.
 
+It also reads `LocalLlm.HardwarePolicy` from EggR settings and detects NVIDIA
+VRAM/compute capability with `nvidia-smi`. `Quantization` describes stored
+weights and is only a memory-estimation input. GGUF Q4 and MXFP4 do not by
+themselves require native FP4 execution. Compute capability is a hard constraint
+only when a registry row explicitly declares `MinimumComputeCapability`, or
+declares `RequiredRuntimePrecision` with a supported `PrecisionBackend`.
+Built-in FP4/FP8 thresholds are scoped to `tensorrt-rtx`; other runtimes must
+declare their own tested minimum.
+
+For reproducible offline diagnosis:
+
+```powershell
+.\scripts\dispatch\Select-LocalLLMModel.ps1 `
+  -Provider ollama -AvailableVramGB 21 -ComputeCapability 8.6 `
+  -DisableHardwareDetection -AsJson
+```
+
+An unregistered `user_default` model remains selectable with
+`Compatibility=unknown_user_default` unless `-InstalledOnly` is requested or an
+explicit hard hardware constraint is violated. Automatic mode stays registry-
+and provider-scoped.
+
 Valid `-TaskType` values are `summarization`, `extraction`, `coding`, `reasoning`, `korean`, `long_context`, `routing_review`, and `general`.
 
 ## Usage

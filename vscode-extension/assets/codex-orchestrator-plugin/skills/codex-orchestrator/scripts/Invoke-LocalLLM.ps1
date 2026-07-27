@@ -4,7 +4,7 @@ param(
 
     [string]$OutputFile = "",
 
-    [string]$Model = "qwen2.5:latest",
+    [string]$Model = "",
 
     [string]$SystemPrompt = "You are a helpful AI coding assistant.",
 
@@ -44,7 +44,30 @@ if (!$repoRoot) {
 }
 
 Import-Module (Join-Path $PSScriptRoot "lib\EggR.Paths.psm1") -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot "lib\EggR.Settings.psm1") -Force -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
+$orchestratorSettings = Get-EggROrchestratorSettings
+if (-not (Test-EggRRouteEnabled -Route "local_llm" -Settings $orchestratorSettings)) {
+    throw "The local_llm route is disabled in $($orchestratorSettings.Path)."
+}
+if ([string]::IsNullOrWhiteSpace($Model)) {
+    $configuredModel = if ($orchestratorSettings.LocalLlm -and $orchestratorSettings.LocalLlm.PSObject.Properties.Name -contains "Model") {
+        [string]$orchestratorSettings.LocalLlm.Model
+    } else { "" }
+    if (-not [string]::IsNullOrWhiteSpace($configuredModel)) {
+        $Model = $configuredModel
+        if ($SelectedBy -eq "manual") { $SelectedBy = "user_default" }
+    } else {
+        $selector = Join-Path $PSScriptRoot "Select-LocalLLMModel.ps1"
+        if (-not (Test-Path -LiteralPath $selector -PathType Leaf)) {
+            throw "Automatic model selection was requested but the selector is missing: $selector"
+        }
+        $selection = (& $selector -TaskType $TaskType -TaskScale $TaskScale -InstalledOnly -AsJson) | ConvertFrom-Json
+        $Model = [string]$selection.SelectedModel
+        $SelectedBy = [string]$selection.SelectionBasis
+        $SelectionReason = [string]$selection.Reason
+    }
+}
 
 function Write-CsvRowWithRetry {
     param(
@@ -194,7 +217,18 @@ $promptPath = Resolve-Path -LiteralPath $PromptFile
 $prompt = [string](Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath)
 
 # Ensure Ollama is running
-$ollamaUrl = "http://localhost:11434"
+$ollamaUrl = if (-not [string]::IsNullOrWhiteSpace($env:OLLAMA_HOST)) {
+    $env:OLLAMA_HOST
+} elseif (
+    $orchestratorSettings.LocalLlm -and
+    [string]$orchestratorSettings.LocalLlm.Provider -eq "ollama" -and
+    -not [string]::IsNullOrWhiteSpace([string]$orchestratorSettings.LocalLlm.Endpoint)
+) {
+    [string]$orchestratorSettings.LocalLlm.Endpoint
+} else {
+    "http://localhost:11434"
+}
+$ollamaUrl = $ollamaUrl.TrimEnd("/")
 $serverRunning = $false
 
 try {

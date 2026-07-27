@@ -2,6 +2,21 @@
 
 **Antigravity IDE Dashboard** is a comprehensive VS Code extension designed to track AI agent runs, token capacity, and local LLM hardware metrics in a single unified view.
 
+## Windows 11 first run
+
+Install the VSIX, then run **EggR: Run First-Run Setup** from the command palette.
+The coordinator opens three independent wizards:
+
+1. Dashboard views and the portable EggR state root.
+2. Orchestrator routes, Codex executable, and local LLM selection policy.
+3. A user-owned private-Git Knowledge repository through the separately
+   installed `environment-bootstrap` command.
+
+The VSIX bundles its JavaScript runtime. Codex, Agy, Ollama/vLLM, Git, GPU
+drivers, and authentication remain explicit external dependencies. The wizard
+detects them and explains the affected feature; it does not silently install a
+driver, model, or credential provider.
+
 ---
 
 ## 🌟 Features (English)

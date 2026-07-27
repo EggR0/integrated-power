@@ -1,10 +1,10 @@
 ---
-session_id: 20260727-eggr-win11-stabilization
+session_id: 20260727-eggr-first-run-wizards
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: 8b6a8b286ce18c2537166791c07c6ba2d6fa54c1
-branch: agent/codex/eggr-win11-stabilization
+base_commit: f0e5c1df8780914a526e253a5a6bba47b7320a63
+branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
   - ".gitignore"
@@ -25,10 +25,26 @@ forbidden:
   - "C:/Users/test/AppData/Roaming/Antigravity IDE/User/globalStorage/**"
   - "../Intergrated-POWER-public/**"
 state: verified_pending_commit_and_push
-next_action: Commit and push this agent branch, then restart Antigravity and run the explicit EggR orchestrator update command.
+next_action: Commit and push the verified v0.4.0 VSIX, Orchestrator 1.2.0, and first-run wizard changes on this agent branch.
 ---
 
 # Handoff Log
+- **2026-07-27 three first-run wizards verified**: Dashboard, Orchestrator, and
+  user-owned Private Knowledge now have separate command-palette entry points
+  under one coordinator. The Dashboard stores only view/state-root choices;
+  Orchestrator stores route and local-model policy without secrets; Private
+  Knowledge launches the independently installed environment-bootstrap wizard.
+- **Hardware-aware local selection verified**: `auto` detects current free VRAM
+  and compute capability, estimates model memory from Ollama size or registry
+  evidence, and uses task/history scores. `user_default` preserves an explicit
+  model and records unknown compatibility when the registry lacks it. Q4/MXFP4
+  weight formats are not treated as native FP4 runtime requirements.
+- **Verification**: TypeScript compile, seven headless tests, seven VS Code
+  extension-host tests, 41 PowerShell parser checks, offline selector cases,
+  live RTX 3090 detection, isolated installer settings tests, VSIX content scan,
+  and `git diff --check` passed. VSIX 0.4.0 SHA-256:
+  `EC4D1D25074A75669D3AEB94B8CE67FA2B5DEF666152F3E5FC675C781A0453A9`.
+- **2026-07-27 first-run wizard scope**: The three user-facing branches are Dashboard, Orchestrator, and user-owned private-Git knowledge accumulation. Never distribute the developer's personal Knowledge repository as product data.
 - **2026-07-27 EggR Win11 stabilization started**: User confirmed that `Intergrated-POWER` is the private canonical source and `Intergrated-POWER-public` will become a sanitized release mirror. Current uncommitted v0.2.4 work must be preserved before cleanup.
 - **Framework-neutral identity**: Use `EggR`, not a Codex-scoped root name. Windows 11 is the first stabilization and distribution target.
 - **Telemetry direction**: Keep provider-reported usage, calculated counts, and model estimates separate. Adopt an EggR-owned versioned event schema with an OpenTelemetry GenAI compatibility mapping.

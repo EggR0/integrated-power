@@ -3,7 +3,7 @@
   "publisher": "integratedpower",
   "displayName": "Antigravity IDE Dashboard",
   "description": "Dashboard for tracking AI agent runs and token usage",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "vscode": "^1.80.0"
@@ -13,7 +13,11 @@
   ],
   "activationEvents": [
     "onView:integratedPower.agentRunsDashboard",
-    "onCommand:integratedPower.eggr.installOrUpdateOrchestrator"
+    "onCommand:integratedPower.eggr.installOrUpdateOrchestrator",
+    "onCommand:integratedPower.eggr.runFirstRunSetup",
+    "onCommand:integratedPower.eggr.runDashboardSetup",
+    "onCommand:integratedPower.eggr.runOrchestratorSetup",
+    "onCommand:integratedPower.eggr.runPrivateKnowledgeSetup"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -74,6 +78,22 @@
       {
         "command": "integratedPower.eggr.installOrUpdateOrchestrator",
         "title": "EggR: Install or Update Antigravity Orchestrator"
+      },
+      {
+        "command": "integratedPower.eggr.runFirstRunSetup",
+        "title": "EggR: Run First-Run Setup"
+      },
+      {
+        "command": "integratedPower.eggr.runDashboardSetup",
+        "title": "EggR: Configure Dashboard"
+      },
+      {
+        "command": "integratedPower.eggr.runOrchestratorSetup",
+        "title": "EggR: Configure Orchestrator"
+      },
+      {
+        "command": "integratedPower.eggr.runPrivateKnowledgeSetup",
+        "title": "EggR: Configure Private Git Knowledge"
       }
     ],
     "menus": {

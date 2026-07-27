@@ -100,6 +100,10 @@ suite('Parser and Store Test Suite', () => {
       'integratedPower.agentRuns.openRunsFile',
       'integratedPower.agentRuns.refresh',
       'integratedPower.eggr.installOrUpdateOrchestrator',
+      'integratedPower.eggr.runDashboardSetup',
+      'integratedPower.eggr.runFirstRunSetup',
+      'integratedPower.eggr.runOrchestratorSetup',
+      'integratedPower.eggr.runPrivateKnowledgeSetup',
     ]);
 
     const webview = fs.readFileSync(webviewPath, 'utf8');

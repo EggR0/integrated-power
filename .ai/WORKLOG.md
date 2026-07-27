@@ -1,5 +1,32 @@
 # EggR 작업 기록
 
+## 2026-07-27 — 세 갈래 최초 실행 마법사와 로컬 모델 선택
+
+- Dashboard 0.4.0에 세 개의 독립 설정 진입점과 coordinator를 추가했다.
+  Dashboard는 표시 영역과 `state_root`, Orchestrator는 실행 경로·Codex 위치·로컬
+  provider와 정책, Private Knowledge는 별도 environment-bootstrap 명령을 담당한다.
+- Orchestrator 1.2.0 설정에 `LocalLlm.HardwarePolicy`를 추가했다.
+  `auto`는 현재 PC의 VRAM·compute capability를 매 실행 시 다시 읽고,
+  `user_default`는 사용자가 지정한 모델을 조용히 교체하지 않는다.
+- selector는 Ollama `/api/tags`의 설치 크기를 우선 사용하고, 없으면 registry의
+  명시적 추정치를 사용한다. VRAM reserve, CPU offload 허용 여부, task 적합도,
+  성공률·속도 이력을 함께 기록한다.
+- Q4/MXFP4 가중치 저장 형식과 native FP4 연산 요구를 분리했다. TensorRT-RTX에서
+  명시적으로 FP8/FP4 runtime precision을 요구한 row에만 compute capability를
+  hard constraint로 사용한다.
+- 이 PC의 RTX 3090은 총 24GB, 감지 CC 8.6, 검증 시 free 약 21.2GB였다.
+  reasoning 자동 선택은 예상 14GB(2GB reserve 포함)의 `gpt-oss:20b`였다.
+  현재 Ollama/vLLM은 설치되어 있지 않아 실제 추론 호출은 하지 않았다.
+- Agy 실행 파일은 doctor의 fallback 경로에서 발견했지만, 기존 기록에서 headless
+  권한 실패와 재시도로 총 토큰이 늘어난 사례가 확인됐다. 이미 병렬 완료된 단순
+  문서를 다시 위임하지 않았으며, 직접 처리와 위임+재검토 총비용 비교 규칙은
+  Knowledge 문서에 남겼다.
+- 검증: headless 7개, extension-host 7개, PowerShell parser 41개, selector offline
+  smoke, 실제 GPU 탐지, standalone 설정 보존/auto/user-default smoke, VSIX 필수
+  파일·개인 절대 경로 검사, `git diff --check` 통과.
+- 산출물: `antigravity-ide-dashboard-0.4.0.vsix`, SHA-256
+  `EC4D1D25074A75669D3AEB94B8CE67FA2B5DEF666152F3E5FC675C781A0453A9`.
+
 ## 2026-07-27 — Win11 경로·오케스트레이터 안정화
 
 ### 범위

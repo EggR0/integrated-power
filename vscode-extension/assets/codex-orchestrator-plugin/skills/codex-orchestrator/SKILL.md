@@ -7,6 +7,16 @@ description: Unified AI work router for deciding whether the main agent should w
 
 This is the primary routing skill for token-efficient AI work. When a task may benefit from delegation, classify the work first and choose one of three routes:
 
+Before choosing a route, read `~/.gemini/config/codex_plugin_settings.json` when it
+exists. Never select a route that is absent from `EnabledRoutes`. Use
+`DefaultRoute` only when task evidence does not favor another enabled route.
+`LocalLlm.Endpoint` and `LocalLlm.Model` are non-secret defaults; API key values
+must come from the named environment variable and must never be written to this
+settings file. `LocalLlm.HardwarePolicy.Mode=user_default` means the named model
+has priority, but the selector must still report a VRAM/backend warning before
+running an incompatible model. `Mode=auto` means the selector must inspect the
+current machine at execution time; never reuse a GPU snapshot from another PC.
+
 - **Main Agent Direct**: small edits, local inspection, glue work, or tasks where calling another model would cost more than it saves.
 - **Codex**: hard implementation, architectural review, code review, test generation, refactors, or work that needs strong coding judgment.
 - **Local LLM / vLLM**: offline preprocessing, broad summarization, noisy-context reduction, draft checklists, clustering, extraction, or other low-risk transformations where local tokens are preferable.
@@ -41,7 +51,7 @@ Always read the detailed contract in the `references/` directory before executin
 
 4. **Local LLM Mode (`scripts/Select-LocalLLMModel.ps1`, then `scripts/Invoke-LocalLLM.ps1` or `scripts/Invoke-vLLMJob.ps1`)**:
    - **Trigger**: Summarization, preprocessing, extraction, local draft generation, broad context compression, or explicit local LLM/vLLM requests.
-   - **Action**: Selects the best local model for the task using registry priors plus measured success/time metrics, then sends the prompt to Ollama or an OpenAI-compatible local endpoint.
+   - **Action**: Selects the best local model using the user's policy, installed-model size, current free VRAM, GPU compute capability, backend support, registry priors, and measured success/time metrics; then sends the prompt to Ollama or an OpenAI-compatible local endpoint.
    - **Contract**: Read `references/local-llm.md`.
 
 ## Execution Timer and Metrics Guidelines
@@ -67,6 +77,10 @@ Follow these explicit rules:
 - Ensure you select the appropriate `-Sandbox` permissions (`read-only`, `workspace-write`, `danger-full-access`).
 - Prefer local LLM preprocessing before sending broad noisy context to Codex.
 - Never call a local LLM model arbitrarily; use the selector first unless the user explicitly names an exact model and accepts bypassing measured routing.
+- Do not confuse a weight format such as Q4/MXFP4 with native FP4 tensor
+  arithmetic. Use quantization to estimate model memory. Treat FP8/FP4 compute
+  capability as a hard filter only when the selected backend/model actually
+  requires that native dtype.
 - If local LLM is offline, fall back to Main Agent Direct or Codex only after noting the fallback in the artifact.
 - If Codex Debate fails or is inconclusive, fall back to a narrower Main Agent Direct step or a bounded Codex Job rather than repeating broad debate prompts.
 - Every delegated route must produce an artifact: report, discussion, generated prompt, output file, metrics row, or implementation summary.

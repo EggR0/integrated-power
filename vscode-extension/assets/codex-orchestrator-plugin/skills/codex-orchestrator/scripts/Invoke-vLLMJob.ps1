@@ -257,15 +257,30 @@ if ([string]::IsNullOrWhiteSpace($repoRoot)) {
 }
 
 Import-Module (Join-Path $PSScriptRoot "lib\EggR.Paths.psm1") -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot "lib\EggR.Settings.psm1") -Force -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
+$orchestratorSettings = Get-EggROrchestratorSettings
+if (-not (Test-EggRRouteEnabled -Route "local_llm" -Settings $orchestratorSettings)) {
+    throw "The local_llm route is disabled in $($orchestratorSettings.Path)."
+}
 
 if ([string]::IsNullOrWhiteSpace($Endpoint)) {
     if (![string]::IsNullOrWhiteSpace($env:VLLM_BASE_URL)) {
         $Endpoint = $env:VLLM_BASE_URL
     }
+    elseif (
+        $orchestratorSettings.LocalLlm -and
+        [string]$orchestratorSettings.LocalLlm.Provider -eq "vllm" -and
+        -not [string]::IsNullOrWhiteSpace([string]$orchestratorSettings.LocalLlm.Endpoint)
+    ) {
+        $Endpoint = [string]$orchestratorSettings.LocalLlm.Endpoint
+    }
     else {
         $Endpoint = "http://localhost:8000/v1"
     }
+}
+if ([string]::IsNullOrWhiteSpace($Model) -and $orchestratorSettings.LocalLlm -and $orchestratorSettings.LocalLlm.PSObject.Properties.Name -contains "Model") {
+    $Model = [string]$orchestratorSettings.LocalLlm.Model
 }
 
 $baseUrl = Resolve-OpenAIBaseUrl -Endpoint $Endpoint

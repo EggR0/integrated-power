@@ -10,6 +10,13 @@ import {
   resolveEggRWorkspaceDescriptor,
   workspaceStoragePathForFolder,
 } from "./storagePath";
+import {
+  offerFirstRunSetup,
+  runDashboardSetupWizard,
+  runFirstRunCoordinator,
+  runOrchestratorSetupWizard,
+  runPrivateKnowledgeSetupWizard,
+} from "./setupWizards";
 
 async function initializeGlobalProtocol(context: vscode.ExtensionContext): Promise<"created" | "preserved" | "missing-template"> {
   const geminiDir = path.join(os.homedir(), ".gemini");
@@ -142,6 +149,8 @@ async function configureDashboardViews(): Promise<void> {
 
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new DashboardProvider(context);
+  const refresh = () => provider.refresh();
+  const installOrUpdate = () => installOrUpdateEggROrchestrator(context, provider);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("integratedPower.agentRunsDashboard", provider, {
@@ -151,13 +160,30 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("integratedPower.agentRuns.openRunsFile", () => provider.openRunsFile()),
     vscode.commands.registerCommand("integratedPower.agentRuns.configureViews", configureDashboardViews),
     vscode.commands.registerCommand(
+      "integratedPower.eggr.runFirstRunSetup",
+      () => runFirstRunCoordinator(context, refresh, installOrUpdate),
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.eggr.runDashboardSetup",
+      () => runDashboardSetupWizard(context, refresh),
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.eggr.runOrchestratorSetup",
+      () => runOrchestratorSetupWizard(context, installOrUpdate),
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.eggr.runPrivateKnowledgeSetup",
+      () => runPrivateKnowledgeSetupWizard(context),
+    ),
+    vscode.commands.registerCommand(
       "integratedPower.eggr.installOrUpdateOrchestrator",
-      () => installOrUpdateEggROrchestrator(context, provider),
+      installOrUpdate,
     ),
     provider,
   );
 
   void provider.refresh();
+  void offerFirstRunSetup(context, refresh, installOrUpdate);
 }
 
 export function deactivate(): void {

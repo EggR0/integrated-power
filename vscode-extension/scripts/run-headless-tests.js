@@ -47,7 +47,22 @@ test("package commands exclude removed Athena workflow", () => {
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
     "integratedPower.eggr.installOrUpdateOrchestrator",
+    "integratedPower.eggr.runDashboardSetup",
+    "integratedPower.eggr.runFirstRunSetup",
+    "integratedPower.eggr.runOrchestratorSetup",
+    "integratedPower.eggr.runPrivateKnowledgeSetup",
   ]);
+});
+
+test("first-run setup keeps three independent entry points", () => {
+  const setupSource = readText("src", "setupWizards.ts");
+
+  assert.ok(setupSource.includes("runDashboardSetupWizard"));
+  assert.ok(setupSource.includes("runOrchestratorSetupWizard"));
+  assert.ok(setupSource.includes("runPrivateKnowledgeSetupWizard"));
+  assert.ok(setupSource.includes('knowledgeMode === "local_only"'));
+  assert.ok(setupSource.includes('Mode: "auto" | "user_default"'));
+  assert.ok(fs.existsSync(path.join(extensionRoot, "assets", "private-git-knowledge.md")));
 });
 
 test("dashboard activation does not silently install or overwrite the EggR orchestrator", () => {

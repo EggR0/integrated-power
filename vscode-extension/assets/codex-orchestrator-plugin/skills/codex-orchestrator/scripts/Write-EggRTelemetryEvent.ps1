@@ -115,7 +115,7 @@ $producer = [ordered]@{
     agent_surface = $AgentSurface
     provider = if ([string]::IsNullOrWhiteSpace($Provider)) { $null } else { $Provider }
     model = if ([string]::IsNullOrWhiteSpace($Model)) { $null } else { $Model }
-    orchestrator_version = "1.1.1"
+    orchestrator_version = "1.2.0"
 }
 
 $event = [ordered]@{
