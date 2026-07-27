@@ -12,6 +12,16 @@
 개발하는 단계가 아니다. Codex는 EggR Orchestrator가 선택적으로 호출할 수 있는
 실행 경로일 뿐이다.
 
+확장 조회·설치에는 다음 CLI wrapper만 사용한다.
+
+```text
+%LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd
+```
+
+GUI `Antigravity IDE.exe`나 별도 `Antigravity.exe`에 `--list-extensions`,
+`--install-extension` 같은 CLI 옵션을 직접 전달하지 않는다. Electron GUI가
+명령을 처리하지 않고 창을 시작할 수 있기 때문이다.
+
 ## 증상
 
 - 확장 목록에는 `Antigravity IDE Dashboard`가 설치됐다고 표시된다.

@@ -3,6 +3,8 @@
 ## 2026-07-27 — Antigravity IDE Dashboard 0.4.1 BOM 활성화 복구
 
 - 범위: 별도 Antigravity나 Codex 확장이 아니라 Antigravity IDE Dashboard 확장.
+- 운영 교정: 확장 조회·설치는 `Antigravity IDE\bin\antigravity-ide.cmd`만
+  사용하며 GUI `.exe`에 CLI 옵션을 직접 전달하지 않는다.
 - 원인: Windows PowerShell 5.1이 `roots.json`을 UTF-8 BOM과 함께 썼고,
   0.4.0의 `resolveEggRStateRoot`가 BOM을 제거하지 않아 활성화 중
   `Unexpected token '﻿'`로 종료됐다.
