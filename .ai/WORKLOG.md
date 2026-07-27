@@ -17,8 +17,10 @@
   Windows Knowledge 기능 테스트와 전체 PowerShell parser 통과.
 - 설치: Dashboard 0.4.1을 Antigravity IDE 확장 카탈로그에 설치했으며,
   실행 중인 사용자 창은 강제 종료하지 않아 reload 후 실제 명령 표시를 확인한다.
-- 인증 분리: 같은 세션의 Antigravity IDE 인증은 일시적 quota·내부 BigInt 오류
-  뒤 `signedIn`에 도달했다. 실행 중 Java는 Minecraft NeoForge였다.
+- 사건 정정: 별도 Antigravity는 잘못된 실행 파일 조회로 20:40:27~20:43:21
+  실행됐다. Java는 이 앱이 새로 시작한 것이 아니라 전날부터 실행 중인 Minecraft
+  NeoForge였지만, 겹친 시간에 3380ms/67 ticks 과부하 경고를 남겼다. 직접 인과는
+  확인되지 않았으나 “Java는 무관하다”라고 단정하지 않는다.
 
 ## 2026-07-27 — 세 갈래 최초 실행 마법사와 로컬 모델 선택
 

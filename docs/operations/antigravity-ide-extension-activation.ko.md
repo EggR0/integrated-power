@@ -18,9 +18,10 @@
 %LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd
 ```
 
-GUI `Antigravity IDE.exe`나 별도 `Antigravity.exe`에 `--list-extensions`,
-`--install-extension` 같은 CLI 옵션을 직접 전달하지 않는다. Electron GUI가
-명령을 처리하지 않고 창을 시작할 수 있기 때문이다.
+특히 별도 `%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe`는
+Antigravity IDE 확장 관리에 절대 사용하지 않는다. GUI `Antigravity IDE.exe`에도
+`--list-extensions`, `--install-extension` 같은 CLI 옵션을 직접 전달하지 않는다.
+Electron GUI가 명령을 처리하지 않고 창을 시작할 수 있기 때문이다.
 
 ## 증상
 
@@ -67,13 +68,23 @@ Windows PowerShell 5.1의 `Set-Content -Encoding UTF8`은 UTF-8 BOM을 쓴다.
    - `EggR: Configure Private Git Knowledge`
    - `EggR: Install or Update Orchestrator`
 
-## 인증·Java 오류와의 구분
+## 세 사건의 구분
 
 2026-07-27 사례에서 Antigravity IDE 인증 로그는 먼저 quota 오류와 내부
 `BigInt` 직렬화 오류를 기록했으나 이후 OAuth `signedIn`까지 진행했다. 이는
 Dashboard BOM 활성화 오류와 별개의 Antigravity IDE 인증 흐름이다.
 
-같은 시각 실행 중이던 `java.exe`의 명령줄은 Minecraft NeoForge를 가리켰다.
-Windows Application 로그에는 Antigravity IDE 또는 Java crash가 없었다.
-따라서 Java 팝업을 Dashboard 확장 오류로 단정하지 않고 Minecraft 로그와
-별도로 조사한다.
+별도 Antigravity 2.3.1은 잘못된 실행 파일 조회로 20:40:27에 시작되어
+20:43:21에 종료됐다. 이 앱의 로그상 직접 시작한 것은 `language_server.exe`와
+번들 `agy-node`이며 Java를 새로 시작한 기록은 없다.
+
+기존 Minecraft NeoForge Java 서버는 전날부터 실행 중이었지만, 별도 Antigravity가
+떠 있던 20:41:05~20:41:47에 모드 오류·이동 경고와 다음 과부하 경고를 기록했다.
+
+```text
+Can't keep up! Is the server overloaded? Running 3380ms or 67 ticks behind
+```
+
+JVM crash나 Windows crash 이벤트는 없었다. 그러므로 별도 Antigravity가 Java를
+직접 실행하거나 crash시켰다고 단정할 수는 없지만, 두 사건은 시간상 실제로
+겹쳤고 자원 경합 가능성도 배제할 수 없다. 이를 “무관하다”라고 단정하지 않는다.
