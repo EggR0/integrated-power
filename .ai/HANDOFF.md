@@ -24,11 +24,16 @@ forbidden:
   - "C:/Users/test/.gemini/antigravity-ide/brain/**"
   - "C:/Users/test/AppData/Roaming/Antigravity IDE/User/globalStorage/**"
   - "../Intergrated-POWER-public/**"
-state: verified_pending_commit_and_push
-next_action: Commit and push the verified v0.4.0 VSIX, Orchestrator 1.2.0, and first-run wizard changes on this agent branch.
+state: dashboard_installed_sources_pushed
+next_action: Reload Antigravity IDE, run EggR: Run First-Run Setup, and complete the interactive Orchestrator choices.
 ---
 
 # Handoff Log
+- **2026-07-27 Windows deployment**: Dashboard 0.4.0 was installed into
+  Antigravity IDE and its extension catalog was verified. Orchestrator 1.2.0
+  remains an explicit first-run installation because provider, endpoint, local
+  model policy, and default route are user choices; opening the dashboard never
+  overwrites the global plugin.
 - **2026-07-27 three first-run wizards verified**: Dashboard, Orchestrator, and
   user-owned Private Knowledge now have separate command-palette entry points
   under one coordinator. The Dashboard stores only view/state-root choices;
