@@ -155,3 +155,24 @@
   검사 통과.
 - Artifact: `antigravity-ide-dashboard-0.3.1.vsix`,
   SHA-256 `6BBB6877473E87211E8D0171F2A5E9E2BBAFE426003A0323F9BD1C1C61910ECC`.
+
+## 2026-07-27 — Configuration Center와 GEMINI.md 비의존 전환
+
+- Dashboard, Orchestrator, Private Git Knowledge 명령을 한 Configuration Center의
+  독립 영역으로 연결했다.
+- 번들 플러그인과 스킬의 공개 식별자를 `eggr-orchestrator-plugin`,
+  `eggr-orchestrator`로 변경했다. 이전 플러그인은 명시적 설치 시
+  `.eggr-backups`로 이동한다.
+- Orchestrator 설정 기본 경로를 `%USERPROFILE%\.config\eggr\orchestrator.json`으로
+  변경하고 이전 설정 파일은 새 설정이 없을 때만 읽는다.
+- `assets/gemini.md`, 확장 초기화 함수, PowerShell `-InstallGlobalRules`와
+  전역 규칙 추가 함수를 제거했다.
+- 0.4.2는 기존 `GEMINI.md`를 발견하면 보존했으므로 확장 자체 백업은 만들지
+  않았다. 별도 전역 규칙 추가 스크립트가 사용된 경우 백업은
+  `%USERPROFILE%\.gemini\GEMINI.md.backup-YYYYMMDD-HHMMSS`에 남는다.
+- 이 PC의 설치 전후 `GEMINI.md` SHA-256은
+  `975B39433C22F47CFDD8D6146487D143D21EC86A613BA3C436328E2EB76D235D`로
+  동일했다.
+- TypeScript compile과 headless 테스트 9개를 통과하고 0.5.0을 Antigravity
+  IDE에 설치했다. VSIX SHA-256은
+  `C946C1B4137ABC8DBDF12E9F9B62BA7C5D66FFD821C63356543B970FED5D2D41`이다.

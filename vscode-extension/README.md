@@ -17,8 +17,8 @@ EggR Orchestrator와 사용자 소유 Private Knowledge의 최초 설정으로 �
 | Private Knowledge | 사용자의 지식·작업 기록·오류 이력을 개인 Git에 누적 | 별도 `environment-bootstrap` 명령을 호출 |
 
 세 구성은 설치 수명과 데이터 소유자가 다르므로 독립적으로 설정한다.
-`EggR: Run First-Run Setup`은 세 마법사의 상태와 진입점만 보여주며 하나의 설정으로
-강제 결합하지 않는다.
+`EggR: Open Configuration Center`는 세 구성의 상태와 설정을 한 페이지에서
+보여주지만 하나의 설정이나 설치 수명으로 강제 결합하지 않는다.
 
 ## 주요 기능
 
@@ -60,7 +60,7 @@ Antigravity IDE 명령줄 wrapper에서 VSIX를 설치한다.
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\antigravity-ide-dashboard-0.4.2.vsix" `
+  --install-extension ".\antigravity-ide-dashboard-0.5.0.vsix" `
   --force
 ```
 
@@ -76,14 +76,16 @@ Developer: Reload Window
 
 | 명령 | 동작 |
 |---|---|
-| `EggR: Run First-Run Setup` | 세 독립 마법사의 완료 상태와 진입점 표시 |
-| `EggR: Configure Dashboard` | 표시 영역과 EggR state root 설정 |
-| `EggR: Configure Orchestrator` | 실행 경로, provider, endpoint, 로컬 모델 정책 설정 |
-| `EggR: Configure Private Git Knowledge` | Windows Private Knowledge 마법사 실행 |
-| `EggR: Install or Update Orchestrator` | 번들 Orchestrator를 명시적으로 설치·갱신 |
+| `EggR: Open Configuration Center` | 세 구성의 통합 설정 페이지 열기 |
+| `EggR: Run First-Run Setup` | Configuration Center 개요 열기 |
+| `EggR: Configure Dashboard` | Configuration Center의 Dashboard 영역 열기 |
+| `EggR: Configure Orchestrator` | Configuration Center의 Orchestrator 영역 열기 |
+| `EggR: Configure Private Git Knowledge` | Configuration Center의 Knowledge 영역 열기 |
+| `EggR: Install or Update Orchestrator` | Orchestrator 설치 영역 열기 |
 
-Dashboard를 열거나 확장을 활성화하는 것만으로 Orchestrator, `GEMINI.md`,
-사용자 Knowledge 저장소를 자동 덮어쓰지 않는다.
+Dashboard를 열거나 확장을 활성화하는 것만으로 Orchestrator와 사용자 Knowledge
+저장소를 자동 변경하지 않는다. 0.5.0부터 확장 패키지에는 `GEMINI.md` 템플릿이나
+이를 생성·추가·교체하는 코드가 없다.
 
 ## Dashboard 설정
 
@@ -101,8 +103,8 @@ Antigravity IDE 설정에서 다음 값을 사용할 수 있다.
 |---|---|
 | EggR root 설정 | `%USERPROFILE%\.config\eggr\roots.json` |
 | 기본 runtime state | `%LOCALAPPDATA%\EggR\state` |
-| Orchestrator 설정 | `%USERPROFILE%\.gemini\config\codex_plugin_settings.json` |
-| Antigravity IDE plugin | `%USERPROFILE%\.gemini\config\plugins\codex-orchestrator-plugin` |
+| Orchestrator 설정 | `%USERPROFILE%\.config\eggr\orchestrator.json` |
+| Antigravity IDE plugin | `%USERPROFILE%\.gemini\config\plugins\eggr-orchestrator-plugin` |
 | Private Knowledge | 사용자가 최초 실행 마법사에서 선택 |
 
 현재 PC의 경로나 Git 원격을 다른 사용자에게 배포하지 않는다. 새 PC에서는 사용자
@@ -157,6 +159,15 @@ dirty 변경을 보존하며 commit, pull, rebase, checkout, push를 실행하�
 - 필요한 경우 값 대신 환경변수 이름만 기록한다.
 - 원문 대화, 인증 데이터베이스와 개인 Knowledge 내용은 VSIX에 포함하지 않는다.
 - 사용자 경로와 원격 URL을 소스 또는 배포물에 고정하지 않는다.
+
+## 0.5.0 변경 사항
+
+- Dashboard, Orchestrator, Private Git Knowledge를 한 Configuration Center에서 설정
+- 기존 명령은 유지하되 해당 설정 페이지 영역으로 연결
+- 플러그인과 스킬 공개 이름을 `eggr-orchestrator`로 변경
+- 이전 `codex-orchestrator-plugin`을 명시적 설치 시 백업 후 전환
+- `GEMINI.md` 템플릿과 모든 생성·추가 코드를 패키지에서 제거
+- Orchestrator 설정을 프레임워크 공통 EggR 경로로 이동하고 이전 설정은 읽기 호환
 
 ## 0.4.2 변경 사항
 

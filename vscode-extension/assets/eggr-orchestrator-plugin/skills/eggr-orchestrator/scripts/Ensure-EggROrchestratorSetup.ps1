@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$RequestedCodexExe = "",
-    [switch]$PassThru,
-    [switch]$InstallGlobalRules
+    [switch]$PassThru
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +37,7 @@ function Get-InteractiveInstallerPath {
         }
     } catch { }
 
-    return Join-Path $env:USERPROFILE ".gemini\config\plugins\codex-orchestrator-plugin\install\Install-Plugin.ps1"
+    return Join-Path $env:USERPROFILE ".gemini\config\plugins\eggr-orchestrator-plugin\install\Install-Plugin.ps1"
 }
 
 function Resolve-CodexExeAutomatically {
@@ -47,7 +46,17 @@ function Resolve-CodexExeAutomatically {
     $requested = Test-CodexCandidate -Candidate $RequestedCodexExe
     if ($requested) { return $requested }
 
-    $settingsPath = Join-Path $env:USERPROFILE ".gemini\config\codex_plugin_settings.json"
+    $settingsPath = if (-not [string]::IsNullOrWhiteSpace($env:EGGR_ORCHESTRATOR_SETTINGS)) {
+        [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:EGGR_ORCHESTRATOR_SETTINGS))
+    } else {
+        Join-Path $env:USERPROFILE ".config\eggr\orchestrator.json"
+    }
+    if (-not (Test-Path -LiteralPath $settingsPath -PathType Leaf)) {
+        $legacySettingsPath = Join-Path $env:USERPROFILE ".gemini\config\codex_plugin_settings.json"
+        if (Test-Path -LiteralPath $legacySettingsPath -PathType Leaf) {
+            $settingsPath = $legacySettingsPath
+        }
+    }
     if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
         try {
             $settings = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -91,83 +100,11 @@ function Resolve-CodexExeAutomatically {
     return $null
 }
 
-function Invoke-WithFileLock {
-    param(
-        [Parameter(Mandatory = $true)][string]$TargetPath,
-        [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock
-    )
-
-    $targetDir = Split-Path -Parent ([IO.Path]::GetFullPath($TargetPath))
-    if ($targetDir) { New-Item -ItemType Directory -Force -Path $targetDir | Out-Null }
-
-    $lockPath = "$TargetPath.lock"
-    $deadline = (Get-Date).AddSeconds(20)
-    $stream = $null
-
-    while ($null -eq $stream) {
-        try {
-            $stream = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-        } catch [IO.IOException] {
-            if ((Get-Date) -ge $deadline) { throw "Timed out waiting for setup lock: $lockPath" }
-            Start-Sleep -Milliseconds 100
-        }
-    }
-
-    try {
-        & $ScriptBlock
-    } finally {
-        $stream.Dispose()
-        Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Ensure-GlobalRoutingRules {
-    $geminiDir = Join-Path $env:USERPROFILE ".gemini"
-    New-Item -ItemType Directory -Force -Path $geminiDir | Out-Null
-
-    $geminiMdPath = Join-Path $geminiDir "GEMINI.md"
-    $marker = "Codex Orchestrator Routing (Added by codex-orchestrator-plugin)"
-    $ruleContent = @"
-
-## Codex Orchestrator Routing (Added by codex-orchestrator-plugin)
-When a task involves architecture decisions, code review, complex implementation, large refactors, cross-model critique, or long-running work delegation, prefer the ``codex-orchestrator`` skill.
-
-Use:
-- Debate Mode for architecture, ADRs, tradeoff analysis, and second opinions.
-- Job Mode for bounded implementation or direct file edits.
-- WorkWindow Mode for queue-driven or supervised long-running work.
-
-"@
-
-    Invoke-WithFileLock -TargetPath $geminiMdPath -ScriptBlock {
-        $existing = if (Test-Path -LiteralPath $geminiMdPath -PathType Leaf) {
-            Get-Content -Raw -Encoding UTF8 -LiteralPath $geminiMdPath
-        } else {
-            ""
-        }
-
-        if ($existing.Contains($marker)) { return }
-
-        if (Test-Path -LiteralPath $geminiMdPath -PathType Leaf) {
-            $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-            Copy-Item -LiteralPath $geminiMdPath -Destination "$geminiMdPath.backup-$stamp" -Force
-        }
-
-        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        $prefix = if ($existing.Length -gt 0 -and !$existing.EndsWith("`n")) { "`r`n" } else { "" }
-        [IO.File]::AppendAllText($geminiMdPath, $prefix + $ruleContent, $utf8NoBom)
-    }
-}
-
 $codexExe = Resolve-CodexExeAutomatically -RequestedCodexExe $RequestedCodexExe
 
 if (!$codexExe) {
     $installerPath = Get-InteractiveInstallerPath
     throw "Unable to resolve codex.exe automatically. Run the interactive installer: powershell -NoProfile -ExecutionPolicy Bypass -File `"$installerPath`""
-}
-
-if ($InstallGlobalRules) {
-    Ensure-GlobalRoutingRules
 }
 
 if ($PassThru) {

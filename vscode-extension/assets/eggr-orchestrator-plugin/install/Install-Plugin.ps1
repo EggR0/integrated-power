@@ -32,7 +32,7 @@ $configPath = if (-not [string]::IsNullOrWhiteSpace($SettingsPath)) {
 } elseif (-not [string]::IsNullOrWhiteSpace($env:EGGR_ORCHESTRATOR_SETTINGS)) {
     [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:EGGR_ORCHESTRATOR_SETTINGS))
 } else {
-    Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
+    Join-Path $userProfile ".config\eggr\orchestrator.json"
 }
 $configDirectory = Split-Path -Parent $configPath
 
@@ -101,14 +101,20 @@ function Get-NvidiaSummary {
 }
 
 $existing = [ordered]@{}
-if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+$readConfigPath = $configPath
+$legacyConfigPath = Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
+if (-not (Test-Path -LiteralPath $readConfigPath -PathType Leaf) -and
+    (Test-Path -LiteralPath $legacyConfigPath -PathType Leaf)) {
+    $readConfigPath = $legacyConfigPath
+}
+if (Test-Path -LiteralPath $readConfigPath -PathType Leaf) {
     try {
-        $raw = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $raw = Get-Content -LiteralPath $readConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($property in $raw.PSObject.Properties) {
             $existing[$property.Name] = $property.Value
         }
     } catch {
-        throw "Existing orchestrator settings are invalid: $configPath"
+        throw "Existing orchestrator settings are invalid: $readConfigPath"
     }
 }
 
@@ -205,10 +211,10 @@ $existing["EnabledRoutes"] = $EnabledRoutes
 $existing["DefaultRoute"] = $DefaultRoute
 $existing["LocalLlm"] = $localLlm
 $existing["FirstRunCompletedAt"] = [DateTimeOffset]::UtcNow.ToString("o")
-$existing["ConfiguredBy"] = "orchestrator-standalone/1.2.0"
+$existing["ConfiguredBy"] = "eggr-orchestrator-standalone/2.0.0"
 
 New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
-$temporary = Join-Path $configDirectory ("codex_plugin_settings.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))
+$temporary = Join-Path $configDirectory ("orchestrator.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))
 try {
     $json = $existing | ConvertTo-Json -Depth 8
     [IO.File]::WriteAllText($temporary, "$json`n", (New-Object Text.UTF8Encoding($false)))

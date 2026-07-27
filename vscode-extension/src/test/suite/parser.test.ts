@@ -105,9 +105,9 @@ suite('Parser and Store Test Suite', () => {
     const debateReferencePath = path.join(
       extensionRoot,
       'assets',
-      'codex-orchestrator-plugin',
+      'eggr-orchestrator-plugin',
       'skills',
-      'codex-orchestrator',
+      'eggr-orchestrator',
       'references',
       'debate.md',
     );
@@ -121,6 +121,7 @@ suite('Parser and Store Test Suite', () => {
       'integratedPower.agentRuns.openRunsFile',
       'integratedPower.agentRuns.refresh',
       'integratedPower.eggr.installOrUpdateOrchestrator',
+      'integratedPower.eggr.openConfigurationCenter',
       'integratedPower.eggr.runDashboardSetup',
       'integratedPower.eggr.runFirstRunSetup',
       'integratedPower.eggr.runOrchestratorSetup',
@@ -217,6 +218,7 @@ suite('Parser and Store Test Suite', () => {
     assert.ok(commands.includes('integratedPower.agentRuns.refresh'));
     assert.ok(commands.includes('integratedPower.agentRuns.openRunsFile'));
     assert.ok(commands.includes('integratedPower.eggr.installOrUpdateOrchestrator'));
+    assert.ok(commands.includes('integratedPower.eggr.openConfigurationCenter'));
     assert.ok(!commands.includes('integratedPower.agentRuns.launchAthenaLoop'));
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;

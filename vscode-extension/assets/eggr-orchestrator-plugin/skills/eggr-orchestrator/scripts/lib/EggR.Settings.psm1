@@ -6,7 +6,15 @@ function Get-EggROrchestratorSettingsPath {
         return [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:EGGR_ORCHESTRATOR_SETTINGS))
     }
     $userProfile = [Environment]::GetFolderPath("UserProfile")
-    return Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
+    $preferred = Join-Path $userProfile ".config\eggr\orchestrator.json"
+    if (Test-Path -LiteralPath $preferred -PathType Leaf) {
+        return $preferred
+    }
+    $legacy = Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
+    if (Test-Path -LiteralPath $legacy -PathType Leaf) {
+        return $legacy
+    }
+    return $preferred
 }
 
 function Get-EggROrchestratorSettings {

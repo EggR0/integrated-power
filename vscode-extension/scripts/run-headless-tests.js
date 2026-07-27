@@ -68,6 +68,7 @@ test("package commands exclude removed Athena workflow", () => {
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
     "integratedPower.eggr.installOrUpdateOrchestrator",
+    "integratedPower.eggr.openConfigurationCenter",
     "integratedPower.eggr.runDashboardSetup",
     "integratedPower.eggr.runFirstRunSetup",
     "integratedPower.eggr.runOrchestratorSetup",
@@ -75,14 +76,16 @@ test("package commands exclude removed Athena workflow", () => {
   ]);
 });
 
-test("first-run setup keeps three independent entry points", () => {
-  const setupSource = readText("src", "setupWizards.ts");
+test("configuration center keeps three independent setup models", () => {
+  const modelSource = readText("src", "configurationModel.ts");
+  const centerSource = readText("src", "ConfigurationCenter.ts");
 
-  assert.ok(setupSource.includes("runDashboardSetupWizard"));
-  assert.ok(setupSource.includes("runOrchestratorSetupWizard"));
-  assert.ok(setupSource.includes("runPrivateKnowledgeSetupWizard"));
-  assert.ok(setupSource.includes('knowledgeMode === "local_only"'));
-  assert.ok(setupSource.includes('Mode: "auto" | "user_default"'));
+  assert.ok(modelSource.includes("saveDashboardConfiguration"));
+  assert.ok(modelSource.includes("saveOrchestratorConfiguration"));
+  assert.ok(modelSource.includes("runPrivateKnowledgeConfiguration"));
+  assert.ok(modelSource.includes('"local_only" | "private_remote"'));
+  assert.ok(modelSource.includes('"auto" | "user_default"'));
+  assert.ok(centerSource.includes("EggR Configuration Center"));
   assert.ok(fs.existsSync(path.join(extensionRoot, "assets", "private-git-knowledge.md")));
 });
 
@@ -100,10 +103,19 @@ test("dashboard activation does not silently install or overwrite the EggR orche
   const extensionSource = readText("src", "extension.ts");
   const activateBlock = extensionSource.slice(extensionSource.indexOf("export function activate"));
 
-  assert.ok(!activateBlock.includes("initializeGlobalProtocol(context);"));
   assert.ok(!activateBlock.includes("installAntigravityPlugin(context);"));
+  assert.ok(!extensionSource.includes("initializeGlobalProtocol"));
   assert.ok(!extensionSource.includes("dashboard_global_storage.txt"));
   assert.ok(extensionSource.includes("integratedPower.eggr.installOrUpdateOrchestrator"));
+  assert.ok(extensionSource.includes("integratedPower.eggr.openConfigurationCenter"));
+  assert.ok(!fs.existsSync(path.join(extensionRoot, "assets", "gemini.md")));
+  const setupSources = [
+    extensionSource,
+    readText("src", "ConfigurationCenter.ts"),
+    readText("src", "configurationModel.ts"),
+  ].join("\n");
+  assert.ok(!setupSources.includes("Ensure-GlobalRoutingRules"));
+  assert.ok(!setupSources.includes("InstallGlobalRules"));
 });
 
 test("webview preserves token status and keeps Refresh clickable", () => {
@@ -120,9 +132,9 @@ test("webview preserves token status and keeps Refresh clickable", () => {
 test("debate documentation uses EggR state paths", () => {
   const debateReference = readText(
     "assets",
-    "codex-orchestrator-plugin",
+    "eggr-orchestrator-plugin",
     "skills",
-    "codex-orchestrator",
+    "eggr-orchestrator",
     "references",
     "debate.md",
   );

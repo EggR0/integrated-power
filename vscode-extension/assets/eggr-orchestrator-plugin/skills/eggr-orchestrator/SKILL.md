@@ -1,13 +1,13 @@
 ---
-name: codex-orchestrator
-description: Unified AI work router for deciding whether the main agent should work directly, delegate to Codex, or delegate preprocessing/summarization to a local OpenAI-compatible vLLM endpoint. Triggered by "use Codex", "ask Codex", "local LLM", "vLLM", "delegate this", "token-efficient", "Codex review", "Codex job", or "work window".
+name: eggr-orchestrator
+description: Routes non-trivial AI engineering work between the active agent, Codex, and hardware-compatible local LLMs while recording route, quality, elapsed time, and token evidence. Use for architecture, code review, complex implementation, large refactors, cross-model critique, long-running delegation, local preprocessing, VRAM-aware model selection, token-efficiency analysis, or explicit EggR and orchestration requests.
 ---
 
 # AI Work Router
 
 This is the primary routing skill for token-efficient AI work. When a task may benefit from delegation, classify the work first and choose one of three routes:
 
-Before choosing a route, read `~/.gemini/config/codex_plugin_settings.json` when it
+Before choosing a route, read `~/.config/eggr/orchestrator.json` when it
 exists. Never select a route that is absent from `EnabledRoutes`. Use
 `DefaultRoute` only when task evidence does not favor another enabled route.
 `LocalLlm.Endpoint` and `LocalLlm.Model` are non-secret defaults; API key values

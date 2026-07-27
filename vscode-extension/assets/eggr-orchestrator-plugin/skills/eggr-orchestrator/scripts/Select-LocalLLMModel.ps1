@@ -63,7 +63,9 @@ function Get-Settings {
         $Path = if (-not [string]::IsNullOrWhiteSpace($env:EGGR_ORCHESTRATOR_SETTINGS)) {
             $env:EGGR_ORCHESTRATOR_SETTINGS
         } else {
-            Join-Path ([Environment]::GetFolderPath("UserProfile")) ".gemini\config\codex_plugin_settings.json"
+            $preferredSettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".config\eggr\orchestrator.json"
+            $legacySettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".gemini\config\codex_plugin_settings.json"
+            if (Test-Path -LiteralPath $preferredSettings -PathType Leaf) { $preferredSettings } else { $legacySettings }
         }
     }
     $Path = [Environment]::ExpandEnvironmentVariables($Path)

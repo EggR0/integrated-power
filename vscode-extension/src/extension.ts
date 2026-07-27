@@ -1,8 +1,11 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import * as os from "os";
 import { DashboardProvider } from "./DashboardProvider";
+import {
+  ConfigurationCenter,
+  ConfigurationSection,
+} from "./ConfigurationCenter";
 import { installAntigravityPlugin } from "./installAntigravityPlugin";
 import {
   legacyWorkspaceStorageCandidates,
@@ -10,39 +13,7 @@ import {
   resolveEggRWorkspaceDescriptor,
   workspaceStoragePathForFolder,
 } from "./storagePath";
-import {
-  offerFirstRunSetup,
-  runDashboardSetupWizard,
-  runFirstRunCoordinator,
-  runOrchestratorSetupWizard,
-  runPrivateKnowledgeSetupWizard,
-} from "./setupWizards";
-
-async function initializeGlobalProtocol(context: vscode.ExtensionContext): Promise<"created" | "preserved" | "missing-template"> {
-  const geminiDir = path.join(os.homedir(), ".gemini");
-  const globalProtocolPath = path.join(geminiDir, "GEMINI.md");
-  const templatePath = path.join(context.extensionPath, "assets", "gemini.md");
-
-  if (!fs.existsSync(templatePath)) {
-    return "missing-template";
-  }
-
-  await fs.promises.mkdir(geminiDir, { recursive: true });
-  if (!fs.existsSync(globalProtocolPath)) {
-    await fs.promises.copyFile(templatePath, globalProtocolPath);
-    return "created";
-  }
-
-  const selection = await vscode.window.showInformationMessage(
-    "EggR가 기존 GEMINI.md를 보존했습니다. 최신 라우팅 규칙 템플릿을 검토하시겠습니까?",
-    "템플릿 열기",
-  );
-  if (selection === "템플릿 열기") {
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(templatePath));
-    await vscode.window.showTextDocument(document, { preview: false });
-  }
-  return "preserved";
-}
+import { offerFirstRunSetup } from "./configurationModel";
 
 async function migrateLegacyDashboardState(context: vscode.ExtensionContext): Promise<number> {
   const primaryFolder = vscode.workspace.workspaceFolders?.[0];
@@ -93,64 +64,43 @@ async function copyMissingFiles(source: string, destination: string): Promise<nu
 async function installOrUpdateEggROrchestrator(
   context: vscode.ExtensionContext,
   provider: DashboardProvider,
-): Promise<void> {
+): Promise<string> {
   try {
-    const protocolResult = await initializeGlobalProtocol(context);
     const installResult = await installAntigravityPlugin(context);
     const migratedFiles = await migrateLegacyDashboardState(context);
     await provider.refresh();
 
     if (!installResult.installed) {
-      void vscode.window.showWarningMessage(installResult.reason ?? "EggR 오케스트레이터를 설치하지 못했습니다.");
-      return;
+      throw new Error(
+        installResult.reason ?? "EggR Orchestrator를 설치하지 못했습니다.",
+      );
     }
 
-    const protocolText =
-      protocolResult === "created"
-        ? "GEMINI.md 생성"
-        : protocolResult === "preserved"
-          ? "기존 GEMINI.md 보존"
-          : "GEMINI.md 템플릿 없음";
-    void vscode.window.showInformationMessage(
-      `EggR 오케스트레이터 설치 완료 · ${protocolText} · 기존 상태 ${migratedFiles}개 파일 복사`,
-    );
+    return [
+      "EggR Orchestrator 설치 완료",
+      installResult.migratedLegacy
+        ? "이전 codex-orchestrator 플러그인은 백업 후 전환"
+        : undefined,
+      `기존 Dashboard 상태 ${migratedFiles}개 파일 복사`,
+      "GEMINI.md 변경 없음",
+    ]
+      .filter(Boolean)
+      .join(" · ");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    void vscode.window.showErrorMessage(`EggR 오케스트레이터 설치 실패: ${message}`);
-    throw error;
-  }
-}
-
-async function configureDashboardViews(): Promise<void> {
-  const config = vscode.workspace.getConfiguration("integratedPower.view");
-  const showAntigravity = config.get<boolean>("showAntigravity", true);
-  const showCodex = config.get<boolean>("showCodex", true);
-  const showLocalLlm = config.get<boolean>("showLocalLlm", true);
-
-  const items: vscode.QuickPickItem[] = [
-    { label: "Antigravity IDE Capacity", picked: showAntigravity, description: "Show the Antigravity IDE token capacity section" },
-    { label: "Codex Capacity", picked: showCodex, description: "Show the Codex API token capacity section" },
-    { label: "Local LLM Status", picked: showLocalLlm, description: "Show the Local LLM status section" },
-  ];
-
-  const selected = await vscode.window.showQuickPick(items, {
-    canPickMany: true,
-    placeHolder: "Select the dashboard sections you want to display",
-    title: "Configure Dashboard Views",
-  });
-
-  if (selected !== undefined) {
-    const selectedLabels = new Set(selected.map(item => item.label));
-    await config.update("showAntigravity", selectedLabels.has("Antigravity IDE Capacity"), vscode.ConfigurationTarget.Global);
-    await config.update("showCodex", selectedLabels.has("Codex Capacity"), vscode.ConfigurationTarget.Global);
-    await config.update("showLocalLlm", selectedLabels.has("Local LLM Status"), vscode.ConfigurationTarget.Global);
+    throw new Error(`EggR Orchestrator 설치 실패: ${message}`);
   }
 }
 
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new DashboardProvider(context);
-  const refresh = () => provider.refresh();
-  const installOrUpdate = () => installOrUpdateEggROrchestrator(context, provider);
+  const openConfigurationCenter = (section: ConfigurationSection = "overview") =>
+    ConfigurationCenter.open(
+      context,
+      section,
+      () => provider.refresh(),
+      () => installOrUpdateEggROrchestrator(context, provider),
+    );
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("integratedPower.agentRunsDashboard", provider, {
@@ -158,32 +108,39 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("integratedPower.agentRuns.refresh", () => provider.refresh()),
     vscode.commands.registerCommand("integratedPower.agentRuns.openRunsFile", () => provider.openRunsFile()),
-    vscode.commands.registerCommand("integratedPower.agentRuns.configureViews", configureDashboardViews),
+    vscode.commands.registerCommand(
+      "integratedPower.agentRuns.configureViews",
+      () => openConfigurationCenter("dashboard"),
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.eggr.openConfigurationCenter",
+      () => openConfigurationCenter("overview"),
+    ),
     vscode.commands.registerCommand(
       "integratedPower.eggr.runFirstRunSetup",
-      () => runFirstRunCoordinator(context, refresh, installOrUpdate),
+      () => openConfigurationCenter("overview"),
     ),
     vscode.commands.registerCommand(
       "integratedPower.eggr.runDashboardSetup",
-      () => runDashboardSetupWizard(context, refresh),
+      () => openConfigurationCenter("dashboard"),
     ),
     vscode.commands.registerCommand(
       "integratedPower.eggr.runOrchestratorSetup",
-      () => runOrchestratorSetupWizard(context, installOrUpdate),
+      () => openConfigurationCenter("orchestrator"),
     ),
     vscode.commands.registerCommand(
       "integratedPower.eggr.runPrivateKnowledgeSetup",
-      () => runPrivateKnowledgeSetupWizard(context),
+      () => openConfigurationCenter("knowledge"),
     ),
     vscode.commands.registerCommand(
       "integratedPower.eggr.installOrUpdateOrchestrator",
-      installOrUpdate,
+      () => openConfigurationCenter("orchestrator"),
     ),
     provider,
   );
 
   void provider.refresh();
-  void offerFirstRunSetup(context, refresh, installOrUpdate);
+  void offerFirstRunSetup(context, () => openConfigurationCenter("overview"));
 }
 
 export function deactivate(): void {

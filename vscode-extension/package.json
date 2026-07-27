@@ -3,7 +3,7 @@
   "publisher": "integratedpower",
   "displayName": "EggR Antigravity IDE Dashboard",
   "description": "Antigravity IDE extension for EggR usage, agent-run, and local compute status",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "vscode": "^1.80.0"
@@ -13,6 +13,7 @@
   ],
   "activationEvents": [
     "onView:integratedPower.agentRunsDashboard",
+    "onCommand:integratedPower.eggr.openConfigurationCenter",
     "onCommand:integratedPower.eggr.installOrUpdateOrchestrator",
     "onCommand:integratedPower.eggr.runFirstRunSetup",
     "onCommand:integratedPower.eggr.runDashboardSetup",
@@ -22,7 +23,7 @@
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
-      "title": "Integrated Power",
+      "title": "EggR",
       "properties": {
         "integratedPower.view.showAntigravity": {
           "type": "boolean",
@@ -45,7 +46,7 @@
       "activitybar": [
         {
           "id": "integratedPower",
-          "title": "Integrated Power",
+          "title": "EggR",
           "icon": "$(rocket)"
         }
       ]
@@ -78,6 +79,10 @@
       {
         "command": "integratedPower.eggr.installOrUpdateOrchestrator",
         "title": "EggR: Install or Update Orchestrator"
+      },
+      {
+        "command": "integratedPower.eggr.openConfigurationCenter",
+        "title": "EggR: Open Configuration Center"
       },
       {
         "command": "integratedPower.eggr.runFirstRunSetup",
