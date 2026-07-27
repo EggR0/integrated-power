@@ -11,6 +11,10 @@ const {
   resolveEggRStateRoot,
   workspaceStoragePathForFolder,
 } = require("../out/storagePath");
+const {
+  createPluginInstallPlan,
+  executePluginInstallPlan,
+} = require("../out/pluginInstallerCore");
 
 function readText(...parts) {
   return fs.readFileSync(path.join(extensionRoot, ...parts), "utf8");
@@ -19,6 +23,16 @@ function readText(...parts) {
 function test(name, fn) {
   try {
     fn();
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    console.error(`not ok - ${name}`);
+    throw error;
+  }
+}
+
+async function testAsync(name, fn) {
+  try {
+    await fn();
     console.log(`ok - ${name}`);
   } catch (error) {
     console.error(`not ok - ${name}`);
@@ -171,4 +185,168 @@ test("compiled runtime excludes stale path and workflow patterns", () => {
   assert.ok(tokenManagerOut.includes("findCodexCli"), "Expected findCodexCli in TokenManager.js");
 });
 
-console.log("headless tests passed");
+async function runPluginDistributionTests() {
+  const sourcePath = path.join(extensionRoot, "assets", "eggr-orchestrator-plugin");
+  const fixedNow = new Date("2026-07-27T12:00:00.000Z");
+
+  await testAsync("plugin installer performs a clean install without scanning unrelated paths", async () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "eggr-plugin-clean-"));
+    const decoy = path.join(homeDir, "Documents", "codex-orchestrator-plugin", "keep.txt");
+    const gemini = path.join(homeDir, ".gemini", "GEMINI.md");
+    try {
+      fs.mkdirSync(path.dirname(decoy), { recursive: true });
+      fs.writeFileSync(decoy, "unrelated", "utf8");
+      fs.mkdirSync(path.dirname(gemini), { recursive: true });
+      fs.writeFileSync(gemini, "user rules", "utf8");
+      const options = {
+        homeDir,
+        sourcePath,
+        extensionVersion: "test",
+        now: fixedNow,
+        processId: 1001,
+      };
+      const plan = createPluginInstallPlan(options);
+      assert.strictEqual(plan.blocked, false);
+      assert.deepStrictEqual(plan.actions.map((action) => action.type), ["install"]);
+      const result = await executePluginInstallPlan(options, plan);
+      assert.strictEqual(result.installed, true);
+      assert.strictEqual(fs.readFileSync(decoy, "utf8"), "unrelated");
+      assert.strictEqual(fs.readFileSync(gemini, "utf8"), "user rules");
+      assert.ok(fs.existsSync(path.join(result.destination, ".eggr-install-state.json")));
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("plugin installer migrates the exact 0.4.2 legacy path to backup", async () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "eggr-plugin-legacy-"));
+    const pluginRoot = path.join(homeDir, ".gemini", "config", "plugins");
+    const legacy = path.join(pluginRoot, "codex-orchestrator-plugin");
+    const gemini = path.join(homeDir, ".gemini", "GEMINI.md");
+    try {
+      writePluginFixture(legacy, "codex-orchestrator-plugin", "codex-orchestrator", "1.2.0");
+      fs.writeFileSync(path.join(legacy, "user-note.txt"), "preserve me", "utf8");
+      fs.writeFileSync(gemini, "user rules", "utf8");
+      const options = {
+        homeDir,
+        sourcePath,
+        extensionVersion: "test",
+        now: fixedNow,
+        processId: 1002,
+      };
+      const plan = createPluginInstallPlan(options);
+      assert.deepStrictEqual(
+        plan.actions.map((action) => action.type),
+        ["install", "backup-legacy"],
+      );
+      const result = await executePluginInstallPlan(options, plan);
+      assert.strictEqual(fs.existsSync(legacy), false);
+      assert.strictEqual(result.migratedLegacy, true);
+      assert.strictEqual(result.backupPaths.length, 1);
+      assert.strictEqual(
+        fs.readFileSync(path.join(result.backupPaths[0], "user-note.txt"), "utf8"),
+        "preserve me",
+      );
+      assert.strictEqual(fs.readFileSync(gemini, "utf8"), "user rules");
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("plugin installer blocks an unrecognized legacy-path conflict", async () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "eggr-plugin-conflict-"));
+    const legacy = path.join(
+      homeDir,
+      ".gemini",
+      "config",
+      "plugins",
+      "codex-orchestrator-plugin",
+    );
+    try {
+      writePluginFixture(legacy, "codex-orchestrator-plugin", "codex-orchestrator", "9.0.0");
+      const plan = createPluginInstallPlan({
+        homeDir,
+        sourcePath,
+        extensionVersion: "test",
+        now: fixedNow,
+      });
+      assert.strictEqual(plan.blocked, true);
+      assert.match(plan.blockingReason, /will not be moved/);
+      assert.ok(fs.existsSync(legacy));
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("plugin installer rolls the legacy path back after an injected interruption", async () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "eggr-plugin-rollback-"));
+    const legacy = path.join(
+      homeDir,
+      ".gemini",
+      "config",
+      "plugins",
+      "codex-orchestrator-plugin",
+    );
+    try {
+      writePluginFixture(legacy, "codex-orchestrator-plugin", "codex-orchestrator", "1.2.0");
+      const options = {
+        homeDir,
+        sourcePath,
+        extensionVersion: "test",
+        now: fixedNow,
+        processId: 1003,
+        failAt: "after-legacy-backup",
+      };
+      const plan = createPluginInstallPlan(options);
+      await assert.rejects(() => executePluginInstallPlan(options, plan), /Injected/);
+      assert.ok(fs.existsSync(legacy));
+      assert.strictEqual(
+        fs.existsSync(path.join(plan.pluginRoot, "eggr-orchestrator-plugin")),
+        false,
+      );
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("plugin installer is idempotent when managed checksums match", async () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "eggr-plugin-idempotent-"));
+    try {
+      fs.mkdirSync(path.join(homeDir, ".gemini"), { recursive: true });
+      const options = {
+        homeDir,
+        sourcePath,
+        extensionVersion: "test",
+        now: fixedNow,
+        processId: 1004,
+      };
+      await executePluginInstallPlan(options);
+      const secondPlan = createPluginInstallPlan(options);
+      assert.deepStrictEqual(secondPlan.actions.map((action) => action.type), ["no-op"]);
+      const secondResult = await executePluginInstallPlan(options, secondPlan);
+      assert.strictEqual(secondResult.changed, false);
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+}
+
+function writePluginFixture(root, pluginName, skillName, version) {
+  fs.mkdirSync(path.join(root, "skills", skillName), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "plugin.json"),
+    `${JSON.stringify({ name: pluginName, version, author: { name: "jsp0" } }, null, 2)}\n`,
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(root, "skills", skillName, "SKILL.md"),
+    `---\nname: ${skillName}\ndescription: test fixture\n---\n`,
+    "utf8",
+  );
+}
+
+runPluginDistributionTests()
+  .then(() => console.log("headless tests passed"))
+  .catch(() => {
+    process.exitCode = 1;
+  });

@@ -5,6 +5,7 @@ import * as path from "path";
 import { execFile, execFileSync } from "child_process";
 import { readUtf8JsonFile } from "./jsonFile";
 import { resolveEggRStateRoot } from "./storagePath";
+import { inspectAntigravityPluginInstall } from "./installAntigravityPlugin";
 
 const DASHBOARD_SETUP_KEY = "eggr.setup.dashboard.completed.v1";
 const FIRST_RUN_PROMPT_KEY = "eggr.setup.firstRunPromptShown.v1";
@@ -49,7 +50,7 @@ export interface FirstRunStatus {
 }
 
 export interface ExecutableDiagnostic {
-  id: "agy" | "codex" | "ollama" | "nvidia";
+  id: "agy" | "codex" | "git" | "gh" | "ollama" | "nvidia";
   label: string;
   available: boolean;
   path: string;
@@ -75,6 +76,13 @@ export interface ConfigurationCenterSnapshot {
     settingsSource: "eggr" | "legacy" | "none";
     knowledgeWizardInstalled: boolean;
     globalGeminiExists: boolean;
+    pluginPlan: {
+      blocked: boolean;
+      blockingReason: string;
+      destinationState: string;
+      legacyState: string;
+      actions: string[];
+    };
   };
   extensionVersion: string;
 }
@@ -131,6 +139,8 @@ export function loadConfigurationCenterSnapshot(
   const agyExecutable = findExecutable(["agy.exe", "agy"]);
   const ollamaExecutable = findExecutable(["ollama.exe", "ollama"]);
   const nvidiaExecutable = findExecutable(["nvidia-smi.exe", "nvidia-smi"]);
+  const gitExecutable = findExecutable(["git.exe", "git"]);
+  const ghExecutable = findExecutable(["gh.exe", "gh"]);
   const plugin = pluginPath();
   const legacyPlugin = legacyPluginPath();
   const globalGemini = path.join(os.homedir(), ".gemini", "GEMINI.md");
@@ -138,6 +148,7 @@ export function loadConfigurationCenterSnapshot(
     orchestrator.DefaultRoute === "codex" || orchestrator.DefaultRoute === "local_llm"
       ? orchestrator.DefaultRoute
       : "main_agent";
+  const pluginPlan = inspectAntigravityPluginInstall(context);
 
   return {
     dashboard: {
@@ -177,6 +188,8 @@ export function loadConfigurationCenterSnapshot(
     diagnostics: [
       diagnostic("agy", "Agy", agyExecutable),
       diagnostic("codex", "Codex", codexExecutable),
+      diagnostic("git", "Git for Windows", gitExecutable),
+      diagnostic("gh", "GitHub CLI", ghExecutable),
       diagnostic("ollama", "Ollama", ollamaExecutable),
       diagnostic("nvidia", "NVIDIA", nvidiaExecutable),
     ],
@@ -194,6 +207,13 @@ export function loadConfigurationCenterSnapshot(
       settingsSource: settingsResult.source,
       knowledgeWizardInstalled: Boolean(installedKnowledgeWizardPath()),
       globalGeminiExists: fs.existsSync(globalGemini),
+      pluginPlan: {
+        blocked: pluginPlan.blocked,
+        blockingReason: pluginPlan.blockingReason ?? "",
+        destinationState: pluginPlan.destination.state,
+        legacyState: pluginPlan.legacy.state,
+        actions: pluginPlan.actions.map((action) => action.description),
+      },
     },
     extensionVersion: String(context.extension.packageJSON.version ?? "unknown"),
   };

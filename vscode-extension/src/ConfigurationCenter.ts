@@ -155,6 +155,9 @@ export class ConfigurationCenter implements vscode.Disposable {
         case "openKnowledgeGuide":
           await this.openKnowledgeGuide();
           return;
+        case "openGitHubNewRepository":
+          await vscode.env.openExternal(vscode.Uri.parse("https://github.com/new"));
+          return;
       }
     } catch (error) {
       this.postResult("error", errorMessage(error));
@@ -391,6 +394,17 @@ export class ConfigurationCenter implements vscode.Disposable {
         <ul id="diagnostics" class="diag-list"></ul>
         <p id="gpu-summary" class="hint"></p>
       </article>
+      <article class="card">
+        <h2>의존성 안내</h2>
+        <ul class="diag-list">
+          <li><strong>Git for Windows</strong> — Private Git Knowledge에 필요합니다. 확장이 자동 설치하지 않습니다.</li>
+          <li><strong>GitHub CLI</strong> — GitHub 저장소 생성·로그인에 선택적으로 사용합니다. 기존 private remote가 있으면 필수가 아닙니다.</li>
+          <li><strong>Codex CLI</strong> — Codex 위임 경로를 켤 때만 필요합니다.</li>
+          <li><strong>Ollama 또는 vLLM</strong> — 로컬 LLM 경로를 켤 때만 필요합니다. GPU driver와 모델은 묵시적으로 설치하지 않습니다.</li>
+          <li><strong>Agy</strong> — Agy 사용량을 표시할 때만 필요합니다.</li>
+        </ul>
+        <p class="hint">경로와 설치 여부는 현재 사용자 환경에서만 진단합니다. 다른 사용자의 홈 폴더를 검색하거나 비슷한 이름의 폴더를 삭제하지 않습니다.</p>
+      </article>
       <article class="card notice">
         <h2>GEMINI.md 경계</h2>
         <p>EggR는 전역 <code>GEMINI.md</code>를 생성·추가·교체하지 않습니다. Antigravity IDE 연동은 플러그인, <code>eggr-orchestrator</code> 스킬, EggR 설정·상태 파일을 사용합니다.</p>
@@ -422,6 +436,12 @@ export class ConfigurationCenter implements vscode.Disposable {
         <div id="plugin-status" class="status"></div>
         <code id="plugin-path" class="path"></code>
         <code id="orchestrator-settings-path" class="path"></code>
+        <div class="subform">
+          <h3>배포 마이그레이션 계획</h3>
+          <div id="plugin-plan-status" class="status"></div>
+          <ul id="plugin-plan-actions" class="diag-list"></ul>
+          <p class="hint">EggR가 소유한 정확한 신규·이전 경로만 확인합니다. 인식되지 않은 폴더는 자동 이동하지 않으며, 기존 항목은 삭제하지 않고 백업합니다.</p>
+        </div>
 
         <label class="check"><input id="enable-codex" type="checkbox"><span>Codex 위임 경로 사용</span></label>
         <div id="codex-options" class="subform">
@@ -468,6 +488,7 @@ export class ConfigurationCenter implements vscode.Disposable {
         <label class="check"><input id="skip-remote-check" type="checkbox"><span>오프라인 설정: 원격 연결 확인을 생략</span></label>
         <div class="actions">
           <button type="button" data-action="configureKnowledge">Knowledge 설정 실행</button>
+          <button type="button" class="secondary" data-action="openGitHubNewRepository">GitHub private 저장소 만들기</button>
           <button type="button" class="secondary" data-action="openKnowledgeGuide">설치·보안 안내 열기</button>
         </div>
       </article>
@@ -541,6 +562,18 @@ export class ConfigurationCenter implements vscode.Disposable {
       byId("orchestrator-settings-path").textContent =
         "설정: " + snapshot.paths.orchestrator +
         (snapshot.installation.settingsSource === "legacy" ? " (이전 설정을 읽음; 저장 시 EggR 경로로 전환)" : "");
+      const plan = snapshot.installation.pluginPlan;
+      byId("plugin-plan-status").textContent = plan.blocked
+        ? "설치 중단: " + plan.blockingReason
+        : "설치 가능 · 신규 상태: " + plan.destinationState + " · 이전 상태: " + plan.legacyState;
+      byId("plugin-plan-status").className = "status " + (plan.blocked ? "bad" : "ok");
+      const planActions = byId("plugin-plan-actions");
+      planActions.replaceChildren();
+      (plan.actions.length ? plan.actions : ["변경할 항목이 없습니다."]).forEach((description) => {
+        const li = document.createElement("li");
+        li.textContent = description;
+        planActions.appendChild(li);
+      });
 
       setValue("knowledge-mode", snapshot.knowledge.mode);
       setValue("knowledge-path", snapshot.knowledge.knowledgePath);

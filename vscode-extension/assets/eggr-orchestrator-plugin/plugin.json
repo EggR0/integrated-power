@@ -1,9 +1,14 @@
 {
   "name": "eggr-orchestrator-plugin",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "EggR work router for active-agent work, Codex delegation, and hardware-aware local LLM preprocessing.",
   "author": {
     "name": "jsp0"
+  },
+  "eggr": {
+    "productId": "eggr-orchestrator",
+    "managed": true,
+    "schemaVersion": 1
   },
   "license": "MIT",
   "keywords": [

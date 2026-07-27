@@ -211,7 +211,7 @@ $existing["EnabledRoutes"] = $EnabledRoutes
 $existing["DefaultRoute"] = $DefaultRoute
 $existing["LocalLlm"] = $localLlm
 $existing["FirstRunCompletedAt"] = [DateTimeOffset]::UtcNow.ToString("o")
-$existing["ConfiguredBy"] = "eggr-orchestrator-standalone/2.0.0"
+$existing["ConfiguredBy"] = "eggr-orchestrator-standalone/2.1.0"
 
 New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
 $temporary = Join-Path $configDirectory ("orchestrator.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))

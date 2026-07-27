@@ -60,7 +60,7 @@ Antigravity IDE 명령줄 wrapper에서 VSIX를 설치한다.
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\antigravity-ide-dashboard-0.5.0.vsix" `
+  --install-extension ".\antigravity-ide-dashboard-0.6.0.vsix" `
   --force
 ```
 
@@ -159,6 +159,19 @@ dirty 변경을 보존하며 commit, pull, rebase, checkout, push를 실행하�
 - 필요한 경우 값 대신 환경변수 이름만 기록한다.
 - 원문 대화, 인증 데이터베이스와 개인 Knowledge 내용은 VSIX에 포함하지 않는다.
 - 사용자 경로와 원격 URL을 소스 또는 배포물에 고정하지 않는다.
+
+## 0.6.0 변경 사항
+
+- 사용자 홈 재귀 검색 없이 Antigravity IDE 공식 plugin root의 신규·이전 경로만 검사
+- 플러그인 manifest와 스킬 identity로 EggR 배포본을 판정하고, 인식되지 않은
+  동일 이름 폴더는 자동 이동하지 않음
+- staging, 전체 폴더 백업, 원자적 활성화, 실패 rollback을 적용
+- 설치 버전·관리 파일 SHA-256·백업 위치를 설치 상태와 확장 global storage
+  journal에 기록
+- Configuration Center에서 설치 계획, 충돌, 신규·이전 상태와 의존성 안내 표시
+- Git/GitHub CLI 진단과 GitHub private 저장소 생성 페이지 연결
+- 임시 사용자 홈으로 clean install, 0.4.2 upgrade, conflict, rollback,
+  idempotency를 검증
 
 ## 0.5.0 변경 사항
 

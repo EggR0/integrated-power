@@ -176,3 +176,23 @@
 - TypeScript compile과 headless 테스트 9개를 통과하고 0.5.0을 Antigravity
   IDE에 설치했다. VSIX SHA-256은
   `C946C1B4137ABC8DBDF12E9F9B62BA7C5D66FFD821C63356543B970FED5D2D41`이다.
+
+## 2026-07-27 — 배포형 플러그인 마이그레이션 0.6.0
+
+- 현재 사용자 홈 전체를 검색하는 방식 대신 Antigravity IDE 공식 global plugin
+  root 아래 `eggr-orchestrator-plugin`, `codex-orchestrator-plugin` 두 정확한
+  경로만 확인하는 설치 코어를 추가했다.
+- plugin manifest, skill frontmatter, EggR ownership marker와 설치 상태로 소유권을
+  판정한다. 같은 경로에 인식되지 않은 내용이 있으면 자동 이동하지 않고
+  `conflict`로 중단한다.
+- staging, 전체 디렉터리 백업, 원자적 활성화, 실패 rollback, 관리 파일 SHA-256,
+  확장 global storage journal, 동일 버전 `no-op`을 구현했다.
+- Configuration Center에 Git/GitHub CLI를 포함한 의존성 안내, GitHub private
+  저장소 생성 링크, 플러그인 설치 계획·충돌·백업 설명을 추가했다.
+- 임시 사용자 홈에서 clean install, 0.4.2 전환, same-path conflict, 강제 실패
+  rollback, idempotency를 검증했다. 기존 headless 9개와 신규 배포 5개,
+  extension-host 8개, PowerShell 10개 parser, 스킬 형식 검사가 통과했다.
+- 라이브 2.0.0 수동 설치본을 전체 백업하고 관리 상태가 있는 2.1.0으로 전환했다.
+  재계획은 `managed-current`/`no-op`이며 `GEMINI.md` 해시는 변하지 않았다.
+- VSIX 0.6.0 최종 SHA-256:
+  `2B000FDCFFEC4EBA1131BB0EC43BF3BB532C58285EECFBF4CBC93BFF5D6506E8`.

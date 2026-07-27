@@ -1,9 +1,9 @@
 ---
-session_id: 20260727-eggr-configuration-center
+session_id: 20260727-eggr-configuration-center-dependencies
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: ce8390019cddb6949c30df697334e574c6245346
+base_commit: b82b425d335547e112ff16855353c2905fc373e2
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
@@ -23,11 +23,28 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: dashboard_0_5_0_installed_gemini_unchanged
-next_action: Reload the Antigravity IDE window and open EggR Configuration Center.
+state: dashboard_0_6_0_distribution_migration_verified
+next_action: Reload Antigravity IDE and inspect the Configuration Center migration plan; the current managed plugin should report no-op.
 ---
 
 # Handoff Log
+- **2026-07-27 Dashboard 0.6.0 distribution-grade migration**: Replaced
+  machine-specific recovery logic with a versioned installer that checks only
+  the exact Antigravity global plugin root destinations. It validates plugin,
+  skill, and EggR ownership, stages the bundled plugin, backs up recognized
+  current and legacy directories, records managed SHA-256 values and a local
+  install journal, rolls back moved directories on failure, and becomes a
+  no-op when the installed version and checksums match. Unrecognized same-name
+  directories block installation instead of being moved.
+- **2026-07-27 temporary-profile distribution tests**: Clean install, 0.4.2
+  legacy migration, same-path ownership conflict, injected interruption with
+  rollback, and idempotent reinstall passed without touching decoy paths or
+  GEMINI.md. Extension-host tests remained 8/8. The packaged VSIX contains no
+  developer absolute path, email, or GEMINI template.
+- **2026-07-27 managed live state**: Antigravity IDE Dashboard 0.6.0 and EggR
+  Orchestrator plugin 2.1.0 are installed. The previous manually installed 2.0.0
+  directory was backed up, the active plugin has `.eggr-install-state.json`,
+  and the next plan reports `managed-current` and `no-op`.
 - **2026-07-27 Dashboard 0.5.0 GEMINI boundary**: Removed the bundled
   `assets/gemini.md`, the extension-side initializer, and the PowerShell global
   rule installation option. The installed 0.5.0 package contains no GEMINI
