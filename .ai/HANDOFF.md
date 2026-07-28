@@ -26,8 +26,8 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: eggr_openvsx_cli_installed_auth_pending
-next_action: Complete the secure Open VSX PAT prompt, verify the EggR namespace, and publish the already-built EggR.integrated-power 0.7.2 VSIX without rebuilding it.
+state: eggr_openvsx_identity_review_pending
+next_action: Ask Eclipse Foundation staff to update the signed Open VSX agreement identity from R-Github04 to EggR0; after confirmation, create/verify the EggR namespace and publish the existing 0.7.2 VSIX.
 ---
 
 # Handoff Log
@@ -175,3 +175,13 @@ next_action: Complete the secure Open VSX PAT prompt, verify the EggR namespace,
   `052F392F6EB50F6265CC88B96F62727A18E492D14C1F10024EF875FDF43879D6`.
   Open VSX still returned 404 for the `EggR` namespace and no stored PAT was
   available before opening a secure interactive token prompt.
+- **2026-07-28 Eclipse/Open VSX identity blocker**: Open VSX rejected the
+  Eclipse link because its live profile API still returned `r-github04` while
+  GitHub authentication returned `EggR0`. This is not a casing mismatch: the
+  Open VSX server uses a case-insensitive comparison. The Eclipse account UI
+  displays `eggr0`, but unlinking is locked because the Open VSX Publisher
+  Agreement is already signed and the site explicitly requires Eclipse
+  Foundation staff review for GitHub ID changes. GitHub confirms `EggR0` is
+  numeric user ID `152078172` and the old login no longer resolves. Closed the
+  unused secure PAT prompt; do not create a second Eclipse account or attempt
+  publication until staff updates the agreement-linked identity.

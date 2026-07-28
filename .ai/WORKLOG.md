@@ -287,3 +287,17 @@
 - 설치 직후 Open VSX의 `EggR` namespace는 HTTP 404였고 저장된 PAT가 없었다.
   토큰이 화면·채팅·Git에 노출되지 않도록 별도 PowerShell의 보안 입력으로
   namespace 생성과 자격 증명 검증을 시작했다.
+
+## 2026-07-28 — Eclipse/Open VSX GitHub ID 불일치 차단
+
+- Open VSX의 Eclipse 연결에서 Eclipse 프로필은 `r-github04`, 현재 GitHub
+  인증은 `EggR0`이라고 판정되어 차단됐다.
+- Open VSX 서버 소스는 두 값을 대소문자 무시 비교하므로 Eclipse 화면의
+  `eggr0` 표기와 GitHub의 `EggR0` 표기는 원인이 아니다. Eclipse API/서명된
+  Publisher Agreement에 과거 ID가 남아 있는 것이 실제 원인이다.
+- GitHub API에서 현재 계정은 `EggR0`, 고정 사용자 ID는 `152078172`이고 과거
+  `R-Github04` 로그인은 더 이상 조회되지 않았다.
+- Publisher Agreement 서명 후 GitHub ID 변경은 Eclipse Foundation 직원 검토가
+  필요하다는 계정 화면 안내에 따라, 직원이 agreement-linked identity를 갱신하기
+  전까지 namespace 생성과 CLI 게시를 중단한다. 대기 중이던 보안 PAT 입력 창도
+  닫았다.
