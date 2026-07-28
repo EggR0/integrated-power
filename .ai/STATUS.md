@@ -54,4 +54,5 @@
 2. `Integrated Power: Open Configuration Center`의 개요에서
    `상태 다시 확인`을 눌러 GitHub CLI가 `✓`로 표시되는지 확인한다.
 3. Knowledge 탭에서 GitHub 로그인 `EggR0`와 실제 origin을 확인한다.
-4. 공개 agent branch를 push하고 GitHub Release 0.7.3에 최종 VSIX를 첨부한다.
+4. 공개 초안 PR `EggR0/integrated-power#3`을 검토·병합한 뒤 GitHub Release
+   0.7.3에 최종 VSIX를 첨부한다.

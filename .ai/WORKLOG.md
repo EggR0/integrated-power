@@ -1,5 +1,16 @@
 # EggR 작업 기록
 
+## 2026-07-28 — Integrated Power 0.7.3 Git 게시
+
+- Private source commit `8e4e250`을
+  `agent/codex/first-run-wizards`에 push했다.
+- 공개 저장소 `EggR0/integrated-power`에는 동일한 배포 대상만
+  `agent/codex/eggr-publisher` commit `9763e84`로 push했다.
+- 공개 파일에서 `R-Github04`, `yip1004`, `C:\Users\test`, `jsp0` 패턴이
+  없음을 다시 확인하고 draft PR #3을 열었다:
+  `https://github.com/EggR0/integrated-power/pull/3`
+- `main` 직접 push나 PR 병합, GitHub Release 생성은 하지 않았다.
+
 ## 2026-07-28 — Integrated Power 0.7.3 런타임 명칭·경로·재진단 수정
 
 - Configuration Center의 `상태 다시 확인`이 실행 중 IDE의 오래된 PATH를 그대로

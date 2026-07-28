@@ -27,7 +27,7 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: integrated_power_0_7_3_verified_and_installed
+state: integrated_power_0_7_3_pushed_and_draft_pr_open
 next_action: Reload the Antigravity IDE window, verify live Configuration Center rendering, then push the private/public agent branches and attach the verified 0.7.3 VSIX to a GitHub release.
 ---
 
@@ -207,3 +207,10 @@ next_action: Reload the Antigravity IDE window, verify live Configuration Center
   numeric user ID `152078172` and the old login no longer resolves. Closed the
   unused secure PAT prompt; do not create a second Eclipse account or attempt
   publication until staff updates the agreement-linked identity.
+- **2026-07-28 Integrated Power 0.7.3 published for review**: Committed and
+  pushed private source commit `8e4e250` on
+  `agent/codex/first-run-wizards`. Exported public commit `9763e84` to
+  `EggR0/integrated-power` on `agent/codex/eggr-publisher` and opened draft
+  PR #3: `https://github.com/EggR0/integrated-power/pull/3`. The public
+  privacy scan found none of the listed personal identifiers. Do not attach
+  the 0.7.3 VSIX to a GitHub Release until PR #3 is reviewed and merged.
