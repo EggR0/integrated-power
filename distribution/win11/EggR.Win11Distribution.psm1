@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:ExpectedExtensionId = 'integratedpower.antigravity-ide-dashboard'
+$script:ExpectedExtensionId = 'integratedpower.integrated-power'
 $script:AllowedKnowledgeTargets = @(
     'eggr-roots.ps1',
     'set-eggr-roots.ps1',
@@ -50,7 +50,7 @@ function Read-EggRRelease {
     if ([int]$manifest.schemaVersion -ne 1) {
         throw "Unsupported release manifest schema: $($manifest.schemaVersion)"
     }
-    if ([string]$manifest.productId -ne 'eggr-antigravity-ide-dashboard') {
+    if ([string]$manifest.productId -ne 'integrated-power') {
         throw "Unexpected product identity: $($manifest.productId)"
     }
     if ([string]$manifest.platform -ne 'windows-11') {
