@@ -21,7 +21,7 @@ jobs:
           version: 11.9.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           cache-dependency-path: vscode-extension/pnpm-lock.yaml
       - name: Install dependencies
@@ -31,7 +31,7 @@ jobs:
       - name: Run headless tests
         run: node ./scripts/run-headless-tests.js
       - name: Parse public PowerShell
-        shell: powershell
+        shell: pwsh
         run: |
           $failures = @()
           Get-ChildItem -Path .. -Include *.ps1,*.psm1 -File -Recurse | ForEach-Object {

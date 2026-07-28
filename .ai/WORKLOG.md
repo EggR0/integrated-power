@@ -235,3 +235,22 @@
   `a819f41f5d500571590cf4cf114d1ecddbed511a`을 만들었다.
 - GitHub 연결 계정은 확인됐으나 새 저장소 생성용 브라우저가 로그아웃 상태라
   remote 생성·push와 Open VSX 게시는 사용자 로그인 이후로 남겼다.
+
+## 2026-07-28 — 공개 GitHub 저장소와 v0.7.0 Release 게시
+
+- GitHub CLI 2.96.0을 공식 winget 패키지로 설치하고 `R-Github04` 계정을 Windows
+  자격 증명 저장소에 연결했다.
+- `R-Github04/integrated-power-antigravity` 공개 저장소를 생성하고
+  `agent/codex/public-release-0.7.0` 브랜치를 push했다.
+- Draft PR #1을 만들고 CI 통과 후 `main`에 병합했다. merge commit은
+  `3f018f46a473c7eb2facc467793efc35392cf73e`이다.
+- 첫 CI는 pnpm 11.9와 Node 20 불일치, 다음 CI는 Windows PowerShell 5.1의 UTF-8
+  무BOM 오해석으로 실패했다. 확장 런타임을 수정하지 않고 공개 CI와 내보내기
+  템플릿만 Node 24 및 `pwsh`로 변경했다.
+- PR CI와 병합 후 `main` CI에서 의존성 설치, TypeScript compile, headless tests,
+  공개 PowerShell 전체 parser 검사가 통과했다.
+- GitHub Release `v0.7.0`을 게시하고 검증된 VSIX를 첨부했다. GitHub가 계산한
+  asset digest가 로컬 SHA-256
+  `3B20CFC5DA5A06AB456FBA56A47D6F8DEC6BE66CF26204D8D0440F48653654FE`와 일치한다.
+- 남은 외부 단계는 Eclipse/Open VSX 계정 연결, publisher agreement,
+  `integratedpower` namespace 생성·확인, Open VSX 게시다.

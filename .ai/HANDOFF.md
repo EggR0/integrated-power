@@ -26,8 +26,8 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: release_artifacts_ready_public_upload_waiting_for_browser_login
-next_action: After the user signs in to GitHub in the open browser, create R-Github04/integrated-power-antigravity as a public repository, push the prepared agent branch, merge through review, then complete the Open VSX account and namespace steps.
+state: github_public_release_published_openvsx_pending
+next_action: Complete the Eclipse/Open VSX account linkage, sign the publisher agreement, create or claim the integratedpower namespace, and publish the verified v0.7.0 VSIX to Open VSX.
 ---
 
 # Handoff Log
@@ -139,5 +139,14 @@ next_action: After the user signs in to GitHub in the open browser, create R-Git
 - **Fresh public snapshot prepared**: The strict allowlist exporter created
   `integrated-power-antigravity-public` with 83 files and no private Git
   history. Its root commit on `agent/codex/public-release-0.7.0` is
-  `a819f41f5d500571590cf4cf114d1ecddbed511a`. No remote was configured or
-  pushed because the GitHub browser session is signed out.
+  `a819f41f5d500571590cf4cf114d1ecddbed511a`.
+- **2026-07-28 public GitHub release published**: Installed and authenticated
+  GitHub CLI 2.96.0, created the public repository
+  `R-Github04/integrated-power-antigravity`, pushed the agent release branch,
+  and merged PR #1 through `main` at
+  `3f018f46a473c7eb2facc467793efc35392cf73e`. CI was corrected to use Node
+  24 for pnpm 11.9 and `pwsh` for UTF-8 source parsing; the PR and post-merge
+  `main` runs passed dependency installation, compile, headless tests, and all
+  public PowerShell parser checks. GitHub Release `v0.7.0` is public and its
+  VSIX asset digest matches
+  `3B20CFC5DA5A06AB456FBA56A47D6F8DEC6BE66CF26204D8D0440F48653654FE`.
