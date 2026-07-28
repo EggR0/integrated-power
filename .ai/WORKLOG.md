@@ -254,3 +254,17 @@
   `3B20CFC5DA5A06AB456FBA56A47D6F8DEC6BE66CF26204D8D0440F48653654FE`와 일치한다.
 - 남은 외부 단계는 Eclipse/Open VSX 계정 연결, publisher agreement,
   `integratedpower` namespace 생성·확인, Open VSX 게시다.
+
+## 2026-07-28 — Integrated Power 정식 확장 ID와 0.7.1 배포 후보
+
+- 첫 마켓 게시 전 호환성 유지가 필요 없다는 사용자 결정을 반영해 확장 기술 이름을
+  `integrated-power`, 정식 확장 ID를 `integratedpower.integrated-power`로 변경했다.
+- 표시명은 올바른 영어 표기 `Integrated Power`로 유지하고 검색 키워드에
+  `integrated power`, `integratedpower`를 추가했다. 오타 표기는 추가하지 않았다.
+- Windows 배포 manifest, 설치 검증기, 테스트, README와 현재 운영 문서를 새 ID 및
+  `integrated-power-0.7.1.vsix` 파일명으로 맞췄다. 기능 로직은 변경하지 않았다.
+- headless 14개와 extension-host 8개 테스트가 통과했다. 공개 내보내기 허용 목록
+  83개 및 개인정보 검사가 통과했다.
+- 비공개 원본과 공개 소스에서 만든 VSIX의 39개 내부 entry가 모두 byte-identical이다.
+  공개 배포 후보 SHA-256은
+  `FC9255FEE24D0BAC45A9F29FD35A7AF2CAB24F5046C08BA502CAF63D3D470339`이다.

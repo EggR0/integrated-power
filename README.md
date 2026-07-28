@@ -15,7 +15,7 @@ EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같�
 
 ## Win11 빠른 시작
 
-일반 사용자는 `EggR-Antigravity-IDE-Dashboard-<version>-win11.zip`을 전부 압축
+일반 사용자는 `Integrated-Power-<version>-win11.zip`을 전부 압축
 해제한 뒤 `01-INSTALL.cmd`를 실행한다. 설치기는 전체 payload SHA-256을 확인하고
 다음을 설치한다.
 
@@ -36,7 +36,7 @@ Private Knowledge는 같은 페이지에서 보이지만 각각 명시적으로 
 
 ```powershell
 .\distribution\win11\New-EggRWin11Release.ps1 `
-  -VsixPath .\vscode-extension\antigravity-ide-dashboard-0.6.0.vsix `
+  -VsixPath .\vscode-extension\integrated-power-0.7.1.vsix `
   -KnowledgeBootstrapRoot ..\environment-bootstrap `
   -OutputDirectory .\release
 ```

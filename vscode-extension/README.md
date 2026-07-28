@@ -85,7 +85,7 @@ Integrated Power는 전역 또는 프로젝트 `GEMINI.md`를 생성, 추가, �
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\antigravity-ide-dashboard-0.7.0.vsix" `
+  --install-extension ".\integrated-power-0.7.1.vsix" `
   --force
 ```
 

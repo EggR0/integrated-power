@@ -304,7 +304,7 @@ export function saveOrchestratorConfiguration(
     DefaultRoute: input.defaultRoute,
     LocalLlm: localLlm,
     FirstRunCompletedAt: new Date().toISOString(),
-    ConfiguredBy: `antigravity-ide-dashboard/${String(
+    ConfiguredBy: `integrated-power/${String(
       context.extension.packageJSON.version ?? "unknown",
     )}`,
   };

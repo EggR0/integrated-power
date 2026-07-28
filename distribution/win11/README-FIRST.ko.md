@@ -17,7 +17,7 @@ Windows 11 직접 배포본이다. ZIP의 파일을 전부 압축 해제한 뒤 
 
 ## 설치되는 것
 
-- `integratedpower.antigravity-ide-dashboard` 확장
+- `integratedpower.integrated-power` 확장
 - VSIX에 포함된 EggR Orchestrator 배포 자산
 - `%LOCALAPPDATA%\EggR\bin`의 Windows Private Knowledge 설정 명령
 - 위 명령을 실행하기 위한 사용자 `PATH` 항목

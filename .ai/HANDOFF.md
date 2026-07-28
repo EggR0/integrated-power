@@ -1,9 +1,9 @@
 ---
-session_id: 20260728-integrated-power-openvsx-release-prep
+session_id: 20260728-integrated-power-canonical-id
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: 39fba76390f333caaaeb6cd9c42d88cef216340e
+base_commit: e0900bff0bfa413ea8cf468efab5b6e4e190dc32
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
@@ -26,8 +26,8 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: github_public_release_published_openvsx_pending
-next_action: Complete the Eclipse/Open VSX account linkage, sign the publisher agreement, create or claim the integratedpower namespace, and publish the verified v0.7.0 VSIX to Open VSX.
+state: canonical_extension_identity_pr_open
+next_action: Review PR #2 CI, merge when ready, publish v0.7.1, and upload integrated-power-0.7.1.vsix to Open VSX.
 ---
 
 # Handoff Log
@@ -150,3 +150,14 @@ next_action: Complete the Eclipse/Open VSX account linkage, sign the publisher a
   public PowerShell parser checks. GitHub Release `v0.7.0` is public and its
   VSIX asset digest matches
   `3B20CFC5DA5A06AB456FBA56A47D6F8DEC6BE66CF26204D8D0440F48653654FE`.
+- **2026-07-28 canonical Integrated Power identity**: Before the first
+  marketplace publication, changed the extension identity to
+  `integratedpower.integrated-power`, the artifact name to
+  `integrated-power-0.7.1.vsix`, and added only correctly spelled discovery
+  keywords. Runtime behavior was preserved. Headless 14/14, extension-host
+  8/8, the 83-file public privacy scan, and 39-entry cross-build equality
+  passed. Public VSIX SHA-256:
+  `FC9255FEE24D0BAC45A9F29FD35A7AF2CAB24F5046C08BA502CAF63D3D470339`.
+  Public commit `69af20a` is in draft PR #2. The required
+  `save-agent-worklog` command is not installed on this Windows host; the
+  central worklog line was appended but automatic sync could not run.

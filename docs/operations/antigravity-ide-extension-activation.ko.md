@@ -30,7 +30,7 @@ Electron GUI가 명령을 처리하지 않고 창을 시작할 수 있기 때문
 - 확장 호스트 로그에는 다음과 같은 오류가 남는다.
 
 ```text
-Activating extension integratedpower.antigravity-ide-dashboard failed
+Activating extension integratedpower.integrated-power failed
 SyntaxError: Unexpected token '﻿'
 ```
 

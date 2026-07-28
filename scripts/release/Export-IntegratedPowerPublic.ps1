@@ -271,6 +271,21 @@ function Test-PackageRepositoryMetadata {
     $expectedRepository = 'https://github.com/R-Github04/integrated-power-antigravity.git'
     $expectedHomepage = 'https://github.com/R-Github04/integrated-power-antigravity#readme'
     $expectedBugs = 'https://github.com/R-Github04/integrated-power-antigravity/issues'
+    if ([string]$package.name -ne 'integrated-power') {
+        Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason 'extension name is not the canonical integrated-power identity'
+    }
+    if ([string]$package.publisher -ne 'integratedpower') {
+        Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason 'publisher is not the canonical integratedpower namespace'
+    }
+    if ([string]$package.displayName -ne 'Integrated Power') {
+        Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason 'displayName is not the canonical Integrated Power brand'
+    }
+    $keywords = @($package.keywords | ForEach-Object { [string]$_ })
+    foreach ($requiredKeyword in @('integrated power', 'integratedpower')) {
+        if ($keywords -notcontains $requiredKeyword) {
+            Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason "required discovery keyword is missing: $requiredKeyword"
+        }
+    }
     if ([string]$package.repository.url -ne $expectedRepository) {
         Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason 'repository.url is not the approved public repository URL'
     }
@@ -458,7 +473,11 @@ try {
     if (-not $resolvedTarget.Equals($script:ExpectedTargetRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw "TargetRoot must be exactly: $($script:ExpectedTargetRoot)"
     }
-    if (Test-Path -LiteralPath $resolvedTarget) {
+    if (
+        (Test-Path -LiteralPath $resolvedTarget) -and
+        -not $DryRun -and
+        -not [bool]$WhatIfPreference
+    ) {
         throw "The public target already exists and will not be overwritten: $resolvedTarget"
     }
 
