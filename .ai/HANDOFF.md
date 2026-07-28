@@ -3,8 +3,8 @@ session_id: 20260728-integrated-power-knowledge-main-routing
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: 6520d88cd2cf80d4d80542374fed08d2cc37c48f
-branch: agent/codex/finalize-0.7.4-record
+base_commit: 34a94ed2e8ded186f53684d848289849d34608c0
+branch: main
 ownership:
   - ".ai/**"
   - ".github/**"
@@ -32,7 +32,7 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: integrated_power_0_7_4_released
+state: complete
 next_action: Implement deterministic Obsidian folder/file routing and temporary-branch integration for Knowledge without deleting existing branches.
 ---
 
