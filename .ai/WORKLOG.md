@@ -370,3 +370,17 @@
   initialize/routing 통합 테스트 모두 통과.
 - VSIX: `integrated-power-0.7.4.vsix`, SHA-256
   `F74883F8FE3DA35EC8DD5D433A1EC41FA2A1518F9D89D6FB49AEA87F3E18A8B7`.
+
+## 2026-07-28 — Integrated Power 0.7.4 공개 완료
+
+- 비공개 원본 PR #1, environment-bootstrap PR #4/#5, Knowledge PR #4/#5,
+  공개 원본 PR #3을 모두 `main`에 병합했다.
+- 공개 CI의 compile, headless, PowerShell parse가 통과했다.
+- 공개/비공개 VSIX의 내부 46개 파일이 byte-identical임을 확인했다. ZIP 생성
+  시각에 따라 외부 ZIP 해시는 다르므로 공개 Release asset을 최종 기준으로 삼는다.
+- GitHub Release `v0.7.4` asset SHA-256은
+  `E2902535D565AB9A28CE7368F0F2A033DDE19A51FB27793573DE2CBC4F3E298C`이다.
+- 해당 VSIX를 Antigravity IDE에 다시 설치하고
+  `eggr.integrated-power@0.7.4`를 확인했다.
+- 다섯 저장소에서 원격 agent branch 32개를 병합 또는 고유 내용 회수 후
+  삭제했다. 로컬 branch는 복구 가능성을 위해 유지했다.

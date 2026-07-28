@@ -31,12 +31,16 @@
 - Skill Creator 검증: 통과
 - VSIX: `integrated-power-0.7.4.vsix`, 46개 파일
 - SHA-256:
-  `F74883F8FE3DA35EC8DD5D433A1EC41FA2A1518F9D89D6FB49AEA87F3E18A8B7`
+  `E2902535D565AB9A28CE7368F0F2A033DDE19A51FB27793573DE2CBC4F3E298C`
+- 공개 CI: 통과
+- GitHub Release:
+  `https://github.com/EggR0/integrated-power/releases/tag/v0.7.4`
+- 현재 Antigravity IDE 설치: `eggr.integrated-power@0.7.4`
 
-## 남은 배포 작업
+## 배포 상태
 
-1. 비공개 원본과 environment-bootstrap, Knowledge 변경을 각각 agent branch에
-   커밋한다.
-2. PR을 통해 기준 브랜치로 병합한다.
-3. 공개 저장소의 기존 draft PR #3을 0.7.4 내용으로 갱신한다.
-4. Antigravity IDE에 0.7.4 VSIX를 설치해 실제 Configuration Center를 확인한다.
+- 비공개 원본, 공개 원본, environment-bootstrap, Knowledge의 변경은 모두 PR로
+  `main`에 병합됐다.
+- 공개 Release에 VSIX가 첨부됐다.
+- 감사한 원격 agent branch 32개는 병합·내용 회수 후 삭제됐다.
+- Open VSX 게시만 Eclipse Foundation의 GitHub ID 검토 때문에 별도 대기 중이다.
