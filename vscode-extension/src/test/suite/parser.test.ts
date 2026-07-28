@@ -1,18 +1,68 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { DashboardController } from '../../DashboardController';
 import { RunStore } from '../../RunStore';
 import { TokenManager } from '../../TokenManager';
 import { DashboardState } from '../../types';
+import { findExecutable } from '../../configurationModel';
 import {
+  inspectKnowledgeTools,
+  installKnowledgeTools,
+} from '../../KnowledgeToolInstaller';
+import {
+  eggRWorkspaceId,
+  normalizeEggRRemoteIdentity,
   normalizeWorkspacePathForStorage,
+  resolveIntegratedPowerStateRoot,
+  resolveEggRWorkspaceDescriptor,
   workspaceStoragePathForFolder,
 } from '../../storagePath';
 
 suite('Parser and Store Test Suite', () => {
+  const workspaceRootForTests = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || __dirname;
+  const testEggRStateRoot = path.join(workspaceRootForTests, '.test-eggr-state');
+  process.env.INTEGRATED_POWER_STATE_ROOT = testEggRStateRoot;
   vscode.window.showInformationMessage('Start all tests.');
+
+  test('Bundled Knowledge tools install independently with backup-on-update', () => {
+    const previousLocalAppData = process.env.LOCALAPPDATA;
+    const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'integrated-power-tools-'));
+    process.env.LOCALAPPDATA = scratchRoot;
+    const extensionRoot = path.resolve(__dirname, '../../..');
+    const context = {
+      extensionPath: extensionRoot,
+      extension: { packageJSON: { version: 'test' } },
+    } as unknown as vscode.ExtensionContext;
+
+    try {
+      const first = installKnowledgeTools(context);
+      assert.ok(first.installed);
+      assert.strictEqual(first.changed.length, 12);
+      assert.ok(fs.existsSync(first.wizardPath));
+      assert.ok(fs.existsSync(first.routerPath));
+      assert.ok(fs.existsSync(first.savePath));
+
+      fs.writeFileSync(first.savePath, 'user-modified-test', 'utf8');
+      const repaired = installKnowledgeTools(context);
+      assert.ok(repaired.installed);
+      assert.ok(repaired.changed.includes('save-knowledge.ps1'));
+      assert.ok(repaired.backupRoot);
+      assert.ok(
+        fs.existsSync(path.join(repaired.backupRoot, 'save-knowledge.ps1')),
+      );
+      assert.ok(inspectKnowledgeTools(context).installed);
+    } finally {
+      fs.rmSync(scratchRoot, { recursive: true, force: true });
+      if (previousLocalAppData === undefined) {
+        delete process.env.LOCALAPPDATA;
+      } else {
+        process.env.LOCALAPPDATA = previousLocalAppData;
+      }
+    }
+  });
 
   test('RunStore handles malformed JSONL safely', async () => {
     const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || __dirname;
@@ -44,13 +94,50 @@ suite('Parser and Store Test Suite', () => {
     assert.ok(manager);
   });
 
-  test('Workspace storage path uses Antigravity globalStorage workspace hash', () => {
-    const storageRoot = 'C:\\Users\\tester\\AppData\\Roaming\\Antigravity IDE\\User\\globalStorage\\integratedpower.antigravity-ide-dashboard';
+  test('EggR workspace identity is stable across Windows paths and Git URL forms', () => {
+    const storageRoot = 'C:\\Users\\tester\\AppData\\Local\\EggR\\state';
     const folderPath = 'C:\\Projects\\Example';
-    const expected = path.join(storageRoot, 'workspaces', '50ce1bf3906f6a0c46337bc7cac06b27');
+    const sshRemote = 'git@example.com:example-org/example-repo.git';
+    const httpsRemote = 'https://example.com/example-org/example-repo.git';
+    const workspaceId = eggRWorkspaceId(folderPath, sshRemote);
+    const expected = path.join(storageRoot, 'workspaces', workspaceId);
 
-    assert.strictEqual(normalizeWorkspacePathForStorage(folderPath), 'c:\\Projects\\Example');
-    assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath), expected);
+    assert.strictEqual(normalizeWorkspacePathForStorage(folderPath), 'C:\\Projects\\Example');
+    assert.strictEqual(normalizeEggRRemoteIdentity(sshRemote), 'example.com/example-org/example-repo');
+    assert.strictEqual(workspaceId, eggRWorkspaceId('D:\\Moved\\Example', httpsRemote));
+    assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath, sshRemote), expected);
+  });
+
+  test('environment refresh finds GitHub CLI from the live Windows PATH', () => {
+    if (process.platform !== 'win32') return;
+    const inheritedPath = process.env.PATH;
+    try {
+      process.env.PATH = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+      const executable = findExecutable(['gh.exe', 'gh']);
+      assert.ok(executable, 'GitHub CLI should be found from the current registry PATH.');
+      assert.strictEqual(path.basename(executable).toLowerCase(), 'gh.exe');
+    } finally {
+      process.env.PATH = inheritedPath;
+    }
+  });
+
+  test('EggR roots config accepts a Windows PowerShell UTF-8 BOM', () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'eggr-bom-'));
+    const configDirectory = path.join(tempHome, '.config', 'eggr');
+    const configuredStateRoot = path.join(tempHome, 'state');
+
+    try {
+      fs.mkdirSync(configDirectory, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDirectory, 'roots.json'),
+        `\uFEFF${JSON.stringify({ state_root: configuredStateRoot })}`,
+        'utf8',
+      );
+
+      assert.strictEqual(resolveIntegratedPowerStateRoot({}, tempHome, 'win32'), path.resolve(configuredStateRoot));
+    } finally {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
   });
 
   test('RunStore treats missing globalStorage runs file as empty data', async () => {
@@ -67,14 +154,15 @@ suite('Parser and Store Test Suite', () => {
   test('Packaged extension sources do not contain removed workflow regressions', () => {
     const extensionRoot = path.resolve(__dirname, '../../..');
     const manifestPath = path.join(extensionRoot, 'package.json');
+    const readmePath = path.join(extensionRoot, 'README.md');
     const webviewPath = path.join(extensionRoot, 'webview', 'main.js');
     const stylesPath = path.join(extensionRoot, 'webview', 'styles.css');
     const debateReferencePath = path.join(
       extensionRoot,
       'assets',
-      'codex-orchestrator-plugin',
+      'ip-orchestrator-plugin',
       'skills',
-      'codex-orchestrator',
+      'ip-orchestrator',
       'references',
       'debate.md',
     );
@@ -84,9 +172,23 @@ suite('Parser and Store Test Suite', () => {
     };
     const commands = manifest.contributes?.commands?.map((entry) => entry.command) ?? [];
     assert.deepStrictEqual(commands.sort(), [
+      'integratedPower.agentRuns.configureViews',
       'integratedPower.agentRuns.openRunsFile',
       'integratedPower.agentRuns.refresh',
+      'integratedPower.eggr.installOrUpdateOrchestrator',
+      'integratedPower.eggr.openConfigurationCenter',
+      'integratedPower.eggr.runDashboardSetup',
+      'integratedPower.eggr.runFirstRunSetup',
+      'integratedPower.eggr.runOrchestratorSetup',
+      'integratedPower.eggr.runPrivateKnowledgeSetup',
     ]);
+
+    const readme = fs.readFileSync(readmePath, 'utf8');
+    assert.ok(readme.includes('Antigravity IDE 전용 확장 프로그램'));
+    assert.ok(readme.includes('%LOCALAPPDATA%\\Programs\\Antigravity IDE\\bin\\antigravity-ide.cmd'));
+    assert.ok(readme.includes('%LOCALAPPDATA%\\Programs\\Antigravity\\Antigravity.exe'));
+    assert.ok(readme.includes('Codex용 확장도 아니다'));
+    assert.ok(!readme.includes('comprehensive VS Code extension'));
 
     const webview = fs.readFileSync(webviewPath, 'utf8');
     assert.ok(!webview.includes('tokenStatus = emptyTokenStatus()'));
@@ -98,8 +200,8 @@ suite('Parser and Store Test Suite', () => {
     assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
 
     const debateReference = fs.readFileSync(debateReferencePath, 'utf8');
-    assert.ok(debateReference.includes("globalStorage path's `discussions/`"));
-    assert.ok(debateReference.includes("globalStorage path's `sessions/<run-id>/`"));
+    assert.ok(debateReference.includes("Integrated Power workspace state `discussions/`"));
+    assert.ok(debateReference.includes("Integrated Power workspace state `sessions/<run-id>/`"));
     assert.ok(!debateReference.includes('<repo-root>/discussions/'));
     assert.ok(!debateReference.includes('.system_generated'));
   });
@@ -162,30 +264,31 @@ suite('Parser and Store Test Suite', () => {
     }
   });
 
-  test('Extension commands use globalStorage Open Runs target', async () => {
-    const extension = vscode.extensions.getExtension('integratedpower.antigravity-ide-dashboard');
+  test('Extension commands use the Integrated Power workspace state Open Runs target', async function () {
+    this.timeout(10_000);
+    const extension = vscode.extensions.getExtension('EggR.integrated-power');
     assert.ok(extension, 'Dashboard extension should be available in the extension host.');
     await extension.activate();
 
     const commands = await vscode.commands.getCommands(true);
     assert.ok(commands.includes('integratedPower.agentRuns.refresh'));
     assert.ok(commands.includes('integratedPower.agentRuns.openRunsFile'));
+    assert.ok(commands.includes('integratedPower.eggr.installOrUpdateOrchestrator'));
+    assert.ok(commands.includes('integratedPower.eggr.openConfigurationCenter'));
     assert.ok(!commands.includes('integratedPower.agentRuns.launchAthenaLoop'));
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     assert.ok(workspaceRoot, 'Test host should open the extension folder as a workspace.');
 
-    const storageMarkerPath = path.join(workspaceRoot, '.agents', 'dashboard_global_storage.txt');
-    await waitFor(() => fs.existsSync(storageMarkerPath));
-
-    const storagePath = fs.readFileSync(storageMarkerPath, 'utf8').trim();
-    assert.ok(storagePath.includes('globalStorage'));
-    assert.ok(storagePath.includes(path.join('workspaces')));
-    assert.ok(!storagePath.includes('operational-data'));
-    assert.strictEqual(
-      storagePath,
-      workspaceStoragePathForFolder(path.resolve(storagePath, '..', '..'), workspaceRoot),
+    const descriptor = resolveEggRWorkspaceDescriptor(workspaceRoot);
+    const storagePath = workspaceStoragePathForFolder(
+      resolveIntegratedPowerStateRoot(),
+      descriptor.repoRoot,
+      descriptor.remoteUrl,
+      descriptor.configuredId,
     );
+    assert.ok(storagePath.includes(path.join('.test-eggr-state', 'workspaces')));
+    assert.ok(storagePath.includes('git-') || storagePath.includes('path-'));
 
     const runsPath = path.join(storagePath, '.agent-runs', 'runs.jsonl');
     fs.mkdirSync(path.dirname(runsPath), { recursive: true });
@@ -195,9 +298,7 @@ suite('Parser and Store Test Suite', () => {
     await waitFor(() => vscode.window.activeTextEditor?.document.uri.fsPath === runsPath);
     assert.strictEqual(vscode.window.activeTextEditor?.document.uri.fsPath, runsPath);
 
-    if (workspaceRoot.endsWith('vscode-extension')) {
-      fs.rmSync(path.join(workspaceRoot, '.agents'), { recursive: true, force: true });
-    }
+    fs.rmSync(testEggRStateRoot, { recursive: true, force: true });
   });
 });
 

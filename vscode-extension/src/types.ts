@@ -156,6 +156,11 @@ export interface DashboardState {
   updatedAt: string;
   tokenStatus?: TokenStatus;
   localLlmMetrics?: LocalLlmMetric[];
+  viewConfig?: {
+    showAntigravity: boolean;
+    showCodex: boolean;
+    showLocalLlm: boolean;
+  };
 }
 
 export type WebviewToExtensionMessage =

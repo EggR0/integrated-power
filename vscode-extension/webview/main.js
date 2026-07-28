@@ -84,6 +84,7 @@ function emptyState() {
     isTokenLoading: true,
     isStale: false,
     sectionStates: { antigravity: true, codex: true, localLlm: true },
+    viewConfig: undefined,
     updatedAt: new Date().toISOString(),
     tokenStatus: emptyTokenStatus(),
   };
@@ -112,6 +113,7 @@ function normalizeState(state) {
     isTokenLoading: Boolean(safeState.isTokenLoading),
     isStale: Boolean(safeState.isStale),
     sectionStates,
+    viewConfig: safeState.viewConfig && typeof safeState.viewConfig === "object" ? safeState.viewConfig : undefined,
     updatedAt: stringValue(safeState.updatedAt) || new Date().toISOString(),
   };
 }
@@ -225,9 +227,9 @@ function render() {
       </section>
 
       <section class="content-grid">
-        ${dashboardState.localLlmMetrics?.length ? renderLocalLlmMetricsPanel(dashboardState.localLlmMetrics) : ""}
+        ${dashboardState.viewConfig?.showLocalLlm !== false && dashboardState.localLlmMetrics?.length ? renderLocalLlmMetricsPanel(dashboardState.localLlmMetrics) : ""}
         ${dashboardState.queueContent ? renderQueuePanel(dashboardState.queueContent) : ""}
-        ${dashboardState.metricsCsv ? renderMetricsPanel(dashboardState.metricsCsv) : ""}
+        ${dashboardState.viewConfig?.showCodex !== false && dashboardState.metricsCsv ? renderMetricsPanel(dashboardState.metricsCsv) : ""}
         ${renderErrorsPanel(dashboardState.parseErrors, dashboardState.systemErrors)}
       </section>
     </main>
@@ -297,18 +299,10 @@ function renderTokenStatus(tokenStatus) {
   const taskWeight = normalizeTaskWeight(status.recommendedTaskWeight);
   const activity = Array.isArray(status.activity) ? status.activity.slice(0, 4) : [];
 
-  return `
-    <article class="panel token-panel">
-      <div class="panel-heading">
-        <div>
-          <p class="eyebrow">Capacity</p>
-          <h2>Token Status</h2>
-        </div>
-        <span class="status-pill ${dashboardState.isTokenLoading ? "status-warning" : statusClass(status.codexStatus)}">
-          ${escapeHtml(dashboardState.isTokenLoading ? "Loading" : status.codexStatus || "Unknown")}
-        </span>
-      </div>
+  const sections = [];
 
+  if (dashboardState.viewConfig?.showAntigravity !== false) {
+    sections.push(`
       <details class="token-section" data-section="antigravity" ${sectionStates.antigravity ? "open" : ""}>
         <summary>Antigravity IDE</summary>
         <div class="token-metrics">
@@ -318,9 +312,11 @@ function renderTokenStatus(tokenStatus) {
           ${renderTokenMetric(opusWeekly)}
         </div>
       </details>
+    `);
+  }
 
-      <hr class="section-divider" />
-
+  if (dashboardState.viewConfig?.showCodex !== false) {
+    sections.push(`
       <details class="token-section" data-section="codex" ${sectionStates.codex ? "open" : ""}>
         <summary>Codex</summary>
         <div class="token-metrics">
@@ -328,9 +324,11 @@ function renderTokenStatus(tokenStatus) {
           ${renderTokenMetric(codexWeekly)}
         </div>
       </details>
+    `);
+  }
 
-      <hr class="section-divider" />
-
+  if (dashboardState.viewConfig?.showLocalLlm !== false) {
+    sections.push(`
       <details class="token-section" data-section="localLlm" ${sectionStates.localLlm ? "open" : ""}>
         <summary>Local LLM <span>${escapeHtml(localProgramName)}</span></summary>
         <div class="token-metrics-container">
@@ -365,13 +363,35 @@ function renderTokenStatus(tokenStatus) {
           }
         </div>
       </details>
+    `);
+  }
+
+  return `
+    <article class="panel token-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Capacity</p>
+          <h2>Token Status</h2>
+        </div>
+        ${dashboardState.isTokenLoading
+          ? `<span class="status-pill status-warning">Loading</span>`
+          : (() => {
+              const visibleStatuses = [];
+              if (dashboardState.viewConfig?.showCodex !== false && status.codexStatus) visibleStatuses.push(status.codexStatus);
+              if (dashboardState.viewConfig?.showLocalLlm !== false && status.llmStatus) visibleStatuses.push(status.llmStatus);
+              const pillStatus = visibleStatuses[0] || "Unknown";
+              return `<span class="status-pill ${statusClass(pillStatus)}">${escapeHtml(pillStatus)}</span>`;
+            })()}
+      </div>
+
+      ${sections.join('\n      <hr class="section-divider" />\n')}
 
       <div class="token-footer">
-        <span>Codex: ${escapeHtml(status.codexStatus || "Unknown")}</span>
+        ${dashboardState.viewConfig?.showCodex !== false ? `<span>Codex: ${escapeHtml(status.codexStatus || "Unknown")}</span>` : ""}
         <span class="task-routing-pill task-routing-${escapeAttr(taskWeight)}">
           Task Routing: ${escapeHtml(taskWeight)}
         </span>
-        ${status.llmStatus ? `<span>Local LLM: ${escapeHtml(status.llmStatus)}</span>` : ""}
+        ${dashboardState.viewConfig?.showLocalLlm !== false && status.llmStatus ? `<span>Local LLM: ${escapeHtml(status.llmStatus)}</span>` : ""}
       </div>
 
       ${
@@ -776,8 +796,8 @@ function formatRefreshCountdown(value) {
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
   
-  if (diffHours > 0) return `· Refreshes in ${diffHours}h ${diffMins}m`;
-  return `· Refreshes in ${diffMins}m`;
+  if (diffHours > 0) return `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`;
+  return `\u00B7 Refreshes in ${diffMins}m`;
 }
 
 function escapeAttr(value) {

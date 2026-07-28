@@ -7,3 +7,6 @@ test.txt
 reports/__temp_*
 scripts/__temp_test_*
 vscode-extension/.vscode-test/
+.agents/dashboard_global_storage.txt
+.ai/state/
+vscode-extension/*.vsix

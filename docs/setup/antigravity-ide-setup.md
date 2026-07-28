@@ -1,78 +1,42 @@
-# Antigravity IDE Setup Checklist
+# Antigravity IDE / EggR 설정
 
-This file lists what has been configured by file access and what still needs to be confirmed inside Antigravity IDE.
+## 원칙
 
-## Already Prepared By File Access
+- 프로젝트를 특정 사용자명이나 절대 경로에 고정하지 않는다.
+- 대시보드 설치와 EggR 오케스트레이터 설치를 별도 생명주기로 취급한다.
+- 필요한 MCP만 켜고 provider별 quota와 token evidence를 섞지 않는다.
 
-- Global Antigravity MCP config path: `C:\Users\jsp0\.gemini\config\mcp_config.json`
-- Added MCP servers:
-  - `codex`: runs the local Codex MCP server using the real Codex executable path.
-  - `context7`: fetches current library documentation through MCP.
-  - `playwright`: browser automation and UI verification through MCP.
-- Project-local Antigravity skill path: `.agents/skills/ai-workflow-orchestrator/SKILL.md`
-- Shared queue: `ai-work-queue.md`
-- Codex non-interactive runner: `scripts/dispatch/Invoke-CodexJob.ps1`
-- vLLM OpenAI-compatible local runner: `scripts/dispatch/Invoke-vLLMJob.ps1`
+## 설치
 
-## User Action Required In Antigravity IDE
+1. Antigravity IDE에서 이 저장소를 연다.
+2. 검증된 `integrated-power-*.vsix`를 설치한다.
+3. 명령 팔레트에서 **EggR: Install or Update Orchestrator**를 실행한다.
+4. 기존 `~/.gemini/GEMINI.md`가 있으면 자동 덮어쓰기되지 않는다. 열린 번들 템플릿과 수동 비교한다.
+5. 설치 결과를 확인한다.
+   - 활성 오케스트레이터: `~/.gemini/config/plugins/codex-orchestrator-plugin`
+   - 이전 버전: `~/.gemini/config/plugins/.eggr-backups`
+   - Win11 상태: `%LOCALAPPDATA%\EggR\state\workspaces\<workspace-id>`
 
-1. Open Antigravity IDE.
-2. Add or open this folder as a project:
-   `C:\Users\jsp0\Documents\Intergrated POWER`
-3. Open Settings -> Customizations -> MCP Servers.
-4. Click Refresh if the servers do not appear.
-5. Enable only the MCP servers needed for this project:
-   - Start with `codex` and `context7`.
-   - Enable `playwright` only for UI/browser verification tasks.
-6. Set the project permission mode conservatively:
-   - Read/review mode for scheduled or queued analysis.
-   - Manual review before file edits.
-   - Avoid always-proceed for agents that can write files, run terminals, or call external systems.
-7. In the Agent panel, ask Antigravity IDE:
+## 작업 시작 확인
 
-```text
-Use the project skill `ai-workflow-orchestrator`.
-Read ai-work-queue.md and choose the highest-value job for the current 5h quota window.
-Use Codex MCP only if the job benefits from deeper code reasoning.
-Do not modify files unless the selected job explicitly allows write mode.
-```
+1. 저장소 루트와 Git branch/dirty state
+2. `.ai/STATUS.md`, `.ai/HANDOFF.md`, `AGENTS.md`
+3. 목표, 성공 조건, 수정 범위
+4. Main Agent / Codex / Local LLM route
+5. 예상 토큰 범위와 confidence
 
-## Start-Of-Work Decision Points
+오케스트레이터가 Codex를 찾지 못하면 `codex.exe`를 PATH에 추가하거나 `CODEX_EXE`를 설정한다. 프로젝트 파일에 개인 PC의 `codex.exe` 절대 경로를 기록하지 않는다.
 
-When starting work in Antigravity IDE, make the agent classify the job before it opens tools or edits files:
+## MCP
 
-1. Goal type:
-   implementation, debugging, code review, test planning, dependency/docs check, UI verification, broad triage, or local preprocessing.
-2. Quota window:
-   weekly remaining, current 5h remaining, reset time, and manual reserve.
-3. Backend route:
-   Antigravity IDE for interactive control, Codex MCP for hard implementation/review, Codex CLI `exec --json` for exact usage logging, Context7 for current docs, Playwright for browser proof, local 3090 or future 4-way server for broad preprocessing.
-4. Write boundary:
-   read-only, branch, or worktree. File edits require a plan first.
-5. Context boundary:
-   start from `ai-work-queue.md`, `reports/current_context.md`, and `reports/current_todos.md`; use local preprocessing before sending broad noisy context to cloud models.
-6. Artifact:
-   every job should end with a report, diff summary, verification notes, or a next-action checklist under `reports/`.
+MCP 설정 위치는 사용자의 `~/.gemini/config/mcp_config.json`이다. 저장소에는 실제 자격증명이나 사용자별 절대 경로를 커밋하지 않고 예제만 둔다. 현재 작업에 필요한 서버만 활성화한다.
 
-Good Antigravity IDE opening prompt:
+## 확인용 요청
 
 ```text
-Use `ai-workflow-orchestrator`.
-Classify this request by goal type, quota window, backend route, write boundary, context boundary, and expected artifact.
-Then choose the smallest useful toolchain from Antigravity IDE, Codex MCP, Codex CLI, Context7, Playwright, GitHub MCP, and local LLM.
-Show the plan before editing files.
+Use the installed codex-orchestrator skill.
+Ground the OS, repository root, branch, dirty state, and .ai handoff first.
+Resolve the EggR workspace state with the bundled resolver; do not guess an absolute path.
+Classify the route and record a token estimate range before starting.
+Do not declare completion until verification and worklog updates are finished.
 ```
-
-## Recommended MCP Usage
-
-| MCP | Keep enabled? | Use for |
-| --- | --- | --- |
-| `codex` | Yes | Hard reasoning, implementation, review, test generation |
-| `context7` | Usually | Current docs for libraries/frameworks |
-| `playwright` | Task-specific | UI smoke tests, screenshots, browser flows |
-
-## Notes
-
-- Antigravity 2.0 desktop is better for multi-project orchestration and scheduled tasks.
-- Antigravity IDE is better as the hands-on code surface where you see and approve changes.
-- You do not need to make the standalone Antigravity manager your main tool unless you want native scheduled tasks there.

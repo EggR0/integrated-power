@@ -33,6 +33,13 @@ export class DashboardController implements vscode.Disposable {
         this.resetWatchers();
         void this.refresh();
       }),
+      vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration("integratedPower.view")) {
+          this.state.viewConfig = this.getViewConfig();
+          this.postState();
+          void this.refresh(true);
+        }
+      })
     );
   }
 
@@ -136,6 +143,13 @@ export class DashboardController implements vscode.Disposable {
     }
 
     try {
+      await vscode.workspace.fs.stat(file);
+    } catch {
+      void vscode.window.showInformationMessage("No agent runs found for this workspace yet. Start a task first to generate logs.");
+      return;
+    }
+
+    try {
       const document = await vscode.workspace.openTextDocument(file);
       await vscode.window.showTextDocument(document);
     } catch (error) {
@@ -158,7 +172,7 @@ export class DashboardController implements vscode.Disposable {
 
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
-      void this.refresh(true);
+      void this.refresh(false);
     }, 150);
   }
 
@@ -293,6 +307,7 @@ export class DashboardController implements vscode.Disposable {
       isTokenLoading: true,
       isStale: false,
       updatedAt: new Date().toISOString(),
+      viewConfig: this.getViewConfig(),
     };
   }
 
@@ -544,6 +559,16 @@ export class DashboardController implements vscode.Disposable {
           activity: []
       },
       updatedAt: new Date().toISOString(),
+      viewConfig: this.getViewConfig(),
+    };
+  }
+
+  private getViewConfig() {
+    const config = vscode.workspace.getConfiguration("integratedPower.view");
+    return {
+      showAntigravity: config.get<boolean>("showAntigravity", true),
+      showCodex: config.get<boolean>("showCodex", true),
+      showLocalLlm: config.get<boolean>("showLocalLlm", true),
     };
   }
 

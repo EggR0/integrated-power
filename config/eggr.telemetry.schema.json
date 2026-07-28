@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eggr.local/schemas/telemetry/1.1.0",
+  "title": "EggR task telemetry event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "task_id",
+    "attempt_id",
+    "event_type",
+    "timestamp",
+    "producer",
+    "privacy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1.0"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "attempt_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "event_type": {
+      "enum": [
+        "task_started",
+        "task_waiting",
+        "token_usage",
+        "task_completed",
+        "task_failed",
+        "task_cancelled",
+        "calibration"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["framework", "agent_surface"],
+      "properties": {
+        "framework": { "type": "string", "minLength": 1 },
+        "agent_surface": { "type": "string", "minLength": 1 },
+        "provider": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "orchestrator_version": { "type": ["string", "null"] }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_class": { "type": "string", "minLength": 1 },
+        "route": {
+          "enum": ["main_agent", "codex", "antigravity", "local_llm", "hybrid"]
+        },
+        "success_criteria": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "estimated_total_tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["low", "point", "high", "confidence"],
+          "properties": {
+            "low": { "type": "integer", "minimum": 0 },
+            "point": { "type": "integer", "minimum": 0 },
+            "high": { "type": "integer", "minimum": 0 },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence"],
+      "properties": {
+        "evidence": {
+          "enum": ["provider_reported", "calculated", "estimated", "unavailable"]
+        },
+        "input_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "output_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "cached_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "reasoning_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "total_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "billable_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "provider_fields": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "quota": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unit", "source"],
+          "properties": {
+            "unit": { "type": "string", "minLength": 1 },
+            "used": { "type": ["number", "null"], "minimum": 0 },
+            "capacity": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+            "percent": { "type": ["number", "null"], "minimum": 0 },
+            "source": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": ["waiting", "completed", "failed", "cancelled"]
+        },
+        "success": { "type": ["boolean", "null"] },
+        "quality_score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "verification": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "artifact_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actual_to_estimate_ratio": { "type": ["number", "null"], "minimum": 0 },
+        "absolute_percentage_error": { "type": ["number", "null"], "minimum": 0 },
+        "range_hit": { "type": ["boolean", "null"] },
+        "sample_count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_recorded", "secrets_recorded"],
+      "properties": {
+        "content_recorded": { "const": false },
+        "secrets_recorded": { "const": false },
+        "redaction_profile": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

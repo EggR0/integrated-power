@@ -43,13 +43,15 @@ Use network telemetry only as a coarse sanity check for "a request happened", no
 
 ## Antigravity-Specific Notes
 
-Antigravity IDE does not currently expose a stable, documented Codex-style JSONL event with exact per-turn token usage in the local transcript files. On this machine, Antigravity IDE stores local transcripts under:
+Antigravity IDE does not currently expose a stable, documented Codex-style JSONL event with exact per-turn token usage in the local transcript files. It typically stores local transcripts under the current user's profile:
 
 ```text
-C:\Users\jsp0\.gemini\antigravity-ide\brain\...\transcript.jsonl
+%USERPROFILE%\.gemini\antigravity-ide\brain\...\transcript.jsonl
 ```
 
 Those transcript files include step content and tool calls, but not a stable `usageMetadata` field. The local conversation database has protobuf BLOB metadata, but that is not a public stable contract.
+
+Do not commit raw brain/transcript data to Git. Preserve it through encrypted backup and commit only sanitized incident summaries and aggregate metrics. Use `eggr-telemetry.ko.md` for evidence labels and estimate calibration.
 
 For Antigravity, track two separate things:
 

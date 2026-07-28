@@ -1,78 +1,84 @@
-# Integrated POWER
+# Integrated POWER / EggR
 
-This workspace manages quota-aware AI coding workflows across Antigravity IDE, Codex, MCP servers, and local GPU preprocessing.
+EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같은 프로젝트 상태와 작업 기록을 이어받도록 만드는 프레임워크 중립 실행 기반이다. 이 저장소는 비공개 canonical source이며, 현재 개발 대상은 Windows 11용 Antigravity IDE Dashboard 확장과 그 안에서 명시적으로 설치하는 EggR Orchestrator이다. Antigravity 또는 Codex 자체의 확장을 개발하는 단계가 아니다.
 
-Primary interface: **Antigravity IDE**.
+## 현재 구조
 
-Provider quotas are not pooled. Antigravity IDE is the single control surface, while Codex, Gemini, Claude, and local LLMs remain separate backend workers with separate usage tracking.
+- `vscode-extension/`: Antigravity IDE 사용량·실행 상태 대시보드
+- `vscode-extension/assets/ip-orchestrator-plugin/`: 명시적으로 설치하는 Integrated Power Antigravity IDE 오케스트레이터 번들
+- `distribution/win11/`: 해시 검증, 설치·검증·제거 진입점과 직접 배포 ZIP 생성기
+- `scripts/dispatch/`: Codex, Local LLM, Work Window 실행기
+- `scripts/util/EggR.Paths.psm1`: OS·작업 경로에 종속되지 않는 EggR resolver
+- `config/eggr.telemetry.schema.json`: 작업·토큰 이벤트 스키마
+- `docs/architecture/eggr-win11-stabilization.ko.md`: 경로·백업·배포 설계
+- `docs/reference/eggr-telemetry.ko.md`: 시작/종료 판정과 토큰 보정 규약
 
-## Start Here
+## Win11 빠른 시작
 
-1. Open `docs/setup/antigravity-ide-setup.md` and finish the Antigravity IDE UI steps.
-2. Read `docs/architecture/current-workspace-analysis.md` to understand the current control-plane shape.
-3. Read `docs/architecture/integrated-toolchain-plan.md` for the recommended multi-tool workflow.
-4. Fill in `ai-work-queue.md` with the current weekly quota, reset time, and ready jobs.
-5. Use `prompts/dispatch/antigravity-dispatch.md` inside Antigravity IDE to pick the next job.
-6. Use `scripts/dispatch/Invoke-AiWorkWindow.ps1` to prepare a context-rich dispatch prompt.
-7. Use `scripts/dispatch/Invoke-CodexJob.ps1` for local Codex CLI jobs.
-8. Use `scripts/dispatch/Invoke-vLLMJob.ps1` for local OpenAI-compatible vLLM preprocessing jobs.
-9. Use `scripts/schedule/Register-CodexScheduledJob.ps1` only after you know the schedule and prompt file you want to run.
-10. Check `docs/setup/google-calendar-setup.md` to link AI jobs with Google Calendar.
-11. Check `docs/reference/token-measurement.md` for exact Codex JSONL usage and safer token accounting.
+일반 사용자는 `Integrated-Power-<version>-win11.zip`을 전부 압축
+해제한 뒤 `01-INSTALL.cmd`를 실행한다. 설치기는 전체 payload SHA-256을 확인하고
+다음을 설치한다.
 
-## Files
+- 고정 버전 Dashboard VSIX
+- Obsidian 분류표와 Private Knowledge 최초 설정·저장용 Windows 명령
+- Windows 명령 경로 `%LOCALAPPDATA%\IntegratedPower\bin`
 
-| Path | Purpose |
-| --- | --- |
-| `ai-work-queue.md` | Shared quota-aware task queue |
-| `docs/architecture/current-workspace-analysis.md` | Analysis of the current workspace and gaps |
-| `docs/architecture/integrated-toolchain-plan.md` | Organic workflow connecting 3+ tools and LLMs |
-| `docs/setup/user-action-checklist.md` | UI and credential steps the user must complete |
-| `docs/reference/token-measurement.md` | Token measurement strategy and commands |
-| `docs/operations/weekly-quota-operations.md` | Weekly planning model |
-| `docs/setup/antigravity-ide-setup.md` | Antigravity IDE setup checklist |
-| `docs/setup/google-calendar-setup.md` | Google Calendar integration setup guide |
-| `.agents/skills/ai-workflow-orchestrator/SKILL.md` | Antigravity project skill |
-| `.codex/agents/` | Project-scoped Codex subagent definitions |
-| `config/toolchain.registry.json` | Tool roles and routing registry |
-| `prompts/` | Reusable dispatch and Codex job prompts |
-| `scripts/dispatch/Invoke-AiWorkWindow.ps1` | Prepares a context-rich work-window dispatch prompt |
-| `scripts/dispatch/Invoke-CodexJob.ps1` | Runs a prompt through Codex non-interactively |
-| `scripts/dispatch/Invoke-vLLMJob.ps1` | Runs a prompt through a local OpenAI-compatible vLLM endpoint |
-| `scripts/metrics/Parse-CodexUsage.ps1` | Parses exact Codex JSONL usage into CSV |
-| `scripts/metrics/Count-OpenAIInputTokens.ps1` | Counts exact API input tokens when `OPENAI_API_KEY` is set |
-| `scripts/metrics/Count-GeminiInputTokens.ps1` | Counts exact Gemini API input tokens when `GEMINI_API_KEY` is set |
-| `scripts/metrics/Parse-GeminiUsage.ps1` | Parses Gemini `usageMetadata`, Interactions `usage`, or Gemini CLI `stats` |
-| `scripts/metrics/Measure-AntigravityTranscript.ps1` | Estimates Antigravity IDE transcript token size from local logs |
-| `scripts/metrics/Invoke-AntigravityUsageTool.ps1` | Optional third-party Antigravity quota snapshot wrapper |
-| `scripts/metrics/Track-Tokens.ps1` | Logs offline heuristic token estimates |
-| `scripts/schedule/Register-CodexScheduledJob.ps1` | Creates a Windows scheduled Codex job |
+설치 후 Antigravity IDE에서 `Developer: Reload Window`와
+`Integrated Power: Open Configuration Center`를 차례로 실행한다. Dashboard, Orchestrator,
+Private Knowledge는 같은 페이지에서 보이지만 각각 명시적으로 설정한다.
 
-## Basic Dispatch Command
+대시보드를 여는 것만으로 `GEMINI.md`나 전역 오케스트레이터를 변경하지 않는다. 설치 명령은 기존 오케스트레이터를 `.gemini\config\plugins\.eggr-backups`에 보존하고 새 번들을 stage한 뒤 교체한다.
 
-Prepare a work-window prompt without calling Codex:
+## Win11 직접 배포본 생성
+
+유지관리자는 검증된 VSIX와 `environment-bootstrap` 작업 트리를 명시해 ZIP을 만든다.
+개발자 개인 Knowledge 저장소는 입력이나 payload가 아니다.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dispatch\Invoke-AiWorkWindow.ps1
+.\distribution\win11\New-EggRWin11Release.ps1 `
+  -VsixPath .\vscode-extension\integrated-power-0.7.4.vsix `
+  -KnowledgeBootstrapRoot ..\environment-bootstrap `
+  -OutputDirectory .\release
 ```
 
-Send the prepared window to Codex in read-only mode:
+출력물은 ZIP과 ZIP 자체의 `.sha256.txt`다. 배포본 내부
+`release-manifest.json`은 Dashboard 버전·VSIX 해시·Knowledge 도구 원본 commit과
+설치 payload 해시를 고정한다. `02-VERIFY-ONLY.cmd`는 무변경 진단,
+`99-UNINSTALL-EXTENSION-ONLY.cmd`는 Dashboard 확장만 제거한다.
+
+## EggR 경로 규칙
+
+Win11 기본 상태 루트는 `%LOCALAPPDATA%\IntegratedPower\state`다. 다른 경로가 꼭 필요한 경우에만 다음 중 하나를 사용한다.
+
+- 환경 변수 `EGGR_STATE_ROOT`
+- `%USERPROFILE%\.config\integrated-power\roots.json`
+
+```json
+{
+  "state_root": "D:\\EggR\\state"
+}
+```
+
+프로젝트 ID는 `.eggr/workspace.json`의 명시 ID, 정규화한 Git origin, 절대 경로 순으로 결정된다. 같은 Git 저장소를 다른 PC나 폴더에 clone해도 같은 ID를 얻는다.
+
+## 개발 검증
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dispatch\Invoke-AiWorkWindow.ps1 -RunCodex -Sandbox read-only
+cd .\vscode-extension
+pnpm run compile
+node .\scripts\run-headless-tests.js
 ```
 
-## Current Direct Config Change
+PowerShell 실행 정책이 로컬 모듈을 차단하면 시스템 정책을 영구 변경하지 않고 검증된 스크립트에 한해 별도 프로세스로 실행한다.
 
-The global Antigravity MCP config was updated here:
-
-```text
-C:\Users\jsp0\.gemini\config\mcp_config.json
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\eggr-doctor.ps1
 ```
 
-A backup was created here:
+## 저장과 공개
 
-```text
-C:\Users\jsp0\.gemini\config\mcp_config.json.bak-codex-setup
-```
-<!-- TODO: INTERGRATED POWER 계획 점검하고 유지보수하기, 개선하기. -->
+- 비공개 Git: 소스, 테스트, 스키마, 정제된 한국어 인수인계와 오류 기록
+- 암호화 백업: 원시 Antigravity brain, 전체 프롬프트·도구 로그, 고빈도 런타임 상태
+- 공개 미러: 비밀정보와 운영 원자료를 제거하고 검증한 릴리스만 반영
+
+원시 로그를 Git에 넣지 않는 이유와 복구 절차는 [EggR Win11 안정화 설계](docs/architecture/eggr-win11-stabilization.ko.md)를 참고한다.

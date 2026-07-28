@@ -4,7 +4,7 @@ param(
 
     [string]$OutputFile = "",
 
-    [string]$Model = "qwen2.5:latest",
+    [string]$Model = "",
 
     [string]$SystemPrompt = "You are a helpful AI coding assistant.",
 
@@ -44,7 +44,30 @@ if (!$repoRoot) {
 }
 
 Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
+Import-Module (Join-Path $repoRoot "scripts\util\EggR.Settings.psm1") -Force -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
+$orchestratorSettings = Get-EggROrchestratorSettings
+if (-not (Test-EggRRouteEnabled -Route "local_llm" -Settings $orchestratorSettings)) {
+    throw "The local_llm route is disabled in $($orchestratorSettings.Path)."
+}
+if ([string]::IsNullOrWhiteSpace($Model)) {
+    $configuredModel = if ($orchestratorSettings.LocalLlm -and $orchestratorSettings.LocalLlm.PSObject.Properties.Name -contains "Model") {
+        [string]$orchestratorSettings.LocalLlm.Model
+    } else { "" }
+    if (-not [string]::IsNullOrWhiteSpace($configuredModel)) {
+        $Model = $configuredModel
+        if ($SelectedBy -eq "manual") { $SelectedBy = "user_default" }
+    } else {
+        $selector = Join-Path $PSScriptRoot "Select-LocalLLMModel.ps1"
+        if (-not (Test-Path -LiteralPath $selector -PathType Leaf)) {
+            throw "Automatic model selection was requested but the selector is missing: $selector"
+        }
+        $selection = (& $selector -TaskType $TaskType -TaskScale $TaskScale -InstalledOnly -AsJson) | ConvertFrom-Json
+        $Model = [string]$selection.SelectedModel
+        $SelectedBy = [string]$selection.SelectionBasis
+        $SelectionReason = [string]$selection.Reason
+    }
+}
 
 function Write-CsvRowWithRetry {
     param(
@@ -194,7 +217,18 @@ $promptPath = Resolve-Path -LiteralPath $PromptFile
 $prompt = [string](Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath)
 
 # Ensure Ollama is running
-$ollamaUrl = "http://localhost:11434"
+$ollamaUrl = if (-not [string]::IsNullOrWhiteSpace($env:OLLAMA_HOST)) {
+    $env:OLLAMA_HOST
+} elseif (
+    $orchestratorSettings.LocalLlm -and
+    [string]$orchestratorSettings.LocalLlm.Provider -eq "ollama" -and
+    -not [string]::IsNullOrWhiteSpace([string]$orchestratorSettings.LocalLlm.Endpoint)
+) {
+    [string]$orchestratorSettings.LocalLlm.Endpoint
+} else {
+    "http://localhost:11434"
+}
+$ollamaUrl = $ollamaUrl.TrimEnd("/")
 $serverRunning = $false
 
 try {
@@ -213,12 +247,24 @@ if (-not $serverRunning -or $ForceRestart) {
         Stop-Process -Name "ollama*" -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
     }
-    $ollamaExe = "C:\Users\jsp0\AppData\Local\Programs\Ollama\ollama.exe"
-    if (Test-Path $ollamaExe) {
-        # Prioritize the second GPU (GPU 1) over the first GPU (GPU 0)
+    $ollamaCmd = Get-Command "ollama.exe", "ollama" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe" }
+
+    if (Test-Path -LiteralPath $ollamaExe) {
         $originalCuda = $env:CUDA_VISIBLE_DEVICES
-        #$env:CUDA_VISIBLE_DEVICES = "GPU-f077aeaf-f267-e4bb-f7c3-9900f14974de" #second 3090
-        $env:CUDA_VISIBLE_DEVICES = "GPU-55d96f90-5ae6-44ba-a00b-c216bd464328" #first 3090 (nvidia-smi GPU 1)
+        if ([string]::IsNullOrWhiteSpace($env:CUDA_VISIBLE_DEVICES)) {
+            try {
+                $bestGpu = nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits 2>$null | 
+                    ConvertFrom-Csv -Header "index","free" | 
+                    Sort-Object { [int]$_.free } -Descending | 
+                    Select-Object -First 1
+                if ($bestGpu) {
+                    $env:CUDA_VISIBLE_DEVICES = $bestGpu.index.ToString().Trim()
+                }
+            } catch {
+                # Rely on default system GPU routing if nvidia-smi is unavailable
+            }
+        }
         
         Start-Process -FilePath $ollamaExe -ArgumentList "serve" -WindowStyle Hidden
         Start-Sleep -Seconds 5
@@ -231,7 +277,7 @@ if (-not $serverRunning -or $ForceRestart) {
         }
     }
     else {
-        throw "Ollama executable not found at $ollamaExe"
+        throw "Ollama executable not found at $ollamaExe or in system PATH."
     }
 }
 
