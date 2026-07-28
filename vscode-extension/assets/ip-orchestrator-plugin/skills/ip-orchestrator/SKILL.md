@@ -54,6 +54,11 @@ Always read the detailed contract in the `references/` directory before executin
    - **Action**: Selects the best local model using the user's policy, installed-model size, current free VRAM, GPU compute capability, backend support, registry priors, and measured success/time metrics; then sends the prompt to Ollama or an OpenAI-compatible local endpoint.
    - **Contract**: Read `references/local-llm.md`.
 
+5. **Durable Knowledge Routing**:
+   - **Trigger**: A result, decision, incident, procedure, or worklog entry must survive the current task or be reused by another agent or PC.
+   - **Action**: Resolve the user-owned Knowledge root, reuse an existing Obsidian note when possible, and select only a declared route. Never classify knowledge by inventing a Git branch.
+   - **Contract**: Read `references/knowledge.md`.
+
 ## Execution Timer and Metrics Guidelines
 
 When you dispatch a task to Codex using one of the background scripts above, the scripts will run their own native **Watchdog Loop** using `System.Diagnostics.Process` to enforce safe execution and pure UTF-8 logging.
@@ -85,6 +90,9 @@ Follow these explicit rules:
 - If Codex Debate fails or is inconclusive, fall back to a narrower Main Agent Direct step or a bounded Codex Job rather than repeating broad debate prompts.
 - Every delegated route must produce an artifact: report, discussion, generated prompt, output file, metrics row, or implementation summary.
 - Record why the chosen route is token-efficient, especially when skipping local preprocessing.
+- Treat user-owned Knowledge `main` as the canonical global store. Code
+  repositories still use isolated task branches; do not transfer that branch
+  policy to Knowledge.
 
 ## Codex Installation & Executable Resolution
 

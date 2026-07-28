@@ -349,3 +349,24 @@
   필요하다는 계정 화면 안내에 따라, 직원이 agreement-linked identity를 갱신하기
   전까지 namespace 생성과 CLI 게시를 중단한다. 대기 중이던 보안 PAT 입력 창도
   닫았다.
+
+## 2026-07-28 — Integrated Power 0.7.4 Knowledge main 라우팅
+
+- 외부 사용자가 아직 없다는 배포 전제를 적용해 새 Knowledge 기능에는 구버전
+  경로 자동 탐색·이전 계층을 추가하지 않았다.
+- Windows Knowledge 명령 6개를 확장 자산에 포함하고
+  `%LOCALAPPDATA%\IntegratedPower\bin`에 설치하도록 구현했다. 기존 설치본과
+  내용이 다를 때만 확장 전용 백업 폴더에 보존한다.
+- PowerShell 5.1이 BOM 없는 UTF-8을 잘못 읽는 문제를 막기 위해 설치 시 `.ps1`
+  파일에 UTF-8 BOM을 보장한다.
+- `route-knowledge`는 기존 문서 우선, 고정 폴더, 불확실한 내용의 Inbox fallback을
+  적용한다. `save-knowledge`와 `save-agent-worklog`는 Knowledge `main`과 명시한
+  파일만 저장하도록 제한한다.
+- Configuration Center에서 도구 설치와 최초 설정을 한 흐름으로 실행하고 현재
+  브랜치, 라우팅 정책, 남은 agent branch 수를 표시한다.
+- `ip-orchestrator` 스킬에 작업 전후 지식 라우팅 규칙을 추가하고 Skill Creator
+  검증을 통과했다.
+- 검증: compile, headless 17개, extension-host 10개, PowerShell parser 16개,
+  initialize/routing 통합 테스트 모두 통과.
+- VSIX: `integrated-power-0.7.4.vsix`, SHA-256
+  `F74883F8FE3DA35EC8DD5D433A1EC41FA2A1518F9D89D6FB49AEA87F3E18A8B7`.

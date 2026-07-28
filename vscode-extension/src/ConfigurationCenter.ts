@@ -5,6 +5,7 @@ import {
   KnowledgeConfiguration,
   OrchestratorConfiguration,
   detectKnowledgeRemote,
+  installBundledKnowledgeTools,
   loadConfigurationCenterSnapshot,
   reconfigureKnowledgeRemote,
   runPrivateKnowledgeConfiguration,
@@ -126,6 +127,7 @@ export class ConfigurationCenter implements vscode.Disposable {
         case "configureKnowledge": {
           this.postBusy(true);
           const result = await runPrivateKnowledgeConfiguration(
+            this.context,
             parseKnowledgeConfiguration(message.value),
           );
           const configuredPath =
@@ -135,6 +137,18 @@ export class ConfigurationCenter implements vscode.Disposable {
           this.postResult(
             "success",
             `Private Git Knowledge 설정 완료: ${configuredPath}`,
+          );
+          this.postSnapshot("knowledge");
+          return;
+        }
+        case "installKnowledgeTools": {
+          this.postBusy(true);
+          const result = installBundledKnowledgeTools(this.context);
+          this.postResult(
+            "success",
+            result.changed.length > 0
+              ? `Knowledge 도구 ${result.changed.length}개 설치·갱신 완료: ${result.installRoot}`
+              : `Knowledge 도구가 이미 최신입니다: ${result.installRoot}`,
           );
           this.postSnapshot("knowledge");
           return;
@@ -417,7 +431,7 @@ export class ConfigurationCenter implements vscode.Disposable {
       <div class="grid">
         <article class="card"><h3>Dashboard</h3><div id="status-dashboard" class="status">확인 중</div><p>Antigravity IDE·Codex의 제공자 사용량과 로컬 GPU 상태를 한곳에서 비교해, 어느 실행 경로를 쓸지 판단할 근거를 제공합니다.</p></article>
         <article class="card"><h3>Integrated Orchestrator</h3><div id="status-orchestrator" class="status">확인 중</div><p><code>ip-orchestrator</code>가 현재 에이전트, Codex, 하드웨어에 맞는 로컬 LLM 사이에서 작업 경로를 고릅니다. Dashboard와 분리 설치되어 사용량 화면을 열었다고 실행 규칙이 바뀌지는 않습니다.</p></article>
-        <article class="card"><h3>Private Git Knowledge</h3><div id="status-knowledge" class="status">확인 중</div><p>작업 기록과 계속 보존할 지식을 사용자가 소유한 Git 저장소에 남겨, PC·OS·에이전트가 바뀌어도 다음 작업이 같은 맥락에서 이어지게 합니다.</p></article>
+        <article class="card"><h3>Private Git Knowledge</h3><div id="status-knowledge" class="status">확인 중</div><p>Obsidian vault의 <code>main</code>을 전역 지식의 단일 기준으로 사용합니다. 에이전트는 기존 문서를 먼저 찾고 Project·Knowledge·Area·Inbox 중 정해진 경로에 저장하며, 지식 종류를 Git 브랜치로 만들지 않습니다.</p></article>
       </div>
       <article class="card">
         <h2>환경 진단</h2>
@@ -502,9 +516,10 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="knowledge">
       <article class="card">
         <h2>Private Git Knowledge 설정</h2>
-        <p class="hint">개발자의 저장소가 아니라 각 사용자가 소유한 로컬 또는 private 원격 Git 저장소를 구성합니다. 최초 설정·재설정 마법사는 파일을 자동 commit·pull·push하지 않습니다. 작업 종료 규칙이 <code>save-agent-worklog</code>를 호출하면 중앙 Agent Worklog 한 파일만 검증해 commit하고, agent 브랜치에서 pull --rebase와 push를 수행합니다.</p>
+        <p class="hint">개발자의 저장소가 아니라 각 사용자가 소유한 로컬 또는 private 원격 Git 저장소를 구성합니다. 확장에 내장된 Win11 도구가 기존 문서를 덮어쓰지 않고 Obsidian 분류표와 빠진 기본 폴더만 추가합니다. 최초 설정 마법사는 commit·pull·push하지 않습니다. 이후 <code>route-knowledge</code>가 기존 문서와 허용 경로를 확인하고, <code>save-knowledge</code>와 <code>save-agent-worklog</code>만 명시된 파일을 canonical <code>main</code>에 저장합니다. 작업 이름으로 Knowledge 브랜치를 만들지 않습니다.</p>
         <div id="knowledge-wizard-status" class="status"></div>
         <div id="knowledge-github-status" class="hint"></div>
+        <div id="knowledge-routing-status" class="hint"></div>
         <div class="field"><label for="knowledge-mode">저장 방식</label><select id="knowledge-mode"><option value="local_only">로컬 Git만 사용</option><option value="private_remote">Private 원격 Git 연결</option></select></div>
         <div class="field">
           <label for="knowledge-path">Knowledge 경로</label>
@@ -518,6 +533,7 @@ export class ConfigurationCenter implements vscode.Disposable {
         <label class="check"><input id="allow-non-empty" type="checkbox"><span>검토한 비어 있지 않은 폴더에 Git 초기화 허용</span></label>
         <label class="check"><input id="skip-remote-check" type="checkbox"><span>오프라인 설정: 원격 연결 확인을 생략</span></label>
         <div class="actions">
+          <button type="button" class="secondary" data-action="installKnowledgeTools">내장 Knowledge 도구 설치·복구</button>
           <button type="button" data-action="configureKnowledge">Knowledge 설정·재설정 실행</button>
           <button type="button" class="secondary" data-action="detectKnowledgeRemote">현재 GitHub 로그인으로 remote 감지</button>
           <button type="button" class="secondary" data-action="reconfigureKnowledgeRemote">입력한 remote로 origin 재설정</button>
@@ -623,9 +639,16 @@ export class ConfigurationCenter implements vscode.Disposable {
       byId("knowledge-github-status").textContent =
         "GitHub CLI 로그인: " + (snapshot.knowledge.githubLogin || "확인되지 않음") +
         " · 실제 origin: " + (snapshot.knowledge.repositoryRemote || "없음");
+      byId("knowledge-routing-status").textContent =
+        "현재 브랜치: " + (snapshot.knowledge.currentBranch || "확인되지 않음") +
+        " · Obsidian 분류표: " + (snapshot.knowledge.routingPolicyExists ? "준비됨" : "없음") +
+        " · 남아 있는 agent 브랜치: " + snapshot.knowledge.taskBranchCount +
+        (snapshot.knowledge.currentBranch && snapshot.knowledge.currentBranch !== "main"
+          ? " · ⚠ Knowledge는 main으로 통합해야 합니다."
+          : "");
       byId("knowledge-wizard-status").textContent = snapshot.installation.knowledgeWizardInstalled
-        ? "✓ Windows Knowledge 설정 도구 준비됨"
-        : "– environment-bootstrap의 Windows Knowledge 설정 도구 설치 필요";
+        ? "✓ 확장 내장 Windows Knowledge 도구 준비됨 · " + snapshot.installation.knowledgeToolsRoot
+        : "– 내장 Knowledge 도구 설치·복구를 실행하세요.";
       byId("knowledge-wizard-status").className = "status " + (snapshot.installation.knowledgeWizardInstalled ? "ok" : "warn");
       syncConditionalFields();
     }
@@ -690,6 +713,7 @@ export class ConfigurationCenter implements vscode.Disposable {
       if (action === "saveDashboard") vscode.postMessage({ type: action, value: dashboardConfiguration() });
       else if (action === "saveOrchestrator" || action === "saveAndInstallOrchestrator") vscode.postMessage({ type: action, value: orchestratorConfiguration() });
       else if (action === "configureKnowledge") vscode.postMessage({ type: action, value: knowledgeConfiguration() });
+      else if (action === "installKnowledgeTools") vscode.postMessage({ type: action });
       else if (action === "detectKnowledgeRemote" || action === "reconfigureKnowledgeRemote") {
         vscode.postMessage({
           type: action,

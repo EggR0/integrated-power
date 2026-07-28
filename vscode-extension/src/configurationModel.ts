@@ -11,6 +11,10 @@ import {
   synchronizeIntegratedPowerRootsFromLegacy,
 } from "./storagePath";
 import { inspectAntigravityPluginInstall } from "./installAntigravityPlugin";
+import {
+  inspectKnowledgeTools,
+  installKnowledgeTools,
+} from "./KnowledgeToolInstaller";
 
 const DASHBOARD_SETUP_KEY = "eggr.setup.dashboard.completed.v1";
 const FIRST_RUN_PROMPT_KEY = "eggr.setup.firstRunPromptShown.v1";
@@ -73,6 +77,9 @@ export interface ConfigurationCenterSnapshot {
   knowledge: KnowledgeConfiguration & {
     githubLogin: string;
     repositoryRemote: string;
+    currentBranch: string;
+    routingPolicyExists: boolean;
+    taskBranchCount: number;
   };
   status: FirstRunStatus;
   diagnostics: ExecutableDiagnostic[];
@@ -90,6 +97,7 @@ export interface ConfigurationCenterSnapshot {
     legacyPluginInstalled: boolean;
     settingsSource: "integrated-power" | "eggr" | "legacy" | "none";
     knowledgeWizardInstalled: boolean;
+    knowledgeToolsRoot: string;
     globalGeminiExists: boolean;
     pluginPlan: {
       blocked: boolean;
@@ -170,6 +178,11 @@ export function loadConfigurationCenterSnapshot(
   const previousPlugin = previousPluginPath();
   const legacyPlugin = legacyPluginPath();
   const repositoryRemote = readGitRemote(knowledgePath) ?? "";
+  const currentBranch = readGitBranch(knowledgePath) ?? "";
+  const taskBranchCount = readGitTaskBranchCount(knowledgePath);
+  const routingPolicyExists = fs.existsSync(
+    path.join(knowledgePath, ".ai", "knowledge-routing.json"),
+  );
   const remoteUrl = repositoryRemote || configuredRemoteUrl;
   const githubLogin = readGitHubLogin(ghExecutable) ?? "";
   const globalGemini = path.join(os.homedir(), ".gemini", "GEMINI.md");
@@ -178,6 +191,7 @@ export function loadConfigurationCenterSnapshot(
       ? orchestrator.DefaultRoute
       : "main_agent";
   const pluginPlan = inspectAntigravityPluginInstall(context);
+  const knowledgeTools = inspectKnowledgeTools(context);
 
   return {
     dashboard: {
@@ -214,6 +228,9 @@ export function loadConfigurationCenterSnapshot(
       skipRemoteCheck: false,
       githubLogin,
       repositoryRemote,
+      currentBranch,
+      routingPolicyExists,
+      taskBranchCount,
     },
     status: getFirstRunStatus(context),
     diagnostics: [
@@ -243,7 +260,8 @@ export function loadConfigurationCenterSnapshot(
       legacyPluginInstalled:
         fs.existsSync(previousPlugin) || fs.existsSync(legacyPlugin),
       settingsSource: settingsResult.source,
-      knowledgeWizardInstalled: Boolean(installedKnowledgeWizardPath()),
+      knowledgeWizardInstalled: knowledgeTools.installed,
+      knowledgeToolsRoot: knowledgeTools.installRoot,
       globalGeminiExists: fs.existsSync(globalGemini),
       pluginPlan: {
         blocked: pluginPlan.blocked,
@@ -355,12 +373,14 @@ export function saveOrchestratorConfiguration(
 }
 
 export async function runPrivateKnowledgeConfiguration(
+  context: vscode.ExtensionContext,
   input: KnowledgeConfiguration,
 ): Promise<Record<string, unknown>> {
+  installKnowledgeTools(context);
   const script = installedKnowledgeWizardPath();
   if (!script) {
     throw new Error(
-      "EggR Private Git Knowledge 도구가 없습니다. environment-bootstrap의 Windows 설치를 먼저 실행하세요.",
+      "확장에 포함된 Private Git Knowledge 도구를 설치하지 못했습니다.",
     );
   }
   const knowledgePath = validateSafeAbsoluteDirectory(
@@ -417,6 +437,21 @@ export async function runPrivateKnowledgeConfiguration(
   }
   synchronizeIntegratedPowerRootsFromLegacy();
   return parsed;
+}
+
+export function installBundledKnowledgeTools(
+  context: vscode.ExtensionContext,
+): {
+  installRoot: string;
+  changed: string[];
+  backupRoot: string;
+} {
+  const result = installKnowledgeTools(context);
+  return {
+    installRoot: result.installRoot,
+    changed: result.changed,
+    backupRoot: result.backupRoot,
+  };
 }
 
 export function detectKnowledgeRemote(
@@ -517,7 +552,11 @@ export function getFirstRunStatus(context: vscode.ExtensionContext): FirstRunSta
     knowledge:
       knowledgeConfigured &&
       Boolean(knowledgePath.trim()) &&
-      fs.existsSync(path.join(knowledgePath, ".git")),
+      fs.existsSync(path.join(knowledgePath, ".git")) &&
+      fs.existsSync(
+        path.join(knowledgePath, ".ai", "knowledge-routing.json"),
+      ) &&
+      readGitBranch(knowledgePath) === "main",
   };
 }
 
@@ -566,13 +605,33 @@ export function installedKnowledgeWizardPath(): string | undefined {
       ? [
           path.join(
             process.env.LOCALAPPDATA ?? "",
-            "EggR",
+            "IntegratedPower",
             "bin",
             "initialize-eggr-knowledge.ps1",
           ),
         ]
       : [path.join(os.homedir(), ".local", "bin", "initialize-eggr-knowledge")];
   return candidates.find((candidate) => candidate && fs.existsSync(candidate));
+}
+
+function readGitBranch(repository: string): string | null {
+  return readGitValue(repository, ["branch", "--show-current"]);
+}
+
+function readGitTaskBranchCount(repository: string): number {
+  const value = readGitValue(repository, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/heads/agent",
+    "refs/remotes/origin/agent",
+  ]);
+  if (!value) return 0;
+  return new Set(
+    value
+      .split(/\r?\n/)
+      .map((entry) => entry.trim().replace(/^origin\//, ""))
+      .filter(Boolean),
+  ).size;
 }
 
 export function orchestratorSettingsPath(): string {
@@ -1031,7 +1090,7 @@ function readGitConfig(repository: string, key: string): string | null {
   }
 }
 
-function readGitRemote(repository: string): string | null {
+function readGitValue(repository: string, argumentsAfterRepository: string[]): string | null {
   if (!fs.existsSync(path.join(repository, ".git"))) return null;
   const gitExecutable = findExecutable(["git.exe", "git"], [
     programFilesPath("Git", "cmd", "git.exe"),
@@ -1040,7 +1099,7 @@ function readGitRemote(repository: string): string | null {
   try {
     const value = execFileSync(
       gitExecutable,
-      ["-C", repository, "remote", "get-url", "origin"],
+      ["-C", repository, ...argumentsAfterRepository],
       {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
@@ -1052,6 +1111,10 @@ function readGitRemote(repository: string): string | null {
   } catch {
     return null;
   }
+}
+
+function readGitRemote(repository: string): string | null {
+  return readGitValue(repository, ["remote", "get-url", "origin"]);
 }
 
 function readGitHubLogin(executable: string | null): string | null {

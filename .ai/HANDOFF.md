@@ -1,9 +1,9 @@
 ---
-session_id: 20260728-integrated-power-runtime-identity
+session_id: 20260728-integrated-power-knowledge-main-routing
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: 2604ed378a9e347e81613b26f90e59b774e27559
+base_commit: 3ac34e66d1f74bf51e212d15e3dedd8976c875e5
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
@@ -14,6 +14,11 @@ ownership:
   - "vscode-extension/**"
   - "README.md"
   - "../integrated-power-antigravity-public/**"
+  - "C:/Users/test/Documents/Codex/environment-bootstrap/**"
+  - "C:/Users/test/Documents/Codex/Knowledge/.ai/**"
+  - "C:/Users/test/Documents/Codex/Knowledge/00 Inbox/**"
+  - "C:/Users/test/Documents/Codex/Knowledge/Home.md"
+  - "C:/Users/test/Documents/Codex/Knowledge/System Map.md"
   - "C:/Users/test/Documents/Codex/Knowledge/00 Inbox/Agent Worklog.md"
 forbidden:
   - ".env"
@@ -27,8 +32,8 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: integrated_power_0_7_3_pushed_and_draft_pr_open
-next_action: Reload the Antigravity IDE window, verify live Configuration Center rendering, then review and merge public PR #3 before attaching the verified 0.7.3 VSIX to a GitHub release.
+state: knowledge_main_routing_verified
+next_action: Implement deterministic Obsidian folder/file routing and temporary-branch integration for Knowledge without deleting existing branches.
 ---
 
 # Handoff Log
@@ -214,3 +219,15 @@ next_action: Reload the Antigravity IDE window, verify live Configuration Center
   PR #3: `https://github.com/EggR0/integrated-power/pull/3`. The public
   privacy scan found none of the listed personal identifiers. Do not attach
   the 0.7.3 VSIX to a GitHub Release until PR #3 is reviewed and merged.
+- **2026-07-28 Integrated Power 0.7.4 Knowledge routing**: Bundled the six
+  Windows Knowledge commands inside the extension and install them under
+  `%LOCALAPPDATA%\IntegratedPower\bin` with PowerShell 5.1 UTF-8 BOM and
+  backup-on-update. The Configuration Center can install and run the
+  first-run wizard without a separate environment-bootstrap checkout. The
+  Knowledge contract now uses only `main` and the declared Obsidian folders;
+  `route-knowledge`, `save-knowledge`, and `save-agent-worklog` enforce that
+  boundary. Compile, 17 headless tests, 10 extension-host tests, 16-file
+  PowerShell parsing, Knowledge routing tests, and Skill Creator validation
+  passed. Candidate VSIX:
+  `vscode-extension/integrated-power-0.7.4.vsix`, SHA-256
+  `F74883F8FE3DA35EC8DD5D433A1EC41FA2A1518F9D89D6FB49AEA87F3E18A8B7`.

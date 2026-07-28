@@ -122,7 +122,7 @@ try {
 
         if (-not $SkipKnowledgeTools) {
             if ($PSCmdlet.ShouldProcess(
-                '%LOCALAPPDATA%\EggR\bin',
+                '%LOCALAPPDATA%\IntegratedPower\bin',
                 'Install or update the pinned EggR Private Knowledge commands'
             )) {
                 $knowledge = Install-EggRKnowledgeTools -Release $release -SkipUserPath:$SkipUserPath

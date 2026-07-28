@@ -20,11 +20,11 @@ EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같�
 다음을 설치한다.
 
 - 고정 버전 Dashboard VSIX
-- Private Knowledge 최초 설정용 Windows 명령
-- Windows 명령 경로 `%LOCALAPPDATA%\EggR\bin`
+- Obsidian 분류표와 Private Knowledge 최초 설정·저장용 Windows 명령
+- Windows 명령 경로 `%LOCALAPPDATA%\IntegratedPower\bin`
 
 설치 후 Antigravity IDE에서 `Developer: Reload Window`와
-`EggR: Open Configuration Center`를 차례로 실행한다. Dashboard, Orchestrator,
+`Integrated Power: Open Configuration Center`를 차례로 실행한다. Dashboard, Orchestrator,
 Private Knowledge는 같은 페이지에서 보이지만 각각 명시적으로 설정한다.
 
 대시보드를 여는 것만으로 `GEMINI.md`나 전역 오케스트레이터를 변경하지 않는다. 설치 명령은 기존 오케스트레이터를 `.gemini\config\plugins\.eggr-backups`에 보존하고 새 번들을 stage한 뒤 교체한다.
@@ -36,7 +36,7 @@ Private Knowledge는 같은 페이지에서 보이지만 각각 명시적으로 
 
 ```powershell
 .\distribution\win11\New-EggRWin11Release.ps1 `
-  -VsixPath .\vscode-extension\integrated-power-0.7.3.vsix `
+  -VsixPath .\vscode-extension\integrated-power-0.7.4.vsix `
   -KnowledgeBootstrapRoot ..\environment-bootstrap `
   -OutputDirectory .\release
 ```
