@@ -1,9 +1,9 @@
 {
-  "name": "antigravity-ide-dashboard",
+  "name": "integrated-power",
   "publisher": "integratedpower",
   "displayName": "Integrated Power",
   "description": "Antigravity IDE dashboard for AI usage, local compute, first-run setup, and Integrated Orchestrator management.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "author": {
     "name": "Integrated Power"
   },
@@ -23,6 +23,8 @@
     "url": "https://github.com/R-Github04/integrated-power-antigravity/issues"
   },
   "keywords": [
+    "integrated power",
+    "integratedpower",
     "antigravity",
     "antigravity ide",
     "ai usage",

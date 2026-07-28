@@ -2,7 +2,14 @@
 
 All notable user-facing changes to Integrated Power are recorded here.
 
-## [0.7.0] - Unreleased
+## [0.7.1] - 2026-07-28
+
+### Changed
+
+- Adopted `integratedpower.integrated-power` as the canonical extension ID
+  before the first marketplace publication.
+
+## [0.7.0] - 2026-07-28
 
 Planned as the first Open VSX public release.
 

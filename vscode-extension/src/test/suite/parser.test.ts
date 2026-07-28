@@ -210,7 +210,7 @@ suite('Parser and Store Test Suite', () => {
   });
 
   test('Extension commands use the EggR workspace state Open Runs target', async () => {
-    const extension = vscode.extensions.getExtension('integratedpower.antigravity-ide-dashboard');
+    const extension = vscode.extensions.getExtension('integratedpower.integrated-power');
     assert.ok(extension, 'Dashboard extension should be available in the extension host.');
     await extension.activate();
 

@@ -48,7 +48,7 @@ $packageJson = Get-Content -LiteralPath $packageJsonPath -Raw -Encoding UTF8 | C
 if ([string]::IsNullOrWhiteSpace($ReleaseVersion)) {
     $ReleaseVersion = [string]$packageJson.version
 }
-if ([string]$packageJson.publisher + '.' + [string]$packageJson.name -ne 'integratedpower.antigravity-ide-dashboard') {
+if ([string]$packageJson.publisher + '.' + [string]$packageJson.name -ne 'integratedpower.integrated-power') {
     throw 'Unexpected extension identity in package.json.'
 }
 if ([string]$packageJson.version -ne $ReleaseVersion) {
@@ -74,7 +74,7 @@ try {
     $vsixArchive.Dispose()
 }
 $vsixExtensionId = [string]$vsixPackageJson.publisher + '.' + [string]$vsixPackageJson.name
-if ($vsixExtensionId -ne 'integratedpower.antigravity-ide-dashboard') {
+if ($vsixExtensionId -ne 'integratedpower.integrated-power') {
     throw "Unexpected extension identity inside VSIX: $vsixExtensionId"
 }
 if ([string]$vsixPackageJson.version -ne $ReleaseVersion) {
@@ -111,7 +111,7 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Knowledge bootstrap payload has staged changes not represented by sourceCommit.'
 }
 
-$releaseName = "EggR-Antigravity-IDE-Dashboard-$ReleaseVersion-win11"
+$releaseName = "Integrated-Power-$ReleaseVersion-win11"
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 $stageRoot = Get-SafeChildPath -Parent $outputRoot -Child $releaseName
 $zipPath = Get-SafeChildPath -Parent $outputRoot -Child ($releaseName + '.zip')
@@ -197,13 +197,13 @@ foreach ($scriptName in $knowledgeScripts) {
 
 $manifest = [ordered]@{
     schemaVersion  = 1
-    productId      = 'eggr-antigravity-ide-dashboard'
+    productId      = 'integrated-power'
     releaseVersion = $ReleaseVersion
     platform       = 'windows-11'
     architecture   = 'any'
     generatedAt    = [DateTime]::UtcNow.ToString('o')
     extension      = [ordered]@{
-        id       = 'integratedpower.antigravity-ide-dashboard'
+        id       = 'integratedpower.integrated-power'
         version  = $ReleaseVersion
         vsixFile = $vsixName
         sha256   = (Get-FileHash -LiteralPath (Join-Path $stageRoot $vsixName) -Algorithm SHA256).Hash
