@@ -36,6 +36,8 @@
 - GitHub Release:
   `https://github.com/EggR0/integrated-power/releases/tag/v0.7.4`
 - 현재 Antigravity IDE 설치: `eggr.integrated-power@0.7.4`
+- 현재 PC Knowledge 도구:
+  `%LOCALAPPDATA%\IntegratedPower\bin`에 PowerShell 6개와 실행기 6개 설치 완료
 
 ## 배포 상태
 
