@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible Integrated Power defect without private data.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, private repository content, agent transcripts,
+        account identifiers, or absolute user paths.
+  - type: input
+    id: version
+    attributes:
+      label: Integrated Power version
+      placeholder: 0.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Antigravity IDE dashboard
+        - Integrated Orchestrator
+        - Private Git Knowledge setup
+        - Windows 11 direct distribution
+        - Build or tests
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Use placeholders for all account names and local paths.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
