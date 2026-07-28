@@ -7,11 +7,12 @@ import { DashboardController } from '../../DashboardController';
 import { RunStore } from '../../RunStore';
 import { TokenManager } from '../../TokenManager';
 import { DashboardState } from '../../types';
+import { findExecutable } from '../../configurationModel';
 import {
   eggRWorkspaceId,
   normalizeEggRRemoteIdentity,
   normalizeWorkspacePathForStorage,
-  resolveEggRStateRoot,
+  resolveIntegratedPowerStateRoot,
   resolveEggRWorkspaceDescriptor,
   workspaceStoragePathForFolder,
 } from '../../storagePath';
@@ -19,7 +20,7 @@ import {
 suite('Parser and Store Test Suite', () => {
   const workspaceRootForTests = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || __dirname;
   const testEggRStateRoot = path.join(workspaceRootForTests, '.test-eggr-state');
-  process.env.EGGR_STATE_ROOT = testEggRStateRoot;
+  process.env.INTEGRATED_POWER_STATE_ROOT = testEggRStateRoot;
   vscode.window.showInformationMessage('Start all tests.');
 
   test('RunStore handles malformed JSONL safely', async () => {
@@ -66,6 +67,19 @@ suite('Parser and Store Test Suite', () => {
     assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath, sshRemote), expected);
   });
 
+  test('environment refresh finds GitHub CLI from the live Windows PATH', () => {
+    if (process.platform !== 'win32') return;
+    const inheritedPath = process.env.PATH;
+    try {
+      process.env.PATH = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+      const executable = findExecutable(['gh.exe', 'gh']);
+      assert.ok(executable, 'GitHub CLI should be found from the current registry PATH.');
+      assert.strictEqual(path.basename(executable).toLowerCase(), 'gh.exe');
+    } finally {
+      process.env.PATH = inheritedPath;
+    }
+  });
+
   test('EggR roots config accepts a Windows PowerShell UTF-8 BOM', () => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'eggr-bom-'));
     const configDirectory = path.join(tempHome, '.config', 'eggr');
@@ -79,7 +93,7 @@ suite('Parser and Store Test Suite', () => {
         'utf8',
       );
 
-      assert.strictEqual(resolveEggRStateRoot({}, tempHome, 'win32'), path.resolve(configuredStateRoot));
+      assert.strictEqual(resolveIntegratedPowerStateRoot({}, tempHome, 'win32'), path.resolve(configuredStateRoot));
     } finally {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
@@ -105,9 +119,9 @@ suite('Parser and Store Test Suite', () => {
     const debateReferencePath = path.join(
       extensionRoot,
       'assets',
-      'eggr-orchestrator-plugin',
+      'ip-orchestrator-plugin',
       'skills',
-      'eggr-orchestrator',
+      'ip-orchestrator',
       'references',
       'debate.md',
     );
@@ -145,8 +159,8 @@ suite('Parser and Store Test Suite', () => {
     assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
 
     const debateReference = fs.readFileSync(debateReferencePath, 'utf8');
-    assert.ok(debateReference.includes("EggR workspace state `discussions/`"));
-    assert.ok(debateReference.includes("EggR workspace state `sessions/<run-id>/`"));
+    assert.ok(debateReference.includes("Integrated Power workspace state `discussions/`"));
+    assert.ok(debateReference.includes("Integrated Power workspace state `sessions/<run-id>/`"));
     assert.ok(!debateReference.includes('<repo-root>/discussions/'));
     assert.ok(!debateReference.includes('.system_generated'));
   });
@@ -209,8 +223,9 @@ suite('Parser and Store Test Suite', () => {
     }
   });
 
-  test('Extension commands use the EggR workspace state Open Runs target', async () => {
-    const extension = vscode.extensions.getExtension('integratedpower.integrated-power');
+  test('Extension commands use the Integrated Power workspace state Open Runs target', async function () {
+    this.timeout(10_000);
+    const extension = vscode.extensions.getExtension('EggR.integrated-power');
     assert.ok(extension, 'Dashboard extension should be available in the extension host.');
     await extension.activate();
 
@@ -226,7 +241,7 @@ suite('Parser and Store Test Suite', () => {
 
     const descriptor = resolveEggRWorkspaceDescriptor(workspaceRoot);
     const storagePath = workspaceStoragePathForFolder(
-      resolveEggRStateRoot(),
+      resolveIntegratedPowerStateRoot(),
       descriptor.repoRoot,
       descriptor.remoteUrl,
       descriptor.configuredId,

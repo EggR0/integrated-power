@@ -8,6 +8,8 @@ const {
   eggRWorkspaceId,
   normalizeEggRRemoteIdentity,
   normalizeWorkspacePathForStorage,
+  ensureIntegratedPowerStorageMigration,
+  resolveIntegratedPowerStateRoot,
   resolveEggRStateRoot,
   workspaceStoragePathForFolder,
 } = require("../out/storagePath");
@@ -54,7 +56,7 @@ test("EggR workspace identity is stable across Windows paths and Git URL forms",
   assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath, sshRemote), expected);
 });
 
-test("EggR roots config accepts a Windows PowerShell UTF-8 BOM", () => {
+test("legacy roots config accepts a Windows PowerShell UTF-8 BOM", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "eggr-bom-"));
   const configDirectory = path.join(tempHome, ".config", "eggr");
   const configuredStateRoot = path.join(tempHome, "state");
@@ -68,6 +70,41 @@ test("EggR roots config accepts a Windows PowerShell UTF-8 BOM", () => {
     );
 
     assert.strictEqual(resolveEggRStateRoot({}, tempHome, "win32"), path.resolve(configuredStateRoot));
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("Integrated Power uses its product state root and copies legacy files without deleting them", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-state-"));
+  const localAppData = path.join(tempHome, "AppData", "Local");
+  const legacyState = path.join(localAppData, "EggR", "state");
+  const productState = path.join(localAppData, "IntegratedPower", "state");
+  const legacyFile = path.join(legacyState, "workspaces", "example", "report.json");
+  try {
+    fs.mkdirSync(path.dirname(legacyFile), { recursive: true });
+    fs.writeFileSync(legacyFile, "legacy", "utf8");
+    const env = { LOCALAPPDATA: localAppData };
+    assert.strictEqual(
+      resolveIntegratedPowerStateRoot(env, tempHome, "win32"),
+      path.resolve(productState),
+    );
+    const migration = ensureIntegratedPowerStorageMigration(
+      env,
+      tempHome,
+      "win32",
+    );
+    assert.strictEqual(migration.copiedFiles, 1);
+    assert.strictEqual(
+      fs.readFileSync(path.join(productState, "workspaces", "example", "report.json"), "utf8"),
+      "legacy",
+    );
+    assert.strictEqual(fs.readFileSync(legacyFile, "utf8"), "legacy");
+    assert.ok(
+      fs.existsSync(
+        path.join(tempHome, ".config", "integrated-power", "roots.json"),
+      ),
+    );
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
@@ -90,6 +127,25 @@ test("package commands exclude removed Athena workflow", () => {
   ]);
 });
 
+test("package uses the EggR publisher and canonical public repository", () => {
+  const manifest = JSON.parse(readText("package.json"));
+  const readme = readText("README.md");
+
+  assert.strictEqual(`${manifest.publisher}.${manifest.name}`, "EggR.integrated-power");
+  assert.strictEqual(
+    manifest.repository?.url,
+    "https://github.com/EggR0/integrated-power.git",
+  );
+  assert.strictEqual(
+    manifest.homepage,
+    "https://github.com/EggR0/integrated-power#readme",
+  );
+  assert.ok(manifest.keywords.includes("eggr"));
+  assert.ok(!readme.includes("현재 배포 준비판"));
+  assert.ok(!readme.includes("최초 공개판"));
+  assert.ok(!readme.includes("게시 전에는"));
+});
+
 test("configuration center keeps three independent setup models", () => {
   const modelSource = readText("src", "configurationModel.ts");
   const centerSource = readText("src", "ConfigurationCenter.ts");
@@ -99,7 +155,9 @@ test("configuration center keeps three independent setup models", () => {
   assert.ok(modelSource.includes("runPrivateKnowledgeConfiguration"));
   assert.ok(modelSource.includes('"local_only" | "private_remote"'));
   assert.ok(modelSource.includes('"auto" | "user_default"'));
-  assert.ok(centerSource.includes("EggR Configuration Center"));
+  assert.ok(centerSource.includes("Integrated Power Configuration Center"));
+  assert.ok(centerSource.includes("상태 다시 확인은 현재 Windows 사용자·시스템 PATH를 새로 읽으므로"));
+  assert.ok(centerSource.includes("save-agent-worklog"));
   assert.ok(fs.existsSync(path.join(extensionRoot, "assets", "private-git-knowledge.md")));
 });
 
@@ -143,18 +201,18 @@ test("webview preserves token status and keeps Refresh clickable", () => {
   assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
 });
 
-test("debate documentation uses EggR state paths", () => {
+test("debate documentation uses Integrated Power state paths", () => {
   const debateReference = readText(
     "assets",
-    "eggr-orchestrator-plugin",
+    "ip-orchestrator-plugin",
     "skills",
-    "eggr-orchestrator",
+    "ip-orchestrator",
     "references",
     "debate.md",
   );
 
-  assert.ok(debateReference.includes("EggR workspace state `discussions/`"));
-  assert.ok(debateReference.includes("EggR workspace state `sessions/<run-id>/`"));
+  assert.ok(debateReference.includes("Integrated Power workspace state `discussions/`"));
+  assert.ok(debateReference.includes("Integrated Power workspace state `sessions/<run-id>/`"));
   assert.ok(!debateReference.includes("<repo-root>/discussions/"));
   assert.ok(!debateReference.includes(".system_generated"));
 });
@@ -186,7 +244,7 @@ test("compiled runtime excludes stale path and workflow patterns", () => {
 });
 
 async function runPluginDistributionTests() {
-  const sourcePath = path.join(extensionRoot, "assets", "eggr-orchestrator-plugin");
+  const sourcePath = path.join(extensionRoot, "assets", "ip-orchestrator-plugin");
   const fixedNow = new Date("2026-07-27T12:00:00.000Z");
 
   await testAsync("plugin installer performs a clean install without scanning unrelated paths", async () => {
@@ -212,7 +270,7 @@ async function runPluginDistributionTests() {
       assert.strictEqual(result.installed, true);
       assert.strictEqual(fs.readFileSync(decoy, "utf8"), "unrelated");
       assert.strictEqual(fs.readFileSync(gemini, "utf8"), "user rules");
-      assert.ok(fs.existsSync(path.join(result.destination, ".eggr-install-state.json")));
+      assert.ok(fs.existsSync(path.join(result.destination, ".integrated-power-install-state.json")));
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
@@ -248,6 +306,43 @@ async function runPluginDistributionTests() {
         "preserve me",
       );
       assert.strictEqual(fs.readFileSync(gemini, "utf8"), "user rules");
+    } finally {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("plugin installer migrates the exact eggr predecessor to ip-orchestrator", async () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "ip-plugin-predecessor-"));
+    const pluginRoot = path.join(homeDir, ".gemini", "config", "plugins");
+    const predecessor = path.join(pluginRoot, "eggr-orchestrator-plugin");
+    try {
+      writePluginFixture(
+        predecessor,
+        "eggr-orchestrator-plugin",
+        "eggr-orchestrator",
+        "2.1.0",
+        { eggr: { productId: "eggr-orchestrator", managed: true } },
+      );
+      fs.writeFileSync(path.join(predecessor, "user-note.txt"), "preserve me", "utf8");
+      const options = {
+        homeDir,
+        sourcePath,
+        extensionVersion: "test",
+        now: fixedNow,
+        processId: 1005,
+      };
+      const plan = createPluginInstallPlan(options);
+      assert.deepStrictEqual(
+        plan.actions.map((action) => action.type),
+        ["install", "backup-legacy"],
+      );
+      const result = await executePluginInstallPlan(options, plan);
+      assert.strictEqual(fs.existsSync(predecessor), false);
+      assert.ok(fs.existsSync(path.join(result.destination, "skills", "ip-orchestrator", "SKILL.md")));
+      assert.strictEqual(
+        fs.readFileSync(path.join(result.backupPaths[0], "user-note.txt"), "utf8"),
+        "preserve me",
+      );
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
     }
@@ -301,7 +396,7 @@ async function runPluginDistributionTests() {
       await assert.rejects(() => executePluginInstallPlan(options, plan), /Injected/);
       assert.ok(fs.existsSync(legacy));
       assert.strictEqual(
-        fs.existsSync(path.join(plan.pluginRoot, "eggr-orchestrator-plugin")),
+        fs.existsSync(path.join(plan.pluginRoot, "ip-orchestrator-plugin")),
         false,
       );
     } finally {
@@ -331,12 +426,12 @@ async function runPluginDistributionTests() {
   });
 }
 
-function writePluginFixture(root, pluginName, skillName, version) {
+function writePluginFixture(root, pluginName, skillName, version, extraManifest = {}) {
   fs.mkdirSync(path.join(root, "skills", skillName), { recursive: true });
   const legacyAuthor = String.fromCharCode(106, 115, 112, 48);
   fs.writeFileSync(
     path.join(root, "plugin.json"),
-    `${JSON.stringify({ name: pluginName, version, author: { name: legacyAuthor } }, null, 2)}\n`,
+    `${JSON.stringify({ name: pluginName, version, author: { name: legacyAuthor }, ...extraManifest }, null, 2)}\n`,
     "utf8",
   );
   fs.writeFileSync(

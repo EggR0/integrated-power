@@ -268,20 +268,20 @@ function Test-PackageRepositoryMetadata {
         return
     }
 
-    $expectedRepository = 'https://github.com/R-Github04/integrated-power-antigravity.git'
-    $expectedHomepage = 'https://github.com/R-Github04/integrated-power-antigravity#readme'
-    $expectedBugs = 'https://github.com/R-Github04/integrated-power-antigravity/issues'
+    $expectedRepository = 'https://github.com/EggR0/integrated-power.git'
+    $expectedHomepage = 'https://github.com/EggR0/integrated-power#readme'
+    $expectedBugs = 'https://github.com/EggR0/integrated-power/issues'
     if ([string]$package.name -ne 'integrated-power') {
         Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason 'extension name is not the canonical integrated-power identity'
     }
-    if ([string]$package.publisher -ne 'integratedpower') {
-        Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason 'publisher is not the canonical integratedpower namespace'
+    if ([string]$package.publisher -ne 'EggR') {
+        Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason 'publisher is not the canonical EggR namespace'
     }
     if ([string]$package.displayName -ne 'Integrated Power') {
         Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason 'displayName is not the canonical Integrated Power brand'
     }
     $keywords = @($package.keywords | ForEach-Object { [string]$_ })
-    foreach ($requiredKeyword in @('integrated power', 'integratedpower')) {
+    foreach ($requiredKeyword in @('integrated power', 'integratedpower', 'eggr')) {
         if ($keywords -notcontains $requiredKeyword) {
             Add-ContentViolation -RelativePath 'vscode-extension/package.json' -Reason "required discovery keyword is missing: $requiredKeyword"
         }
@@ -302,7 +302,7 @@ function Test-PublicContent {
     Test-PackageRepositoryMetadata
 
     $approvedOwnerUrlPattern = (
-        'https://github\.com/R-Github04/integrated-power-antigravity' +
+        'https://github\.com/EggR0/integrated-power' +
         '(?:\.git|#readme|/issues(?:/new\?template=commercial-license\.yml)?)?'
     )
     $scannedSources = @{}
@@ -441,7 +441,7 @@ function Initialize-PublicAllowlist {
     }
 
     foreach ($name in @(
-        'docs/reference/eggr-plugin-distribution.ko.md',
+        'docs/reference/integrated-power-plugin-distribution.ko.md',
         'docs/reference/eggr-telemetry.ko.md',
         'docs/reference/token-measurement.md'
     )) {

@@ -1,5 +1,42 @@
 # EggR 작업 기록
 
+## 2026-07-28 — Integrated Power 0.7.3 런타임 명칭·경로·재진단 수정
+
+- Configuration Center의 `상태 다시 확인`이 실행 중 IDE의 오래된 PATH를 그대로
+  쓰던 원인을 수정했다. 매번 Windows 레지스트리의 최신 사용자·시스템 PATH를
+  합치고 GitHub CLI, Git, Ollama, NVIDIA의 표준 설치 위치도 확인한다.
+- GitHub CLI가 설치·로그인된 현재 PC에서 상속 PATH를 일부러 System32만 남긴
+  extension-host 테스트로 `gh.exe` 재감지를 확인했다. Ollama는 설치되지 않았으므로
+  관련 경로를 켜지 않은 상태에서는 선택 사항으로 표시한다.
+- 공개 plugin·skill identity를 `ip-orchestrator-plugin` 3.0.0과
+  `ip-orchestrator`로 변경했다. 기존 `eggr-orchestrator`와
+  `codex-orchestrator`는 exact-path ownership을 확인한 경우에만 전체 폴더를
+  `.integrated-power-backups`로 옮긴다.
+- 현재 PC의 `eggr-orchestrator-plugin`을 새 plugin으로 전환하고 이전 폴더를
+  `.integrated-power-backups/eggr-orchestrator-plugin-2026-07-28T13-22-30-691Z`
+  에 보존했다. 설치 전후 `GEMINI.md` SHA-256은
+  `975B39433C22F47CFDD8D6146487D143D21EC86A613BA3C436328E2EB76D235D`
+  로 동일하다.
+- 제품 기본 state root를 `%LOCALAPPDATA%\IntegratedPower\state`로 옮겼다.
+  이전 `%LOCALAPPDATA%\EggR\state`의 누락 파일 3개를 한 번 복사하고 원본을
+  유지했다. 환경 변수 override는 세션 한정이며 실제 roots.json에 영구 기록하지
+  않도록 별도 회귀 검사를 추가했다.
+- Knowledge 탭에 실제 `gh api user` 로그인, 현재 Git origin, 새 로그인 기준
+  remote 제안, 명시적 origin 재설정 기능을 추가했다. origin 재설정은 신규 제품
+  roots와 설치된 environment-bootstrap의 이전 roots를 함께 갱신하지만
+  commit·pull·push는 실행하지 않는다.
+- 설정 마법사와 작업 로그 저장의 자동화 경계를 문서화했다. 최초 설정 마법사는
+  Git 변경을 자동 동기화하지 않고, `save-agent-worklog`는 중앙 Worklog 한 파일만
+  검증해 agent 브랜치에서 commit, pull --rebase, push한다.
+- README와 Configuration Center에 Dashboard(관측), Integrated
+  Orchestrator(실행 경로 선택), Private Git Knowledge(사용자 소유 기억)를 왜
+  분리하는지와 다른 PC·계정에서 재설정하는 이유를 구체적으로 추가했다.
+- 검증: headless 17개, extension-host 9개, PowerShell parser 16개,
+  Skill Creator quick validation, 공개 allowlist 83개와 privacy dry-run 통과.
+- 최종 VSIX는 `integrated-power-0.7.3.vsix`, 39 entries,
+  SHA-256 `FB249E608C152063472C8A4C5E513C95D15A343BFA100AAD30D5A1712DF76997`.
+  Antigravity IDE 카탈로그에 `eggr.integrated-power@0.7.3`으로 설치했다.
+
 ## 2026-07-27 — Antigravity IDE Dashboard 0.4.2 README 교체
 
 - 확장 패키지에 실제 포함되는 `vscode-extension/README.md`를 전면 교체했다.

@@ -1,9 +1,9 @@
 # Integrated Power Notices
 
-Integrated Power is the product display name and publisher display name for this
+Integrated Power is the product display name. EggR is the publisher for this
 Antigravity IDE extension.
 
-Copyright © 2026 Integrated Power.
+Copyright © 2026 EggR.
 
 Integrated Power is distributed under the PolyForm Strict License 1.0.0. See
 [LICENSE](LICENSE). Separate commercial permissions are described in

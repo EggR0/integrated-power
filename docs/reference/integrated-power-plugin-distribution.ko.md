@@ -1,4 +1,4 @@
-# EggR Orchestrator 플러그인 배포·마이그레이션 규약
+# Integrated Power Orchestrator 플러그인 배포·마이그레이션 규약
 
 ## Win11 직접 배포 상위 경계
 
@@ -21,7 +21,7 @@ GPU driver와 외부 도구는 변경하지 않는다. 확장 제거 진입점�
 ## 목적
 
 이 문서는 Antigravity IDE 확장을 다른 Windows 11 사용자에게 배포할 때
-`eggr-orchestrator` 플러그인을 안전하게 설치·갱신하는 기준을 정의한다.
+`ip-orchestrator` 플러그인을 안전하게 설치·갱신하는 기준을 정의한다.
 
 배포 설치 관리자는 사용자 홈을 재귀 검색하거나 이름이 비슷한 파일을 삭제하지
 않는다. Antigravity IDE가 공식적으로 사용하는 plugin root와 EggR가 과거에
@@ -34,11 +34,12 @@ GPU driver와 외부 도구는 변경하지 않는다. 확장 제거 진입점�
 | 용도 | 경로 |
 |---|---|
 | Antigravity IDE plugin root | `HOME/.gemini/config/plugins` |
-| 현재 플러그인 | `HOME/.gemini/config/plugins/eggr-orchestrator-plugin` |
-| 공식 이전 플러그인 | `HOME/.gemini/config/plugins/codex-orchestrator-plugin` |
-| 백업 | `HOME/.gemini/config/plugins/.eggr-backups` |
-| 플러그인 설치 상태 | 현재 플러그인의 `.eggr-install-state.json` |
-| 확장 설치 journal | 확장의 `globalStorageUri/installations/eggr-orchestrator.json` |
+| 현재 플러그인 | `HOME/.gemini/config/plugins/ip-orchestrator-plugin` |
+| 바로 이전 플러그인 | `HOME/.gemini/config/plugins/eggr-orchestrator-plugin` |
+| 초기 이전 플러그인 | `HOME/.gemini/config/plugins/codex-orchestrator-plugin` |
+| 백업 | `HOME/.gemini/config/plugins/.integrated-power-backups` |
+| 플러그인 설치 상태 | 현재 플러그인의 `.integrated-power-install-state.json` |
+| 확장 설치 journal | 확장의 `globalStorageUri/installations/ip-orchestrator.json` |
 
 다음은 하지 않는다.
 
@@ -54,13 +55,17 @@ GPU driver와 외부 도구는 변경하지 않는다. 확장 제거 진입점�
 
 신규 플러그인은 다음을 모두 만족해야 한다.
 
-1. 디렉터리 이름: `eggr-orchestrator-plugin`
-2. `plugin.json.name`: `eggr-orchestrator-plugin`
-3. 스킬 경로: `skills/eggr-orchestrator/SKILL.md`
-4. `SKILL.md` frontmatter name: `eggr-orchestrator`
-5. 관리 설치 후 `.eggr-install-state.json` 존재
+1. 디렉터리 이름: `ip-orchestrator-plugin`
+2. `plugin.json.name`: `ip-orchestrator-plugin`
+3. 스킬 경로: `skills/ip-orchestrator/SKILL.md`
+4. `SKILL.md` frontmatter name: `ip-orchestrator`
+5. 관리 설치 후 `.integrated-power-install-state.json` 존재
 
-공식 이전 플러그인은 다음을 모두 만족해야 한다.
+바로 이전 플러그인은 디렉터리·manifest 이름
+`eggr-orchestrator-plugin`, 스킬 이름 `eggr-orchestrator`, 그리고
+Integrated Power가 발행한 기존 ownership metadata를 모두 만족해야 한다.
+
+초기 이전 플러그인은 다음을 모두 만족해야 한다.
 
 1. 디렉터리 이름: `codex-orchestrator-plugin`
 2. `plugin.json.name`: `codex-orchestrator-plugin`
@@ -95,8 +100,8 @@ GPU driver와 외부 도구는 변경하지 않는다. 확장 제거 진입점�
 4. 사용자가 `설정 저장 및 플러그인 설치·갱신`을 명시적으로 누른다.
 5. plugin root 아래 고유 staging 디렉터리에 새 버전을 복사한다.
 6. 관리 파일 SHA-256과 버전을 staging의 설치 상태에 기록한다.
-7. 기존 신규 경로가 있으면 `.eggr-backups`로 이동한다.
-8. 인식된 이전 경로가 있으면 `.eggr-backups`로 이동한다.
+7. 기존 신규 경로가 있으면 `.integrated-power-backups`로 이동한다.
+8. 인식된 이전 경로가 있으면 `.integrated-power-backups`로 이동한다.
 9. staging을 신규 경로로 원자적으로 이동한다.
 10. 확장 global storage에 완료 journal을 기록한다.
 
@@ -106,7 +111,7 @@ plugin root 내부의 검증된 정확한 경로만 제거한다.
 ## 제거와 복구
 
 자동 uninstall은 외부 플러그인 데이터를 삭제하지 않는다. 향후 제거 기능은
-`.eggr-install-state.json`이 있는 정확한 신규 경로만 대상으로 삼고, 삭제 대신
+`.integrated-power-install-state.json`이 있는 정확한 신규 경로만 대상으로 삼고, 삭제 대신
 백업 이동을 기본으로 한다.
 
 복구는 Configuration Center가 journal의 백업 목록을 보여준 뒤 사용자가 명시적으로
@@ -132,7 +137,7 @@ plugin root 내부의 검증된 정확한 경로만 제거한다.
 
 VSIX에는 다음도 확인한다.
 
-- `eggr-orchestrator-plugin`과 `eggr-orchestrator` 포함
+- `ip-orchestrator-plugin`과 `ip-orchestrator` 포함
 - `assets/gemini.md` 미포함
 - 개발자 절대 경로·이메일·비밀값 미포함
 - 이전 이름은 마이그레이션 상수와 문서에만 존재

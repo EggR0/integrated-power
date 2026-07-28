@@ -1,11 +1,11 @@
 {
   "name": "integrated-power",
-  "publisher": "integratedpower",
+  "publisher": "EggR",
   "displayName": "Integrated Power",
   "description": "Antigravity IDE dashboard for AI usage, local compute, first-run setup, and Integrated Orchestrator management.",
-  "version": "0.7.1",
+  "version": "0.7.3",
   "author": {
-    "name": "Integrated Power"
+    "name": "EggR"
   },
   "license": "SEE LICENSE IN LICENSE",
   "icon": "images/integrated-power.png",
@@ -16,15 +16,16 @@
   "preview": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/R-Github04/integrated-power-antigravity.git"
+    "url": "https://github.com/EggR0/integrated-power.git"
   },
-  "homepage": "https://github.com/R-Github04/integrated-power-antigravity#readme",
+  "homepage": "https://github.com/EggR0/integrated-power#readme",
   "bugs": {
-    "url": "https://github.com/R-Github04/integrated-power-antigravity/issues"
+    "url": "https://github.com/EggR0/integrated-power/issues"
   },
   "keywords": [
     "integrated power",
     "integratedpower",
+    "eggr",
     "antigravity",
     "antigravity ide",
     "ai usage",
@@ -160,14 +161,14 @@
     "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.9.2",
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "18.x",
     "@types/vscode": "^1.80.0",
     "@vscode/test-electron": "^3.0.0",
-    "glob": "^13.0.6",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.1",
+    "glob": "^13.0.6",
     "mocha": "^11.7.6",
     "typescript": "^5.1.3"
   },

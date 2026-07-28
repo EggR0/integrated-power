@@ -1,58 +1,57 @@
-# EggR Intergrated-POWER 상태
+# Integrated Power 상태
 
 ## 현재
 
 - branch: `agent/codex/first-run-wizards`
 - 대상: Antigravity IDE 확장 프로그램
-- Dashboard: 0.6.0 설치
-- EggR Orchestrator plugin: 2.1.0 관리 설치
-- skill identity: `eggr-orchestrator`
-- 전역 `GEMINI.md`: 설치 과정에서 생성·추가·교체하지 않음
-- Win11 직접 배포 ZIP: 0.6.0 생성·실설치·재실행 검증 완료
+- 설치된 Dashboard: `EggR.integrated-power@0.7.3`
+- 활성 plugin: `ip-orchestrator-plugin` 3.0.0
+- 활성 skill identity: `ip-orchestrator`
+- 기본 Win11 state root: `%LOCALAPPDATA%\IntegratedPower\state`
+- Private Git Knowledge remote: `https://github.com/EggR0/eggr-knowledge.git`
+- 전역 `GEMINI.md`: 설치·이전 과정에서 변경하지 않음
 
 ## Configuration Center
 
-- Dashboard 표시 영역과 EggR state root
-- Git, GitHub CLI, Codex, Agy, Ollama, NVIDIA 의존성 진단
-- 사용자 소유 Private Git/GitHub Knowledge 설정
-- Orchestrator route, Codex, 로컬 LLM, VRAM 정책
-- 플러그인 설치 계획, conflict, backup, 명시적 설치
+- 개요의 `상태 다시 확인`은 Windows 레지스트리의 최신 사용자·시스템 PATH와
+  표준 설치 위치를 다시 읽는다. IDE 시작 후 설치된 GitHub CLI도 재시작 없이
+  감지한다.
+- Dashboard는 사용량·GPU 관측, Integrated Orchestrator는 실행 경로 선택,
+  Private Git Knowledge는 사용자 소유 작업 기억 보존으로 역할을 분리한다.
+- Knowledge 탭에서 현재 `gh` 로그인과 실제 origin을 확인하고, 새 계정 기준 remote
+  감지와 명시적 origin 재설정을 수행할 수 있다.
+- Knowledge 최초 설정 마법사는 commit·pull·push를 실행하지 않는다.
+  `save-agent-worklog`는 중앙 Agent Worklog 한 파일만 검증해 agent 브랜치에서
+  commit, pull --rebase, push한다.
 
-기존 명령 팔레트 명령은 유지하며 각 설정 영역으로 이동한다.
+## 마이그레이션
 
-## 배포 설치 규약
-
-- Antigravity IDE 공식 global plugin root의 정확한 신규·이전 경로만 확인
-- 사용자 홈 재귀 검색과 이름 기반 삭제 금지
-- plugin·skill·EggR ownership 불일치 시 설치 중단
-- staging, 전체 폴더 backup, atomic activation, rollback
-- 설치 버전과 관리 파일 SHA-256 기록
-- 같은 버전·체크섬 재실행은 `no-op`
-
-상세 규약: `docs/reference/eggr-plugin-distribution.ko.md`
+- 0.7.2 이하의 `%LOCALAPPDATA%\EggR\state`는 새 상태 루트로 누락 파일만 한 번
+  복사하며 원본을 삭제하지 않는다.
+- 인식된 `eggr-orchestrator-plugin`과 `codex-orchestrator-plugin`만 정확한
+  경로에서 `.integrated-power-backups`로 보존한 뒤 `ip-orchestrator-plugin`을
+  설치한다.
+- 현재 PC의 이전 `eggr-orchestrator-plugin`은
+  `.integrated-power-backups/eggr-orchestrator-plugin-2026-07-28T13-22-30-691Z`
+  로 보존됐다.
 
 ## 검증
 
-- headless: 기존 9개 + 배포 마이그레이션 5개 통과
-- extension host: 8개 통과
-- PowerShell parser: 10개 통과
-- `eggr-orchestrator` skill validation 통과
-- VSIX 필수 파일·개인 절대 경로·이메일·GEMINI template 검사 통과
-- 라이브 재계획: `managed-current`, `no-op`
-- 설치 전후 사용자 `GEMINI.md` 해시 동일
-- 직접 배포 PowerShell 파일: Windows PowerShell 5.1용 UTF-8 BOM 확인
-- VSIX 내부 ID·버전, Knowledge payload commit·clean source 확인
-- 압축 해제본 `VerifyOnly`, 설치, 두 번째 설치 `already-current` 통과
-- Knowledge 8개 파일 hash와 schema 2 install state 일치
-- 변조 VSIX, 잘못된 CLI, 누락·중복 manifest mapping 거부
-- ZIP 개인 경로·이메일·개발자 원격 식별자 검사 통과
-- ZIP SHA-256:
-  `FF84156C82C5C3F07BA2ACBAE0432B506679F1ECC2C6E1AB91F5E44E6976704F`
+- headless: 17개 통과
+- extension host: 9개 통과
+- PowerShell parser: 16개 통과
+- Skill Creator `quick_validate.py`: `Skill is valid!`
+- 공개 allowlist: 83개 파일, private-content dry-run 통과
+- VSIX: 39 entries, `EggR.integrated-power@0.7.3`
+- 현재 설치 카탈로그: `eggr.integrated-power@0.7.3`
+- 설치 전후 `GEMINI.md` SHA-256 동일:
+  `975B39433C22F47CFDD8D6146487D143D21EC86A613BA3C436328E2EB76D235D`
+- 최종 VSIX SHA-256은 재패키징 결과와 함께 WORKLOG/HANDOFF에 기록한다.
 
 ## 다음
 
-1. 최종 ZIP과 `.sha256.txt`를 함께 전달
-2. 수신자는 ZIP 전체 압축 해제 후 `01-INSTALL.cmd` 실행
-3. Antigravity IDE에서 `Developer: Reload Window`
-4. `EggR: Open Configuration Center`
-5. 별도 Windows 11 사용자 계정 또는 VM에서 신규 사용자 UI 전환 확인
+1. Antigravity IDE에서 `Developer: Reload Window`를 한 번 실행한다.
+2. `Integrated Power: Open Configuration Center`의 개요에서
+   `상태 다시 확인`을 눌러 GitHub CLI가 `✓`로 표시되는지 확인한다.
+3. Knowledge 탭에서 GitHub 로그인 `EggR0`와 실제 origin을 확인한다.
+4. 공개 agent branch를 push하고 GitHub Release 0.7.3에 최종 VSIX를 첨부한다.

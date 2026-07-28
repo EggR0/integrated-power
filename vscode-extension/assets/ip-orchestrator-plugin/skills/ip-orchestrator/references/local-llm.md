@@ -35,7 +35,7 @@ Use the selected model and pass the selector reason into the invocation with `-S
 - `reports/local_llm_metrics.csv` for local measured success rate, elapsed time, and tokens/second.
 - Ollama `/api/tags` to prefer models that are actually installed when `-InstalledOnly` is used.
 
-It also reads `LocalLlm.HardwarePolicy` from EggR settings and detects NVIDIA
+It also reads `LocalLlm.HardwarePolicy` from Integrated Power settings and detects NVIDIA
 VRAM/compute capability with `nvidia-smi`. `Quantization` describes stored
 weights and is only a memory-estimation input. GGUF Q4 and MXFP4 do not by
 themselves require native FP4 execution. Compute capability is a hard constraint
@@ -69,9 +69,9 @@ Valid `-TaskType` values are `summarization`, `extraction`, `coding`, `reasoning
 
 ## Output
 
-- The final local LLM response is written to `-OutputFile` or a timestamped report under EggR workspace state `reports/`.
-- Token metrics are appended to EggR workspace state `reports/token_usage.csv` when available.
-- Task metrics are appended to EggR workspace state `reports/local_llm_metrics.csv`.
+- The final local LLM response is written to `-OutputFile` or a timestamped report under Integrated Power workspace state `reports/`.
+- Token metrics are appended to Integrated Power workspace state `reports/token_usage.csv` when available.
+- Task metrics are appended to Integrated Power workspace state `reports/local_llm_metrics.csv`.
 - The task metrics CSV records `TaskType`, `Success`, `ActualElapsedSeconds`, `OutputChars`, `TokensPerSecond`, `SelectedBy`, `SelectionReason`, and `ErrorMessage`.
 - `SuccessRegex` is only an automatic shape check. If semantic review finds the output wrong, relabel the row with `scripts/metrics/Update-LocalLLMMetric.ps1` in this workspace or the bundled `scripts/Update-LocalLLMMetric.ps1` so future routing uses real success data instead of superficial keyword matches.
 

@@ -1,14 +1,15 @@
 ---
-session_id: 20260728-eggr-publisher-and-repository-identity
+session_id: 20260728-integrated-power-runtime-identity
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: 5c6ff172eb2357b40a07ae8200d34234dfd6896f
+base_commit: 2604ed378a9e347e81613b26f90e59b774e27559
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
   - ".github/**"
   - "docs/**"
+  - "distribution/**"
   - "scripts/release/**"
   - "vscode-extension/**"
   - "README.md"
@@ -26,11 +27,32 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: eggr_openvsx_identity_review_pending
-next_action: Ask Eclipse Foundation staff to update the signed Open VSX agreement identity from R-Github04 to EggR0; after confirmation, create/verify the EggR namespace and publish the existing 0.7.2 VSIX.
+state: integrated_power_0_7_3_verified_and_installed
+next_action: Reload the Antigravity IDE window, verify live Configuration Center rendering, then push the private/public agent branches and attach the verified 0.7.3 VSIX to a GitHub release.
 ---
 
 # Handoff Log
+- **2026-07-28 Integrated Power 0.7.3 runtime identity**: Configuration Center
+  now re-reads the live Windows user/system PATH and standard executable
+  locations, so GitHub CLI installed after IDE startup is detected without an
+  IDE restart. Missing optional routes are labeled optional instead of broken.
+- **2026-07-28 ip-orchestrator migration**: The bundled plugin/skill identity is
+  `ip-orchestrator-plugin` 3.0.0 / `ip-orchestrator`. The installer recognizes
+  only exact managed `eggr-orchestrator` and `codex-orchestrator` predecessors,
+  backs them up under `.integrated-power-backups`, and installs the new
+  identity atomically. The live predecessor was migrated and `GEMINI.md`
+  remained byte-identical.
+- **2026-07-28 product state and Knowledge reconfiguration**: The default state
+  root is `%LOCALAPPDATA%\IntegratedPower\state`; missing legacy state files
+  are copied once while the old root is retained. Knowledge now shows the
+  actual GitHub CLI login and repository origin, can propose a renamed-account
+  remote, and can explicitly reset origin without committing, pulling, or
+  pushing. Both product and environment-bootstrap root records remain aligned.
+- **2026-07-28 verification**: Headless 17/17, extension host 9/9, PowerShell
+  parser 16/16, Skill Creator quick validation, 83-file public privacy export,
+  and 39-entry VSIX checks passed. Installed catalog:
+  `eggr.integrated-power@0.7.3`. VSIX SHA-256:
+  `FB249E608C152063472C8A4C5E513C95D15A343BFA100AAD30D5A1712DF76997`.
 - **2026-07-27 Win11 direct distribution**: Added a self-contained release
   builder and double-click install, verify-only, and extension-only uninstall
   entry points. The package pins the Dashboard VSIX plus the user-owned

@@ -8,8 +8,9 @@ import {
 } from "./ConfigurationCenter";
 import { installAntigravityPlugin } from "./installAntigravityPlugin";
 import {
+  ensureIntegratedPowerStorageMigration,
   legacyWorkspaceStorageCandidates,
-  resolveEggRStateRoot,
+  resolveIntegratedPowerStateRoot,
   resolveEggRWorkspaceDescriptor,
   workspaceStoragePathForFolder,
 } from "./storagePath";
@@ -23,7 +24,7 @@ async function migrateLegacyDashboardState(context: vscode.ExtensionContext): Pr
 
   const descriptor = resolveEggRWorkspaceDescriptor(primaryFolder.uri.fsPath);
   const destination = workspaceStoragePathForFolder(
-    resolveEggRStateRoot(),
+    resolveIntegratedPowerStateRoot(),
     descriptor.repoRoot,
     descriptor.remoteUrl,
     descriptor.configuredId,
@@ -93,6 +94,7 @@ async function installOrUpdateEggROrchestrator(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  ensureIntegratedPowerStorageMigration();
   const provider = new DashboardProvider(context);
   const openConfigurationCenter = (section: ConfigurationSection = "overview") =>
     ConfigurationCenter.open(

@@ -5,7 +5,7 @@ EggR는 Antigravity IDE, Codex, Local LLM 등 서로 다른 에이전트가 같�
 ## 현재 구조
 
 - `vscode-extension/`: Antigravity IDE 사용량·실행 상태 대시보드
-- `vscode-extension/assets/eggr-orchestrator-plugin/`: 명시적으로 설치하는 EggR Antigravity 오케스트레이터 번들
+- `vscode-extension/assets/ip-orchestrator-plugin/`: 명시적으로 설치하는 Integrated Power Antigravity IDE 오케스트레이터 번들
 - `distribution/win11/`: 해시 검증, 설치·검증·제거 진입점과 직접 배포 ZIP 생성기
 - `scripts/dispatch/`: Codex, Local LLM, Work Window 실행기
 - `scripts/util/EggR.Paths.psm1`: OS·작업 경로에 종속되지 않는 EggR resolver
@@ -36,7 +36,7 @@ Private Knowledge는 같은 페이지에서 보이지만 각각 명시적으로 
 
 ```powershell
 .\distribution\win11\New-EggRWin11Release.ps1 `
-  -VsixPath .\vscode-extension\integrated-power-0.7.1.vsix `
+  -VsixPath .\vscode-extension\integrated-power-0.7.3.vsix `
   -KnowledgeBootstrapRoot ..\environment-bootstrap `
   -OutputDirectory .\release
 ```
@@ -48,10 +48,10 @@ Private Knowledge는 같은 페이지에서 보이지만 각각 명시적으로 
 
 ## EggR 경로 규칙
 
-Win11 기본 상태 루트는 `%LOCALAPPDATA%\EggR\state`다. 다른 경로가 꼭 필요한 경우에만 다음 중 하나를 사용한다.
+Win11 기본 상태 루트는 `%LOCALAPPDATA%\IntegratedPower\state`다. 다른 경로가 꼭 필요한 경우에만 다음 중 하나를 사용한다.
 
 - 환경 변수 `EGGR_STATE_ROOT`
-- `%USERPROFILE%\.config\eggr\roots.json`
+- `%USERPROFILE%\.config\integrated-power\roots.json`
 
 ```json
 {

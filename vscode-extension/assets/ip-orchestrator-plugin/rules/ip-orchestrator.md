@@ -1,6 +1,6 @@
 # Integrated Orchestrator routing
 
-For non-trivial engineering work, consider the `eggr-orchestrator` skill before
+For non-trivial engineering work, consider the `ip-orchestrator` skill before
 choosing an execution route. Relevant work includes architecture, difficult
 implementation or debugging, code review, large refactors, long-running work,
 cross-model critique, local preprocessing, and token-efficiency analysis.
