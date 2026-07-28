@@ -28,7 +28,7 @@ forbidden:
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
 state: integrated_power_0_7_3_pushed_and_draft_pr_open
-next_action: Reload the Antigravity IDE window, verify live Configuration Center rendering, then push the private/public agent branches and attach the verified 0.7.3 VSIX to a GitHub release.
+next_action: Reload the Antigravity IDE window, verify live Configuration Center rendering, then review and merge public PR #3 before attaching the verified 0.7.3 VSIX to a GitHub release.
 ---
 
 # Handoff Log
