@@ -23,7 +23,7 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host " EggR Orchestrator First-Run Setup" -ForegroundColor Cyan
+Write-Host " Integrated Orchestrator First-Run Setup" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
 $userProfile = [Environment]::GetFolderPath("UserProfile")
@@ -226,7 +226,7 @@ try {
 }
 
 Write-Host ""
-Write-Host "EggR Orchestrator settings saved: $configPath" -ForegroundColor Cyan
+Write-Host "Integrated Orchestrator settings saved: $configPath" -ForegroundColor Cyan
 Write-Host "Enabled routes: $($EnabledRoutes -join ', ')" -ForegroundColor Green
 Write-Host "Default route: $DefaultRoute" -ForegroundColor Green
 

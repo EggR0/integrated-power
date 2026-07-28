@@ -2,6 +2,7 @@
 src/
 scripts/run-headless-tests.js
 scripts/build-extension.js
+node_modules/
 out/**/*.map
 out/test/
 out/**
@@ -11,6 +12,7 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 list-vsix.ps1
 .gitignore
+.npmrc
 .vscodeignore
 tsconfig.json
 vsc-extension-quickstart.md

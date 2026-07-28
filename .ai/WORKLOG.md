@@ -218,3 +218,20 @@
   개인 경로·이메일·개발자 원격 식별자 검사와 ZIP sidecar 비교가 통과했다.
 - 최종 ZIP SHA-256:
   `FF84156C82C5C3F07BA2ACBAE0432B506679F1ECC2C6E1AB91F5E44E6976704F`.
+
+## 2026-07-28 — Integrated Power 0.7.0 공개 배포 준비
+
+- 기존 Agy 사용량 조회 파일 3개는 HEAD와 byte/hash가 동일하도록 보존했다.
+- 공개 표시명은 Integrated Power, 사용자 표시명은 Integrated Orchestrator로
+  정리하고 기계 ID는 `integratedPower.*`, `eggr-orchestrator*`로 유지했다.
+- PolyForm Strict 1.0.0, NOTICE, 지원·보안·상용 문의 문서와 256 px 아이콘을
+  추가했다. `GEMINI.md`를 생성하거나 교체하는 경로는 포함하지 않았다.
+- headless와 extension-host 8/8 검사를 통과했다. 0.7.0 VSIX는 39개 entry이며
+  개인정보·개인 이메일·개발자 홈 경로·중첩 VSIX 검사 0건이다.
+- VSIX SHA-256:
+  `3B20CFC5DA5A06AB456FBA56A47D6F8DEC6BE66CF26204D8D0440F48653654FE`.
+- 허용 목록 83개 파일만 새 `integrated-power-antigravity-public` 저장소로
+  내보내고 `agent/codex/public-release-0.7.0` root commit
+  `a819f41f5d500571590cf4cf114d1ecddbed511a`을 만들었다.
+- GitHub 연결 계정은 확인됐으나 새 저장소 생성용 브라우저가 로그아웃 상태라
+  remote 생성·push와 Open VSX 게시는 사용자 로그인 이후로 남겼다.

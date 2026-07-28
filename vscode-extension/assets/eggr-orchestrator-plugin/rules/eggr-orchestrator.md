@@ -1,4 +1,4 @@
-# EggR Orchestrator routing
+# Integrated Orchestrator routing
 
 For non-trivial engineering work, consider the `eggr-orchestrator` skill before
 choosing an execution route. Relevant work includes architecture, difficult

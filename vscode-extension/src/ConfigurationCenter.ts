@@ -105,7 +105,7 @@ export class ConfigurationCenter implements vscode.Disposable {
           );
           this.postResult(
             "success",
-            `Orchestrator 설정 저장 완료: ${savedPath}`,
+            `Integrated Orchestrator 설정 저장 완료: ${savedPath}`,
           );
           this.postSnapshot("orchestrator");
           return;
@@ -374,11 +374,11 @@ export class ConfigurationCenter implements vscode.Disposable {
 <body>
   <header>
     <h1>EggR Configuration Center</h1>
-    <div class="subtitle">Dashboard, Orchestrator, Private Git Knowledge를 한 화면에서 독립적으로 설정합니다.</div>
+    <div class="subtitle">Dashboard, Integrated Orchestrator, Private Git Knowledge를 한 화면에서 독립적으로 설정합니다.</div>
     <nav aria-label="설정 영역">
       <button type="button" data-section="overview">개요</button>
       <button type="button" data-section="dashboard">Dashboard</button>
-      <button type="button" data-section="orchestrator">Orchestrator</button>
+      <button type="button" data-section="orchestrator">Integrated Orchestrator</button>
       <button type="button" data-section="knowledge">Private Git Knowledge</button>
     </nav>
   </header>
@@ -386,7 +386,7 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="overview">
       <div class="grid">
         <article class="card"><h3>Dashboard</h3><div id="status-dashboard" class="status">확인 중</div><p>Antigravity IDE, Codex, 로컬 LLM 사용량과 상태를 표시합니다.</p></article>
-        <article class="card"><h3>Orchestrator</h3><div id="status-orchestrator" class="status">확인 중</div><p>현재 에이전트, Codex, 하드웨어에 맞는 로컬 LLM 사이의 실행 경로를 선택합니다.</p></article>
+        <article class="card"><h3>Integrated Orchestrator</h3><div id="status-orchestrator" class="status">확인 중</div><p>현재 에이전트, Codex, 하드웨어에 맞는 로컬 LLM 사이의 실행 경로를 선택합니다.</p></article>
         <article class="card"><h3>Private Git Knowledge</h3><div id="status-knowledge" class="status">확인 중</div><p>각 사용자의 지식과 작업 기록을 사용자가 소유한 Git 저장소에 누적합니다.</p></article>
       </div>
       <article class="card">
@@ -431,7 +431,7 @@ export class ConfigurationCenter implements vscode.Disposable {
 
     <section id="orchestrator">
       <article class="card">
-        <h2>Orchestrator 설정 및 설치</h2>
+        <h2>Integrated Orchestrator 설정 및 설치</h2>
         <p class="hint">설정 파일과 Antigravity IDE 플러그인은 분리되어 있습니다. 설치는 명시적으로 ‘저장 및 설치’를 누를 때만 수행합니다.</p>
         <div id="plugin-status" class="status"></div>
         <code id="plugin-path" class="path"></code>
@@ -691,7 +691,7 @@ function parseDashboardConfiguration(value: unknown): DashboardConfiguration {
 function parseOrchestratorConfiguration(
   value: unknown,
 ): OrchestratorConfiguration {
-  if (!isRecord(value)) throw new Error("Orchestrator 설정 형식이 올바르지 않습니다.");
+  if (!isRecord(value)) throw new Error("Integrated Orchestrator 설정 형식이 올바르지 않습니다.");
   const defaultRoute = value.defaultRoute;
   const provider = value.provider;
   const selectionMode = value.selectionMode;

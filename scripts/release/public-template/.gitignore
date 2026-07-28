@@ -1,0 +1,35 @@
+# Private agent state and operational records
+.ai/
+.agents/
+AGENTS.md
+reports/
+discussions/
+operational-data/
+.agent-runs/
+
+# Credentials and local configuration
+.env
+.env.*
+*.env
+client_secret*.json
+token*.json
+credentials*.json
+*.key
+*.pem
+.npmrc
+.vscode/
+
+# Build, test, and package output
+node_modules/
+out/
+dist/
+.vscode-test/
+*.vsix
+*.zip
+*.log
+coverage/
+
+# Machine-specific state
+config/last_scan_state.json
+scripts/__temp_*
+scratch_*

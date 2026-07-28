@@ -55,13 +55,13 @@ suite('Parser and Store Test Suite', () => {
   test('EggR workspace identity is stable across Windows paths and Git URL forms', () => {
     const storageRoot = 'C:\\Users\\tester\\AppData\\Local\\EggR\\state';
     const folderPath = 'C:\\Projects\\Example';
-    const sshRemote = 'git@github.com:R-Github04/Intergrated-POWER.git';
-    const httpsRemote = 'https://github.com/R-Github04/Intergrated-POWER.git';
+    const sshRemote = 'git@example.com:example-org/example-repo.git';
+    const httpsRemote = 'https://example.com/example-org/example-repo.git';
     const workspaceId = eggRWorkspaceId(folderPath, sshRemote);
     const expected = path.join(storageRoot, 'workspaces', workspaceId);
 
     assert.strictEqual(normalizeWorkspacePathForStorage(folderPath), 'C:\\Projects\\Example');
-    assert.strictEqual(normalizeEggRRemoteIdentity(sshRemote), 'github.com/r-github04/intergrated-power');
+    assert.strictEqual(normalizeEggRRemoteIdentity(sshRemote), 'example.com/example-org/example-repo');
     assert.strictEqual(workspaceId, eggRWorkspaceId('D:\\Moved\\Example', httpsRemote));
     assert.strictEqual(workspaceStoragePathForFolder(storageRoot, folderPath, sshRemote), expected);
   });
@@ -129,7 +129,7 @@ suite('Parser and Store Test Suite', () => {
     ]);
 
     const readme = fs.readFileSync(readmePath, 'utf8');
-    assert.ok(readme.includes('Antigravity IDE에서 실행되는 확장 프로그램'));
+    assert.ok(readme.includes('Antigravity IDE 전용 확장 프로그램'));
     assert.ok(readme.includes('%LOCALAPPDATA%\\Programs\\Antigravity IDE\\bin\\antigravity-ide.cmd'));
     assert.ok(readme.includes('%LOCALAPPDATA%\\Programs\\Antigravity\\Antigravity.exe'));
     assert.ok(readme.includes('Codex용 확장도 아니다'));

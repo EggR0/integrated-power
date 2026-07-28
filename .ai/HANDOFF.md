@@ -1,16 +1,18 @@
 ---
-session_id: 20260727-eggr-win11-direct-distribution
+session_id: 20260728-integrated-power-openvsx-release-prep
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: 7dcbf6744942312fc1f179e96999e955edb107fc
+base_commit: 39fba76390f333caaaeb6cd9c42d88cef216340e
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
-  - "distribution/**"
+  - ".github/**"
   - "docs/**"
+  - "scripts/release/**"
   - "vscode-extension/**"
   - "README.md"
+  - "../integrated-power-antigravity-public/**"
   - "C:/Users/test/Documents/Codex/Knowledge/00 Inbox/Agent Worklog.md"
 forbidden:
   - ".env"
@@ -24,8 +26,8 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: dashboard_0_6_0_win11_direct_distribution_ready
-next_action: Distribute the ZIP with its SHA-256 sidecar, then validate the first-run UI on a separate Windows 11 account or VM.
+state: release_artifacts_ready_public_upload_waiting_for_browser_login
+next_action: After the user signs in to GitHub in the open browser, create R-Github04/integrated-power-antigravity as a public repository, push the prepared agent branch, merge through review, then complete the Open VSX account and namespace steps.
 ---
 
 # Handoff Log
@@ -126,3 +128,16 @@ next_action: Distribute the ZIP with its SHA-256 sidecar, then validate the firs
 - **Remote backup pending**: Push was not performed because the execution policy requires explicit confirmation that the GitHub remote is trusted/private. Public mirror remains untouched.
 - **Central audit appended, sync unavailable on Win11**: Added the one-line Knowledge worklog entry. `save-agent-worklog` is not installed on this host; the repository copy is a Linux `$HOME/Knowledge` script that pushes `main`, so it was not substituted with a risky manual command.
 - **VSIX installed without an implicit orchestrator overwrite**: Antigravity now selects dashboard 0.3.0 and the installed bundle hash matches the verified build. The global plugin remains 1.0.4 until the user explicitly runs the EggR orchestrator update command, as designed.
+- **2026-07-28 Integrated Power 0.7.0 release preparation**: Preserved the
+  existing Agy quota implementation byte-for-byte, changed only public
+  branding/metadata/documentation and the readable legacy-author identifier,
+  added the 256 px Integrated Power icon and PolyForm Strict licensing, and
+  packaged a 39-entry VSIX. Headless tests and extension-host tests passed;
+  the final VSIX privacy scan found no personal identifier, personal email,
+  developer home path, `GEMINI.md`, or nested VSIX. VSIX SHA-256:
+  `3B20CFC5DA5A06AB456FBA56A47D6F8DEC6BE66CF26204D8D0440F48653654FE`.
+- **Fresh public snapshot prepared**: The strict allowlist exporter created
+  `integrated-power-antigravity-public` with 83 files and no private Git
+  history. Its root commit on `agent/codex/public-release-0.7.0` is
+  `a819f41f5d500571590cf4cf114d1ecddbed511a`. No remote was configured or
+  pushed because the GitHub browser session is signed out.

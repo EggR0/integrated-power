@@ -1,14 +1,47 @@
 {
   "name": "antigravity-ide-dashboard",
   "publisher": "integratedpower",
-  "displayName": "EggR Antigravity IDE Dashboard",
-  "description": "Antigravity IDE extension for EggR usage, agent-run, and local compute status",
-  "version": "0.6.0",
+  "displayName": "Integrated Power",
+  "description": "Antigravity IDE dashboard for AI usage, local compute, first-run setup, and Integrated Orchestrator management.",
+  "version": "0.7.0",
+  "author": {
+    "name": "Integrated Power"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "icon": "images/integrated-power.png",
+  "galleryBanner": {
+    "color": "#121632",
+    "theme": "dark"
+  },
+  "preview": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/R-Github04/integrated-power-antigravity.git"
+  },
+  "homepage": "https://github.com/R-Github04/integrated-power-antigravity#readme",
+  "bugs": {
+    "url": "https://github.com/R-Github04/integrated-power-antigravity/issues"
+  },
+  "keywords": [
+    "antigravity",
+    "antigravity ide",
+    "ai usage",
+    "agent dashboard",
+    "token usage",
+    "quota",
+    "local llm",
+    "gpu",
+    "vram",
+    "orchestration",
+    "windows 11"
+  ],
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
+    "Visualization",
+    "Machine Learning",
     "Other"
   ],
   "activationEvents": [
@@ -23,7 +56,7 @@
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
-      "title": "EggR",
+      "title": "Integrated Power",
       "properties": {
         "integratedPower.view.showAntigravity": {
           "type": "boolean",
@@ -46,7 +79,7 @@
       "activitybar": [
         {
           "id": "integratedPower",
-          "title": "EggR",
+          "title": "Integrated Power",
           "icon": "$(rocket)"
         }
       ]
@@ -78,27 +111,27 @@
       },
       {
         "command": "integratedPower.eggr.installOrUpdateOrchestrator",
-        "title": "EggR: Install or Update Orchestrator"
+        "title": "Integrated Power: Install or Update Integrated Orchestrator"
       },
       {
         "command": "integratedPower.eggr.openConfigurationCenter",
-        "title": "EggR: Open Configuration Center"
+        "title": "Integrated Power: Open Configuration Center"
       },
       {
         "command": "integratedPower.eggr.runFirstRunSetup",
-        "title": "EggR: Run First-Run Setup"
+        "title": "Integrated Power: Run First-Run Setup"
       },
       {
         "command": "integratedPower.eggr.runDashboardSetup",
-        "title": "EggR: Configure Dashboard"
+        "title": "Integrated Power: Configure Dashboard"
       },
       {
         "command": "integratedPower.eggr.runOrchestratorSetup",
-        "title": "EggR: Configure Orchestrator"
+        "title": "Integrated Power: Configure Integrated Orchestrator"
       },
       {
         "command": "integratedPower.eggr.runPrivateKnowledgeSetup",
-        "title": "EggR: Configure Private Git Knowledge"
+        "title": "Integrated Power: Configure Private Git Knowledge"
       }
     ],
     "menus": {

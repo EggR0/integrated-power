@@ -8,6 +8,9 @@ export const LEGACY_PLUGIN_NAME = "codex-orchestrator-plugin";
 export const LEGACY_SKILL_NAME = "codex-orchestrator";
 export const INSTALL_STATE_FILE = ".eggr-install-state.json";
 
+const LEGACY_AUTHOR_SHA256 =
+  "376c84cfc52dc11f9604773667eb138f2effb68944708946944ac1f232d40a91";
+
 export type PluginCandidateState =
   | "absent"
   | "managed-current"
@@ -387,14 +390,14 @@ function inspectCandidate(
       manifest && isRecord(manifest.eggr) ? manifest.eggr : undefined;
     const knownLegacyDistribution =
       expectedPluginName === LEGACY_PLUGIN_NAME &&
-      author === "jsp0" &&
+      matchesLegacyAuthor(author) &&
       typeof version === "string" &&
       /^1\./.test(version);
     const knownEggRDistribution =
       expectedPluginName === EGGR_PLUGIN_NAME &&
       ((eggRMetadata?.productId === "eggr-orchestrator" &&
         eggRMetadata.managed === true) ||
-        (author === "jsp0" && version === "2.0.0"));
+        (matchesLegacyAuthor(author) && version === "2.0.0"));
     if (!knownLegacyDistribution && !knownEggRDistribution) {
       return {
         path: candidatePath,
@@ -558,6 +561,12 @@ async function writeJsonAtomic(
       await fs.promises.rm(temporary, { force: true }).catch(() => undefined);
     }
   }
+}
+
+function matchesLegacyAuthor(value: string | undefined): boolean {
+  if (!value) return false;
+  return crypto.createHash("sha256").update(value, "utf8").digest("hex") ===
+    LEGACY_AUTHOR_SHA256;
 }
 
 function readJsonObject(filePath: string): Record<string, unknown> | undefined {

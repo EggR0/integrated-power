@@ -1,73 +1,91 @@
-# EggR Antigravity IDE Dashboard
+# Integrated Power
 
-EggR Antigravity IDE Dashboard는 **Antigravity IDE에서 실행되는 확장 프로그램**이다.
-현재 Windows 11에서 에이전트 사용량·작업 상태·로컬 연산 상태를 GUI로 확인하고,
-EggR Orchestrator와 사용자 소유 Private Knowledge의 최초 설정으로 연결한다.
+Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Windows 11에서
+에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고,
+Integrated Orchestrator와 사용자 소유 Private Git Knowledge의 안전한 설정 진입점을
+제공한다.
+
+| 항목 | 값 |
+|---|---|
+| 제품 표시명 | Integrated Power |
+| Publisher 표시명 | Integrated Power |
+| 현재 배포 준비판 | 0.7.0 |
+| 최초 공개판 | 0.7.0 |
+| 공개 배포 채널 | Open VSX Registry |
+| 우선 지원 환경 | Antigravity IDE on Windows 11 |
+
+Open VSX는 배포 채널이다. Open VSX에 게시되더라도 Visual Studio Code, Cursor 또는
+다른 VS Code 파생 IDE까지 지원한다는 뜻은 아니다.
 
 > 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
-> Codex, Agy, 로컬 LLM은 Orchestrator가 선택적으로 호출할 수 있는 외부 실행
-> 경로다.
+> Codex, Agy, Ollama와 vLLM은 사용자가 선택할 수 있는 외부 실행 경로다.
 
-## 제품 범위
+## 세 가지 독립 구성
 
-| 구성 | 역할 | 이 확장과의 관계 |
+| 구성 | 역할 | 설치·데이터 경계 |
 |---|---|---|
-| Dashboard | 사용량·상태·에이전트 실행 기록 GUI | 이 VSIX가 직접 제공 |
-| EggR Orchestrator | 주 에이전트·Codex·로컬 LLM 사이의 작업 경로 선택 | 사용자가 명령을 실행할 때 명시적으로 설치·설정 |
-| Private Knowledge | 사용자의 지식·작업 기록·오류 이력을 개인 Git에 누적 | 별도 `environment-bootstrap` 명령을 호출 |
+| Integrated Power Dashboard | 사용량·상태·에이전트 실행 기록 GUI | 이 VSIX가 제공 |
+| Integrated Orchestrator | 주 에이전트, Codex, 로컬 LLM 사이의 작업 경로 선택 | 사용자가 명시적으로 설치·설정 |
+| Private Git Knowledge | 지식, 작업 기록, 오류 이력을 사용자 자신의 Git에 누적 | 별도 Windows 도구가 사용자 선택으로 설정 |
 
-세 구성은 설치 수명과 데이터 소유자가 다르므로 독립적으로 설정한다.
-`EggR: Open Configuration Center`는 세 구성의 상태와 설정을 한 페이지에서
-보여주지만 하나의 설정이나 설치 수명으로 강제 결합하지 않는다.
+Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이고, 호환성을
+위한 기계 식별자는 `eggr-orchestrator`로 유지한다.
 
-## 주요 기능
+세 구성은 설치 수명과 데이터 소유자가 다르다. 안전한 Configuration Center는 세
+상태와 설정 진입점을 한 화면에 보여 주지만, Dashboard 활성화만으로 Orchestrator나
+사용자 Knowledge를 설치·변경하지 않는다.
 
-- Antigravity IDE, Codex 및 로컬 LLM 상태 영역을 선택적으로 표시
-- GPU 사용률, VRAM, 전력 사용량과 현재 제한 표시
+## 0.7.0 주요 기능
+
+- Antigravity IDE, Codex 및 로컬 LLM 상태 영역 선택 표시
+- GPU 사용률, VRAM, 전력 사용량과 현재 전력 제한 표시
 - 작업별 실행 기록, 활성 작업, 결과물과 JSONL 기록 열기
-- 실제 provider 보고값, 계산값, 추정값, 미확인 값을 구분하는 사용량 표시
+- provider 실측값, 계산값, 추정값과 미확인 값을 구분하는 사용량 표시
 - `auto` 또는 `user_default` 방식의 로컬 LLM 선택 정책
-- 사용자 소유 Private Knowledge Git 최초 설정 연결
-- WorkRoot의 절대 경로를 코드에 고정하지 않는 EggR 상태 경로 해석
+- VRAM, Compute Capability, backend 요구 조건과 설치 모델 크기를 고려한 후보 평가
+- Dashboard, Integrated Orchestrator, Private Git Knowledge의 독립 설정 센터
+- Orchestrator 설치 전 계획 표시, 소유권 충돌 차단, backup, rollback과 재실행 안전성
+- 개발자 절대 경로를 내장하지 않는 WorkRoot와 상태 경로 해석
 
-## 지원 범위
+## Agy 사용량 경계
 
-- 현재 안정화·배포 대상: Windows 11
-- 실행 대상:
+Agy TUI에서는 공식 `/usage` 명령으로 사용량을 사용자가 직접 확인할 수 있다.
 
-  ```text
-  %LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity IDE.exe
-  ```
+Windows에서 사용자가 Agy에 로그인한 경우 Integrated Power는 로컬 프로세스에서
+Windows Credential Manager의 Agy 자격 증명을 읽고 사용량 API를 조회해 Dashboard에
+표시한다. 만료된 인증의 갱신이 필요하면 설치된 Agy client 정보와 refresh token을
+로컬 프로세스 안에서 사용한다.
 
-- 확장 조회·설치용 CLI:
+실제 access token과 refresh token 값은 Integrated Power 설정, 로그 또는 공개
+저장소에 기록하지 않는다. Integrated Power가 읽은 token 값의 사본은 사용량 조회와
+필요한 인증 갱신 동안 로컬 프로세스 메모리에서만 사용한다. 원본 자격 증명은 Agy가
+Windows Credential Manager에서 관리하며, Integrated Power가 계정을 만들거나 로그인
+정보를 배포하지 않는다.
 
-  ```text
-  %LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd
-  ```
+## GEMINI.md 경계
 
-별도 프로그램인 다음 실행 파일은 Antigravity IDE 확장 설치에 사용하지 않는다.
+Integrated Power는 전역 또는 프로젝트 `GEMINI.md`를 생성, 추가, 교체하거나
+내용을 병합하지 않는다. Antigravity IDE 연동에는 plugin, `eggr-orchestrator` 기계
+식별자, Integrated Power 설정과 상태 파일을 사용한다.
 
-```text
-%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe
-```
-
-이 파일에 `--list-extensions`나 `--install-extension`을 전달하면 별도
-Antigravity 애플리케이션이 시작될 수 있다.
+확장 설치, 업데이트, Configuration Center 열기와 Integrated Orchestrator 설치 전후에
+기존 `GEMINI.md`가 그대로 남아야 한다.
 
 ## 설치
 
-일반 사용자에게는 저장소나 Node.js 개발 도구 대신 Win11 직접 배포 ZIP을 전달한다.
-ZIP을 전부 압축 해제한 뒤 `01-INSTALL.cmd`를 실행하면 VSIX와 Windows Private
-Knowledge 명령의 SHA-256을 확인하고 설치한다. `02-VERIFY-ONLY.cmd`는 설치 전
-진단만 수행하며 시스템을 변경하지 않는다.
+### Open VSX 공개판 0.7.0
 
-개발자가 VSIX만 직접 설치해야 할 때는 Antigravity IDE 명령줄 wrapper를 사용한다.
+0.7.0은 Open VSX Registry에 게시할 최초 공개판이다. 실제 Registry 게시 완료 전에는
+검색 설치할 수 있다고 가정하지 않는다. 게시 후에는 Antigravity IDE의 Extensions 화면에서
+`Integrated Power`와 Publisher `Integrated Power`를 함께 확인한 뒤 설치한다.
 
-Antigravity IDE 명령줄 wrapper에서 VSIX를 설치한다.
+### 0.7.0 VSIX 직접 설치
+
+게시 전 검증이나 직접 배포에서는 0.7.0 VSIX를 Antigravity IDE 전용 CLI wrapper로 설치한다.
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\antigravity-ide-dashboard-0.6.0.vsix" `
+  --install-extension ".\antigravity-ide-dashboard-0.7.0.vsix" `
   --force
 ```
 
@@ -77,26 +95,30 @@ Antigravity IDE 명령줄 wrapper에서 VSIX를 설치한다.
 Developer: Reload Window
 ```
 
-그 다음 명령 팔레트에서 `EggR:`를 검색한다.
+별도 프로그램인 다음 실행 파일은 확장 설치에 사용하지 않는다.
 
-## EggR 명령
+```text
+%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe
+```
+
+## 설정 센터와 명령
+
+명령 팔레트에서 다음 명령을 사용할 수 있다. 표시 제목은 현재 `package.json`과
+일치한다.
 
 | 명령 | 동작 |
 |---|---|
-| `EggR: Open Configuration Center` | 세 구성의 통합 설정 페이지 열기 |
-| `EggR: Run First-Run Setup` | Configuration Center 개요 열기 |
-| `EggR: Configure Dashboard` | Configuration Center의 Dashboard 영역 열기 |
-| `EggR: Configure Orchestrator` | Configuration Center의 Orchestrator 영역 열기 |
-| `EggR: Configure Private Git Knowledge` | Configuration Center의 Knowledge 영역 열기 |
-| `EggR: Install or Update Orchestrator` | Orchestrator 설치 영역 열기 |
+| `Integrated Power: Open Configuration Center` | 세 구성의 통합 설정 페이지 열기 |
+| `Integrated Power: Run First-Run Setup` | 최초 설정 개요 열기 |
+| `Integrated Power: Configure Dashboard` | Dashboard 설정 영역 열기 |
+| `Integrated Power: Configure Integrated Orchestrator` | Integrated Orchestrator 설정 영역 열기 |
+| `Integrated Power: Configure Private Git Knowledge` | 사용자 Knowledge 설정 영역 열기 |
+| `Integrated Power: Install or Update Integrated Orchestrator` | 설치 계획과 충돌 상태 확인 |
 
-Dashboard를 열거나 확장을 활성화하는 것만으로 Orchestrator와 사용자 Knowledge
-저장소를 자동 변경하지 않는다. 0.5.0부터 확장 패키지에는 `GEMINI.md` 템플릿이나
-이를 생성·추가·교체하는 코드가 없다.
+명령의 내부 `integratedPower.*` ID와 `eggr-orchestrator` 기계 식별자는 호환성을
+위해 유지한다.
 
-## Dashboard 설정
-
-Antigravity IDE 설정에서 다음 값을 사용할 수 있다.
+Dashboard 표시 항목은 Antigravity IDE 설정에서 선택할 수 있다.
 
 | 설정 | 기본값 | 설명 |
 |---|---:|---|
@@ -104,126 +126,79 @@ Antigravity IDE 설정에서 다음 값을 사용할 수 있다.
 | `integratedPower.view.showCodex` | `true` | Codex 상태 영역 표시 |
 | `integratedPower.view.showLocalLlm` | `true` | 로컬 LLM·GPU 상태 영역 표시 |
 
+## Integrated Orchestrator와 로컬 LLM
+
+Integrated Orchestrator는 다음 두 정책을 제공한다.
+
+- `user_default`: 사용자가 지정한 provider, endpoint와 model ID를 우선하며 임의로
+  다른 모델로 바꾸지 않는다.
+- `auto`: 현재 여유 VRAM, Compute Capability, backend 요구 조건, 설치 모델 크기,
+  VRAM 예약량, CPU offload 허용 여부와 작업 적합도를 평가한다.
+
+가중치 양자화 이름(Q4, MXFP4 등)과 GPU의 native FP4·FP8 연산 지원을 같은 것으로
+취급하지 않는다. Ollama는 설치 모델 중 선택·실행할 수 있고, vLLM은 endpoint에 이미
+로드된 모델과의 적합성을 확인한다. 자동 선택 결과는 추정 근거와 사용자 override를
+구분해 기록한다.
+
+## Private Git Knowledge
+
+Integrated Power는 개발자의 Knowledge 저장소 내용을 배포하지 않는다. 각 사용자는
+자신의 private Git remote 또는 원격 없는 `local_only` 저장소를 선택한다.
+
+Git 작성자 email은 commit metadata이며 로그인 수단이 아니다. 원격 인증은 Git
+Credential Manager 또는 SSH agent가 담당한다. 최초 설정은 기존 branch와 dirty
+변경을 보존하며 commit, pull, rebase, checkout과 push를 자동 실행하지 않는다.
+
 ## 상태와 설정 경로
 
 | 데이터 | Windows 경로 |
 |---|---|
-| EggR root 설정 | `%USERPROFILE%\.config\eggr\roots.json` |
+| 공통 root 설정 | `%USERPROFILE%\.config\eggr\roots.json` |
 | 기본 runtime state | `%LOCALAPPDATA%\EggR\state` |
-| Orchestrator 설정 | `%USERPROFILE%\.config\eggr\orchestrator.json` |
+| Integrated Orchestrator 설정 | `%USERPROFILE%\.config\eggr\orchestrator.json` |
 | Antigravity IDE plugin | `%USERPROFILE%\.gemini\config\plugins\eggr-orchestrator-plugin` |
-| Private Knowledge | 사용자가 최초 실행 마법사에서 선택 |
+| Private Git Knowledge | 사용자가 최초 설정에서 선택 |
 
-현재 PC의 경로나 Git 원격을 다른 사용자에게 배포하지 않는다. 새 PC에서는 사용자
-선택을 먼저 사용하고, 선택이 없을 때만 `%USERPROFILE%\Documents\EggR`를 WorkRoot
-권장값으로 제안한다. 기존 저장소는 자동 이동·병합·삭제하지 않는다.
-
-## Orchestrator와 로컬 LLM
-
-Orchestrator는 다음 두 정책을 제공한다.
-
-- `user_default`: 사용자가 지정한 provider·endpoint·model ID를 우선하며 임의로
-  다른 모델로 교체하지 않는다.
-- `auto`: 현재 여유 VRAM, Compute Capability, backend 요구 조건, 설치 모델 크기,
-  VRAM 예약량, CPU offload 허용 여부와 작업 적합도를 평가한다.
-
-가중치 양자화 이름(Q4, MXFP4 등)과 GPU의 native FP4·FP8 연산 지원을 같은
-것으로 취급하지 않는다. Ollama는 설치 모델 중 선택·실행할 수 있고, vLLM은
-일반적으로 endpoint에 이미 로드된 모델과의 적합성을 확인한다.
+현재 PC의 절대 경로나 Git 원격을 다른 사용자에게 배포하지 않는다. 새 PC에서는
+사용자 선택을 먼저 사용하고, 선택이 없을 때만 `%USERPROFILE%\Documents\EggR`를
+WorkRoot 권장값으로 제안한다. 기존 저장소는 자동 이동·병합·삭제하지 않는다.
 
 ## 의존성
 
-| 의존성 | 필수 여부 | 자동 설치 |
+| 의존성 | 필요한 경우 | 자동 설치 |
 |---|---|---|
-| Antigravity IDE | 필수 | 하지 않음 |
-| VSIX JavaScript runtime | 필수 | VSIX에 포함 |
-| Git for Windows | Private Knowledge 사용 시 | 하지 않음 |
+| Antigravity IDE | 항상 | 하지 않음 |
+| VSIX JavaScript runtime | 항상 | VSIX에 포함 |
+| Git for Windows | Private Git Knowledge 사용 시 | 하지 않음 |
 | Codex CLI | Codex 경로 사용 시 | 하지 않음 |
 | Ollama 또는 vLLM | 로컬 LLM 경로 사용 시 | 하지 않음 |
 | NVIDIA driver와 `nvidia-smi` | NVIDIA GPU 측정 시 | 하지 않음 |
-| Agy | Agy 사용량 연동 시 | 하지 않음 |
+| Agy | Agy 사용량을 Dashboard에 표시할 때 | 하지 않음 |
 
-직접 배포본은 EggR가 소유한 Private Knowledge Windows 명령만 함께 설치한다.
-Antigravity IDE, Git, GPU driver, 외부 에이전트 CLI와 로컬 모델은 자동 설치하지
-않는다.
-
-GPU driver, 모델, 서비스 포트, Git 인증과 API 자격 증명은 사용자 환경에 큰 영향을
-주므로 묵시적으로 설치하거나 변경하지 않는다. 마법사는 존재 여부를 진단하고 필요한
-설정 위치를 안내한다.
-
-## Private Knowledge
-
-이 확장은 개발자의 Knowledge 저장소 내용을 배포하지 않는다. 각 사용자는 다음 중
-하나를 선택한다.
-
-- 자신의 private Git remote 연결
-- 원격이 없는 `local_only` 저장소
-
-Git 작성자 email은 커밋 메타데이터이며 로그인 수단이 아니다. 원격 인증은 Git
-Credential Manager 또는 SSH agent가 담당한다. 최초 설정 마법사는 기존 branch와
-dirty 변경을 보존하며 commit, pull, rebase, checkout, push를 실행하지 않는다.
+GPU driver, 모델, 서비스 포트, Git 인증과 API 자격 증명은 묵시적으로 설치하거나
+변경하지 않는다. Configuration Center는 존재 여부와 영향을 진단하고 설정 위치를
+안내한다.
 
 ## 개인정보와 비밀값
 
-- 비밀번호, access token, refresh token과 API key 값을 설정 JSON이나 작업 로그에
-  저장하지 않는다.
-- 필요한 경우 값 대신 환경변수 이름만 기록한다.
-- 원문 대화, 인증 데이터베이스와 개인 Knowledge 내용은 VSIX에 포함하지 않는다.
-- 사용자 경로와 원격 URL을 소스 또는 배포물에 고정하지 않는다.
+배포 VSIX와 공개 저장소에는 다음 개인 데이터를 포함하지 않는다.
 
-## 0.6.0 변경 사항
+- 비밀번호, access token, refresh token, API key와 자격 증명 데이터베이스
+- 사용자 대화 원문, 개인 Knowledge 내용과 작업 기록
+- 사용자 홈 절대 경로, 개인 Git remote와 로컬 설정값
+- 내부 operational data, 테스트 계정과 인증 cache
 
-- 사용자 홈 재귀 검색 없이 Antigravity IDE 공식 plugin root의 신규·이전 경로만 검사
-- 플러그인 manifest와 스킬 identity로 EggR 배포본을 판정하고, 인식되지 않은
-  동일 이름 폴더는 자동 이동하지 않음
-- staging, 전체 폴더 백업, 원자적 활성화, 실패 rollback을 적용
-- 설치 버전·관리 파일 SHA-256·백업 위치를 설치 상태와 확장 global storage
-  journal에 기록
-- Configuration Center에서 설치 계획, 충돌, 신규·이전 상태와 의존성 안내 표시
-- Git/GitHub CLI 진단과 GitHub private 저장소 생성 페이지 연결
-- 임시 사용자 홈으로 clean install, 0.4.2 upgrade, conflict, rollback,
-  idempotency를 검증
-
-## 0.5.0 변경 사항
-
-- Dashboard, Orchestrator, Private Git Knowledge를 한 Configuration Center에서 설정
-- 기존 명령은 유지하되 해당 설정 페이지 영역으로 연결
-- 플러그인과 스킬 공개 이름을 `eggr-orchestrator`로 변경
-- 이전 `codex-orchestrator-plugin`을 명시적 설치 시 백업 후 전환
-- `GEMINI.md` 템플릿과 모든 생성·추가 코드를 패키지에서 제거
-- Orchestrator 설정을 프레임워크 공통 EggR 경로로 이동하고 이전 설정은 읽기 호환
-
-## 0.4.2 변경 사항
-
-- 확장 README를 현재 제품 범위에 맞게 전면 교체
-- 개발 대상이 Antigravity IDE 확장임을 첫 화면에 명시
-- 별도 Antigravity와 Codex 확장이 아님을 명시
-- 올바른 Antigravity IDE CLI wrapper와 잘못된 실행 파일을 명시
-- 세 갈래 설정, 의존성, 데이터 경로, 자동 설치하지 않는 범위를 통합 설명
-
-## 0.4.1 변경 사항
-
-0.4.0은 Windows PowerShell 5.1이 `roots.json` 앞에 기록한 UTF-8 BOM을 제거하지
-않아 확장 활성화가 실패할 수 있었다.
-
-0.4.1에서는 다음을 수정했다.
-
-- BOM이 있는 UTF-8 JSON 읽기 지원
-- `roots.json`, `.eggr/workspace.json`, 설정 마법사의 공통 JSON 처리
-- Windows root 설정 도구의 BOM 없는 UTF-8 저장
-- BOM 재현 headless·extension-host 테스트
-- `EggR: Install or Update Orchestrator` 명칭 정리
-- Antigravity와 Antigravity IDE 실행 파일 구분 명시
+설정에 외부 secret이 필요하면 값 대신 사용자가 선택한 환경 변수 이름만 기록한다.
+로그를 공유하기 전에도 경로, remote URL, prompt와 token을 제거해야 한다.
 
 ## 문제 해결
 
-### 확장은 설치됐지만 EggR 명령이 보이지 않음
+### 확장은 설치됐지만 명령이 보이지 않음
 
-1. 확장 카탈로그가 `integratedpower.antigravity-ide-dashboard@0.4.1` 이상인지
-   확인한다.
+1. Antigravity IDE의 Extensions 화면에서 Integrated Power가 활성화됐는지 확인한다.
 2. `Developer: Reload Window`를 실행한다.
-3. 명령 팔레트에서 `EggR:`를 다시 검색한다.
-4. 계속 실패하면 최신 로그의 Dashboard 활성화 오류를 확인한다.
+3. 명령 팔레트에서 `Integrated Power:`를 다시 검색한다.
+4. 계속 실패하면 다음 확장 호스트 로그에서 활성화 오류를 확인한다.
 
    ```text
    %APPDATA%\Antigravity IDE\logs\<최근 세션>\window1\exthost\exthost.log
@@ -231,25 +206,29 @@ dirty 변경을 보존하며 commit, pull, rebase, checkout, push를 실행하�
 
 ### 별도 Antigravity가 시작됨
 
-Antigravity IDE CLI 대신 다음 파일을 잘못 실행했는지 확인한다.
+확장 관리에는 다음 wrapper만 사용한다.
 
 ```text
-%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe
+%LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd
 ```
 
-확장 관리에는 `Antigravity IDE\bin\antigravity-ide.cmd`만 사용한다.
+### 로그인 또는 인증 문제
 
-### Antigravity IDE 로그인 문제
+Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integrated Power는
+사용자 계정을 삭제하거나 로그인 상태를 복구하지 않는다. 확장 활성화 오류와 인증
+오류를 같은 원인으로 단정하지 말고 제품별 로그를 분리해 확인한다. Agy 사용량이
+표시되지 않으면 Agy TUI에서 로그인을 확인하고 `/usage`가 동작하는지 먼저 확인한다.
 
-로그인과 OAuth는 Antigravity IDE 자체 기능이다. Dashboard는 로그인 상태를
-삭제하거나 계정을 변경하지 않는다. Dashboard 활성화 오류와 인증 오류를 같은
-원인으로 단정하지 말고 `auth.log`와 `exthost.log`를 나누어 확인한다.
+## 공개판 지원 범위
 
-## 현재 제약
-
-- Windows 11을 우선 검증했다. Linux와 macOS 배포는 후속 범위다.
+- Windows 11을 우선 검증한다. Linux와 macOS 배포는 후속 범위다.
 - provider가 실제 token usage를 제공하지 않으면 값을 0으로 만들지 않고
   `estimated` 또는 `unavailable`로 표시한다.
-- Ollama/vLLM이 설치되지 않은 환경에서는 로컬 모델 선택 결과만 검증할 수 있으며
-  실제 추론 성능은 측정할 수 없다.
-- 공개 marketplace 배포 전 repository metadata와 LICENSE 정책을 확정해야 한다.
+- Ollama나 vLLM이 없는 환경에서는 후보 선택을 검증할 수 있지만 실제 추론 성능을
+  측정할 수 없다.
+- Agy 사용량 표시는 Windows에서 설치된 Agy의 로컬 로그인 정보와 사용량 API에
+  의존한다. Agy가 없거나 로그인되지 않은 환경에서는 값을 표시할 수 없다.
+
+라이선스, 보안 신고, 지원 범위와 변경 이력은 각각 [LICENSE](LICENSE),
+[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md), [SECURITY.md](SECURITY.md),
+[SUPPORT.md](SUPPORT.md), [CHANGELOG.md](CHANGELOG.md)에서 확인한다.

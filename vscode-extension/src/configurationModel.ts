@@ -408,7 +408,7 @@ export async function offerFirstRunSetup(
   const status = getFirstRunStatus(context);
   if (status.dashboard && status.orchestrator && status.knowledge) return;
   const action = await vscode.window.showInformationMessage(
-    "EggR Dashboard, Orchestrator, Private Git Knowledge를 한 설정 화면에서 준비할 수 있습니다.",
+    "Integrated Power Dashboard, Integrated Orchestrator, Private Git Knowledge를 한 설정 화면에서 준비할 수 있습니다.",
     "설정 센터 열기",
     "나중에",
   );

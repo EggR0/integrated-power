@@ -1,4 +1,4 @@
-# EggR Orchestrator Plugin
+# Integrated Orchestrator Plugin
 
 Antigravity IDE에서 현재 에이전트 직접 처리, Codex 위임, 하드웨어에 맞는
 로컬 LLM 전처리 경로를 선택하는 EggR 플러그인입니다.
@@ -6,7 +6,7 @@ Antigravity IDE에서 현재 에이전트 직접 처리, Codex 위임, 하드웨
 ## 설치
 
 1. 권장: Antigravity IDE의 `EggR: Open Configuration Center`에서
-   Orchestrator 설정을 저장하고 플러그인을 설치합니다.
+   Integrated Orchestrator 설정을 저장하고 플러그인을 설치합니다.
 2. 수동 설치: 이 폴더를
    `~/.gemini/config/plugins/eggr-orchestrator-plugin/`에 복사합니다.
 3. 독립 설정: `install/Install-Plugin.ps1`을 실행합니다.

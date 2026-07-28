@@ -72,12 +72,12 @@ async function installOrUpdateEggROrchestrator(
 
     if (!installResult.installed) {
       throw new Error(
-        installResult.reason ?? "EggR Orchestrator를 설치하지 못했습니다.",
+        installResult.reason ?? "Integrated Orchestrator를 설치하지 못했습니다.",
       );
     }
 
     return [
-      "EggR Orchestrator 설치 완료",
+      "Integrated Orchestrator 설치 완료",
       installResult.migratedLegacy
         ? "이전 codex-orchestrator 플러그인은 백업 후 전환"
         : undefined,
@@ -88,7 +88,7 @@ async function installOrUpdateEggROrchestrator(
       .join(" · ");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`EggR Orchestrator 설치 실패: ${message}`);
+    throw new Error(`Integrated Orchestrator 설치 실패: ${message}`);
   }
 }
 
