@@ -85,6 +85,8 @@ $knowledgeScripts = @(
     'eggr-roots.ps1',
     'set-eggr-roots.ps1',
     'initialize-eggr-knowledge.ps1',
+    'route-knowledge.ps1',
+    'save-knowledge.ps1',
     'save-agent-worklog.ps1'
 )
 foreach ($scriptName in $knowledgeScripts) {

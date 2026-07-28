@@ -173,16 +173,33 @@ Integrated Orchestrator는 다음 두 정책을 제공한다.
 Integrated Power는 개발자의 Knowledge 저장소 내용을 배포하지 않는다. 각 사용자는
 자신의 private Git remote 또는 원격 없는 `local_only` 저장소를 선택한다.
 
+확장에는 Win11용 Knowledge 설정·분류·저장 도구가 포함된다. Configuration
+Center의 **내장 Knowledge 도구 설치·복구**가 이를
+`%LOCALAPPDATA%\IntegratedPower\bin`에 설치하므로 별도
+`environment-bootstrap` clone은 필수가 아니다.
+
 Git 작성자 email은 commit metadata이며 로그인 수단이 아니다. 원격 인증은 Git
 Credential Manager 또는 SSH agent가 담당한다. 최초 설정·재설정 마법사는 기존
 branch와 dirty 변경을 보존하며 commit, pull, rebase, checkout과 push를 자동
 실행하지 않는다.
 
-반면 작업 규칙이 종료 시 `save-agent-worklog`를 호출하면 중앙
-`00 Inbox/Agent Worklog.md` 한 파일만 검증·stage·commit한다. origin이 있는
-`agent/...` 브랜치에서는 `pull --rebase` 후 push까지 수행한다. 즉 “저장소 설정”은
-사용자 파일을 자동 동기화하지 않고, “작업 로그 저장”은 명시된 한 파일만 자동
-동기화한다.
+마법사는 기존 파일을 덮어쓰지 않고 빠진 Obsidian 기본 구조와
+`.ai/knowledge-routing.json`만 만든다.
+
+| 경로 | 지식 종류 |
+|---|---|
+| `00 Inbox` | 분류가 불확실한 기록과 Agent Worklog |
+| `10 Projects` | 종료 조건이 있는 프로젝트 |
+| `20 Knowledge` | 여러 작업에서 재사용할 지식·방법 |
+| `30 Areas` | 지속적으로 관리할 운영·책임 영역 |
+| `90 Templates` | 재사용 서식 |
+
+에이전트는 `route-knowledge`로 기존 id·별칭·제목·파일명을 먼저 검사한다. 같은
+주제가 있으면 기존 문서를 갱신하고, 불확실하면 새 폴더 대신 `00 Inbox`를 쓴다.
+`save-knowledge`와 `save-agent-worklog`는 명시된 허용 파일만 검증·stage·commit하고
+origin이 있으면 `main`을 `pull --rebase --autostash`한 뒤 force 없이 push한다.
+Knowledge의 최종 기준은 항상 `main`이며 작업 이름의 `agent/...` 브랜치를 만들지
+않는다. 코드·설정 저장소의 임시 작업 브랜치 정책과 구분된다.
 
 GitHub 사용자명을 바꾼 경우 Configuration Center의 Knowledge 탭에서 다음 순서로
 재설정한다.
@@ -202,6 +219,7 @@ GitHub 사용자명을 바꾼 경우 Configuration Center의 Knowledge 탭에서
 | 기본 runtime state | `%LOCALAPPDATA%\IntegratedPower\state` |
 | Integrated Orchestrator 설정 | `%USERPROFILE%\.config\integrated-power\orchestrator.json` |
 | Antigravity IDE plugin | `%USERPROFILE%\.gemini\config\plugins\ip-orchestrator-plugin` |
+| Win11 Knowledge 명령 | `%LOCALAPPDATA%\IntegratedPower\bin` |
 | Private Git Knowledge | 사용자가 최초 설정에서 선택 |
 
 현재 PC의 절대 경로나 Git 원격을 다른 사용자에게 배포하지 않는다. 새 PC에서는

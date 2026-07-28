@@ -149,6 +149,7 @@ test("package uses the EggR publisher and canonical public repository", () => {
 test("configuration center keeps three independent setup models", () => {
   const modelSource = readText("src", "configurationModel.ts");
   const centerSource = readText("src", "ConfigurationCenter.ts");
+  const installerSource = readText("src", "KnowledgeToolInstaller.ts");
 
   assert.ok(modelSource.includes("saveDashboardConfiguration"));
   assert.ok(modelSource.includes("saveOrchestratorConfiguration"));
@@ -158,7 +159,24 @@ test("configuration center keeps three independent setup models", () => {
   assert.ok(centerSource.includes("Integrated Power Configuration Center"));
   assert.ok(centerSource.includes("상태 다시 확인은 현재 Windows 사용자·시스템 PATH를 새로 읽으므로"));
   assert.ok(centerSource.includes("save-agent-worklog"));
+  assert.ok(centerSource.includes("내장 Knowledge 도구 설치·복구"));
+  assert.ok(centerSource.includes("Knowledge는 main으로 통합해야 합니다."));
+  assert.ok(installerSource.includes('"IntegratedPower", "bin"'));
+  assert.ok(installerSource.includes(".integrated-power-backups"));
   assert.ok(fs.existsSync(path.join(extensionRoot, "assets", "private-git-knowledge.md")));
+  for (const name of [
+    "eggr-roots.ps1",
+    "set-eggr-roots.ps1",
+    "initialize-eggr-knowledge.ps1",
+    "route-knowledge.ps1",
+    "save-knowledge.ps1",
+    "save-agent-worklog.ps1",
+  ]) {
+    assert.ok(
+      fs.existsSync(path.join(extensionRoot, "assets", "knowledge-tools", name)),
+      `Bundled Knowledge tool is missing: ${name}`,
+    );
+  }
 });
 
 test("extension README identifies the Antigravity IDE product boundary", () => {

@@ -11,7 +11,7 @@ Antigravity IDE 전역 plugin root가 변경된다.
 
 1. `release-manifest.json`의 설치 payload SHA-256 검증
 2. 정확한 Antigravity IDE CLI를 통한 Dashboard VSIX 설치·갱신
-3. `%LOCALAPPDATA%\EggR\bin`의 EggR 소유 Windows Knowledge 명령 설치
+3. `%LOCALAPPDATA%\IntegratedPower\bin`의 제품 소유 Windows Knowledge 명령 설치
 4. 기존 Windows 명령이 다른 경우 시각별 폴더에 백업
 
 별도 Antigravity 애플리케이션, `GEMINI.md`, 사용자 Knowledge 내용, 로그인 정보,

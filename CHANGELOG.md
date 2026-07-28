@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.4] - 2026-07-28
+
+### Changed
+
+- Bundled the Win11 Knowledge setup, route, and save tools in the extension so
+  Configuration Center no longer requires a separate environment-bootstrap
+  installation.
+- Added a non-overwriting Obsidian scaffold and deterministic routing policy
+  for Inbox, Projects, reusable Knowledge, Areas, and Templates.
+- Made user-owned Knowledge `main` the canonical global store and prohibited
+  task-named Knowledge branches in the installed rules and save commands.
+- Added current Knowledge branch, routing-policy, and remaining agent-branch
+  diagnostics to Configuration Center.
+
 ## [0.7.3] - 2026-07-28
 
 ### Changed
