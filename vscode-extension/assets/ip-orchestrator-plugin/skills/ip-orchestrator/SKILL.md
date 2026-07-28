@@ -1,13 +1,13 @@
 ---
-name: eggr-orchestrator
-description: Routes non-trivial AI engineering work between the active agent, Codex, and hardware-compatible local LLMs while recording route, quality, elapsed time, and token evidence. Use for architecture, code review, complex implementation, large refactors, cross-model critique, long-running delegation, local preprocessing, VRAM-aware model selection, token-efficiency analysis, or explicit EggR and orchestration requests.
+name: ip-orchestrator
+description: Routes non-trivial AI engineering work between the active agent, Codex, and hardware-compatible local LLMs while recording route, quality, elapsed time, and token evidence. Use for architecture, code review, complex implementation, large refactors, cross-model critique, long-running delegation, local preprocessing, VRAM-aware model selection, token-efficiency analysis, or explicit Integrated Power, ip-orchestrator, and orchestration requests.
 ---
 
 # AI Work Router
 
 This is the primary routing skill for token-efficient AI work. When a task may benefit from delegation, classify the work first and choose one of three routes:
 
-Before choosing a route, read `~/.config/eggr/orchestrator.json` when it
+Before choosing a route, read `~/.config/integrated-power/orchestrator.json` when it
 exists. Never select a route that is absent from `EnabledRoutes`. Use
 `DefaultRoute` only when task evidence does not favor another enabled route.
 `LocalLlm.Endpoint` and `LocalLlm.Model` are non-secret defaults; API key values
@@ -65,7 +65,7 @@ Follow these explicit rules:
 4. **Execution Time and Token Feedback Loop**:
    - When the background script completes, observe the actual elapsed time.
    - Retrieve usage from the provider response or JSON log when available. Label the evidence as `provider_reported`, `calculated`, `estimated`, or `unavailable`; never silently substitute an estimate for actual usage.
-   - Store metrics below the EggR workspace state `reports/` directory. The bundled path module resolves it without a repository marker file.
+   - Store metrics below the Integrated Power workspace state `reports/` directory. The bundled path module resolves it without a repository marker file.
    - Compare the pre-start point estimate with provider-reported actual usage. Calibrate by provider, model, task class, route, and agent surface; do not claim an improvement unless the task also passed its quality checks.
    - Report a percentage only when both the numerator and a documented capacity/budget denominator are known.
    - Follow the repository's `docs/reference/eggr-telemetry.ko.md` and `config/eggr.telemetry.schema.json` when they are present.

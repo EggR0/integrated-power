@@ -29,10 +29,10 @@ Write-Host "==========================================" -ForegroundColor Cyan
 $userProfile = [Environment]::GetFolderPath("UserProfile")
 $configPath = if (-not [string]::IsNullOrWhiteSpace($SettingsPath)) {
     [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($SettingsPath))
-} elseif (-not [string]::IsNullOrWhiteSpace($env:EGGR_ORCHESTRATOR_SETTINGS)) {
-    [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:EGGR_ORCHESTRATOR_SETTINGS))
+} elseif (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS)) {
+    [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS))
 } else {
-    Join-Path $userProfile ".config\eggr\orchestrator.json"
+    Join-Path $userProfile ".config\integrated-power\orchestrator.json"
 }
 $configDirectory = Split-Path -Parent $configPath
 
@@ -102,8 +102,12 @@ function Get-NvidiaSummary {
 
 $existing = [ordered]@{}
 $readConfigPath = $configPath
+$previousConfigPath = Join-Path $userProfile ".config\eggr\orchestrator.json"
 $legacyConfigPath = Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
 if (-not (Test-Path -LiteralPath $readConfigPath -PathType Leaf) -and
+    (Test-Path -LiteralPath $previousConfigPath -PathType Leaf)) {
+    $readConfigPath = $previousConfigPath
+} elseif (-not (Test-Path -LiteralPath $readConfigPath -PathType Leaf) -and
     (Test-Path -LiteralPath $legacyConfigPath -PathType Leaf)) {
     $readConfigPath = $legacyConfigPath
 }
@@ -211,7 +215,7 @@ $existing["EnabledRoutes"] = $EnabledRoutes
 $existing["DefaultRoute"] = $DefaultRoute
 $existing["LocalLlm"] = $localLlm
 $existing["FirstRunCompletedAt"] = [DateTimeOffset]::UtcNow.ToString("o")
-$existing["ConfiguredBy"] = "eggr-orchestrator-standalone/2.1.0"
+$existing["ConfiguredBy"] = "ip-orchestrator-standalone/3.0.0"
 
 New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
 $temporary = Join-Path $configDirectory ("orchestrator.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))

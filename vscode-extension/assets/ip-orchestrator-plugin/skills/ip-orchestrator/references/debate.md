@@ -11,5 +11,5 @@ Initiate durable Architecture Decision Record (ADR) debates when an architectura
 - In the Codex prompt, explicitly tell Codex that `-ContextFile` values are file paths and that Codex must read the files itself using its sandbox permissions.
 
 ## Output
-- Human-readable transcript: a markdown file under the EggR workspace state `discussions/` directory.
-- System logs and prepared prompts: under the EggR workspace state `sessions/<run-id>/` directory.
+- Human-readable transcript: a markdown file under the Integrated Power workspace state `discussions/` directory.
+- System logs and prepared prompts: under the Integrated Power workspace state `sessions/<run-id>/` directory.

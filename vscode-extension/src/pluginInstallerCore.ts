@@ -2,11 +2,13 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 
-export const EGGR_PLUGIN_NAME = "eggr-orchestrator-plugin";
-export const EGGR_SKILL_NAME = "eggr-orchestrator";
+export const IP_PLUGIN_NAME = "ip-orchestrator-plugin";
+export const IP_SKILL_NAME = "ip-orchestrator";
+export const PREVIOUS_PLUGIN_NAME = "eggr-orchestrator-plugin";
+export const PREVIOUS_SKILL_NAME = "eggr-orchestrator";
 export const LEGACY_PLUGIN_NAME = "codex-orchestrator-plugin";
 export const LEGACY_SKILL_NAME = "codex-orchestrator";
-export const INSTALL_STATE_FILE = ".eggr-install-state.json";
+export const INSTALL_STATE_FILE = ".integrated-power-install-state.json";
 
 const LEGACY_AUTHOR_SHA256 =
   "376c84cfc52dc11f9604773667eb138f2effb68944708946944ac1f232d40a91";
@@ -40,6 +42,7 @@ export interface PluginInstallPlan {
   pluginRoot: string;
   source: PluginCandidateInspection;
   destination: PluginCandidateInspection;
+  predecessor: PluginCandidateInspection;
   legacy: PluginCandidateInspection;
   backupRoot: string;
   actions: PluginInstallAction[];
@@ -71,11 +74,11 @@ export interface PluginInstallExecutionResult {
   plan: PluginInstallPlan;
 }
 
-interface EggRInstallState {
+interface IntegratedPowerInstallState {
   schemaVersion: 1;
-  productId: "eggr-orchestrator";
-  pluginName: typeof EGGR_PLUGIN_NAME;
-  skillName: typeof EGGR_SKILL_NAME;
+  productId: "ip-orchestrator";
+  pluginName: typeof IP_PLUGIN_NAME;
+  skillName: typeof IP_SKILL_NAME;
   pluginVersion: string;
   extensionVersion: string;
   installedAt: string;
@@ -88,28 +91,36 @@ export function createPluginInstallPlan(
   const homeDir = path.resolve(options.homeDir);
   const geminiRoot = path.join(homeDir, ".gemini");
   const pluginRoot = path.join(geminiRoot, "config", "plugins");
-  const destinationPath = path.join(pluginRoot, EGGR_PLUGIN_NAME);
+  const destinationPath = path.join(pluginRoot, IP_PLUGIN_NAME);
+  const predecessorPath = path.join(pluginRoot, PREVIOUS_PLUGIN_NAME);
   const legacyPath = path.join(pluginRoot, LEGACY_PLUGIN_NAME);
-  const backupRoot = path.join(pluginRoot, ".eggr-backups");
+  const backupRoot = path.join(pluginRoot, ".integrated-power-backups");
   const sourcePath = path.resolve(options.sourcePath);
   const stamp = (options.now ?? new Date())
     .toISOString()
     .replace(/[:.]/g, "-");
 
   assertPathInside(pluginRoot, destinationPath);
+  assertPathInside(pluginRoot, predecessorPath);
   assertPathInside(pluginRoot, legacyPath);
   assertPathInside(pluginRoot, backupRoot);
 
   const source = inspectCandidate(
     sourcePath,
-    EGGR_PLUGIN_NAME,
-    EGGR_SKILL_NAME,
+    IP_PLUGIN_NAME,
+    IP_SKILL_NAME,
     true,
   );
   const destination = inspectCandidate(
     destinationPath,
-    EGGR_PLUGIN_NAME,
-    EGGR_SKILL_NAME,
+    IP_PLUGIN_NAME,
+    IP_SKILL_NAME,
+    false,
+  );
+  const predecessor = inspectCandidate(
+    predecessorPath,
+    PREVIOUS_PLUGIN_NAME,
+    PREVIOUS_SKILL_NAME,
     false,
   );
   const legacy = inspectCandidate(
@@ -124,10 +135,13 @@ export function createPluginInstallPlan(
   if (!fs.existsSync(geminiRoot)) {
     blockingReason = `Antigravity configuration directory was not found: ${geminiRoot}`;
   } else if (source.state === "conflict" || source.state === "absent") {
-    blockingReason = `Bundled EggR plugin is invalid: ${source.detail}`;
+    blockingReason = `Bundled Integrated Power plugin is invalid: ${source.detail}`;
   } else if (destination.state === "conflict") {
     blockingReason =
-      `The destination is not a recognized EggR plugin and will not be moved: ${destinationPath}`;
+      `The destination is not a recognized Integrated Power plugin and will not be moved: ${destinationPath}`;
+  } else if (predecessor.state === "conflict") {
+    blockingReason =
+      `The predecessor path does not match a recognized Integrated Power distribution and will not be moved: ${predecessorPath}`;
   } else if (legacy.state === "conflict") {
     blockingReason =
       `The legacy path does not match an EggR-distributed legacy plugin and will not be moved: ${legacyPath}`;
@@ -143,22 +157,31 @@ export function createPluginInstallPlan(
       actions.push({
         type: "no-op",
         target: destinationPath,
-        description: `EggR plugin ${sourceVersion} is already installed with matching managed checksums.`,
+        description: `Integrated Power plugin ${sourceVersion} is already installed with matching managed checksums.`,
       });
     } else if (destination.state === "absent") {
       actions.push({
         type: "install",
         source: sourcePath,
         target: destinationPath,
-        description: `Install ${EGGR_PLUGIN_NAME} ${sourceVersion}.`,
+        description: `Install ${IP_PLUGIN_NAME} ${sourceVersion}.`,
       });
     } else {
       actions.push({
         type: "replace",
         source: sourcePath,
         target: destinationPath,
-        backup: path.join(backupRoot, `${EGGR_PLUGIN_NAME}-${stamp}`),
-        description: `Back up and replace the existing recognized EggR plugin.`,
+        backup: path.join(backupRoot, `${IP_PLUGIN_NAME}-${stamp}`),
+        description: `Back up and replace the existing recognized Integrated Power plugin.`,
+      });
+    }
+
+    if (predecessor.state !== "absent") {
+      actions.push({
+        type: "backup-legacy",
+        target: predecessorPath,
+        backup: path.join(backupRoot, `${PREVIOUS_PLUGIN_NAME}-${stamp}`),
+        description: `Back up the recognized eggr-orchestrator predecessor so Antigravity IDE loads only ip-orchestrator.`,
       });
     }
 
@@ -167,7 +190,7 @@ export function createPluginInstallPlan(
         type: "backup-legacy",
         target: legacyPath,
         backup: path.join(backupRoot, `${LEGACY_PLUGIN_NAME}-${stamp}`),
-        description: `Move the recognized legacy plugin to an EggR backup so Antigravity does not load both skill names.`,
+        description: `Back up the recognized codex-orchestrator predecessor so Antigravity IDE loads only ip-orchestrator.`,
       });
     }
   }
@@ -177,6 +200,7 @@ export function createPluginInstallPlan(
     pluginRoot,
     source,
     destination,
+    predecessor,
     legacy,
     backupRoot,
     actions,
@@ -197,19 +221,19 @@ export async function executePluginInstallPlan(
   const installAction = plan.actions.find(
     (action) => action.type === "install" || action.type === "replace",
   );
-  const legacyAction = plan.actions.find(
+  const legacyActions = plan.actions.filter(
     (action) => action.type === "backup-legacy",
   );
   const backupPaths: string[] = [];
   const processId = options.processId ?? process.pid;
   const stagePath = path.join(
     plan.pluginRoot,
-    `.${EGGR_PLUGIN_NAME}.stage-${processId}-${plan.stamp}`,
+    `.${IP_PLUGIN_NAME}.stage-${processId}-${plan.stamp}`,
   );
   assertPathInside(plan.pluginRoot, stagePath);
 
   let destinationMoved = false;
-  let legacyMoved = false;
+  const movedLegacyActions: PluginInstallAction[] = [];
   let destinationActivated = false;
 
   try {
@@ -235,10 +259,11 @@ export async function executePluginInstallPlan(
       throwIfRequested(options, "after-destination-backup");
     }
 
-    if (legacyAction?.backup) {
+    for (const legacyAction of legacyActions) {
+      if (!legacyAction.backup) continue;
       await fs.promises.mkdir(plan.backupRoot, { recursive: true });
       await fs.promises.rename(legacyAction.target, legacyAction.backup);
-      legacyMoved = true;
+      movedLegacyActions.push(legacyAction);
       backupPaths.push(legacyAction.backup);
       throwIfRequested(options, "after-legacy-backup");
     }
@@ -252,18 +277,18 @@ export async function executePluginInstallPlan(
 
     const result: PluginInstallExecutionResult = {
       installed: fs.existsSync(
-        path.join(plan.pluginRoot, EGGR_PLUGIN_NAME, "plugin.json"),
+        path.join(plan.pluginRoot, IP_PLUGIN_NAME, "plugin.json"),
       ),
-      changed: Boolean(installAction || legacyAction),
-      destination: path.join(plan.pluginRoot, EGGR_PLUGIN_NAME),
-      migratedLegacy: Boolean(legacyAction),
+      changed: Boolean(installAction || legacyActions.length),
+      destination: path.join(plan.pluginRoot, IP_PLUGIN_NAME),
+      migratedLegacy: legacyActions.length > 0,
       backupPaths,
       plan,
     };
     if (options.journalPath) {
       await writeJsonAtomic(options.journalPath, {
         schemaVersion: 1,
-        productId: "eggr-orchestrator",
+        productId: "ip-orchestrator",
         completedAt: (options.now ?? new Date()).toISOString(),
         extensionVersion: options.extensionVersion,
         changed: result.changed,
@@ -277,21 +302,22 @@ export async function executePluginInstallPlan(
   } catch (error) {
     if (
       destinationActivated &&
-      fs.existsSync(path.join(plan.pluginRoot, EGGR_PLUGIN_NAME))
+      fs.existsSync(path.join(plan.pluginRoot, IP_PLUGIN_NAME))
     ) {
       await fs.promises.rename(
-        path.join(plan.pluginRoot, EGGR_PLUGIN_NAME),
+        path.join(plan.pluginRoot, IP_PLUGIN_NAME),
         stagePath,
       );
       destinationActivated = false;
     }
-    if (
-      legacyMoved &&
-      legacyAction?.backup &&
-      !fs.existsSync(legacyAction.target) &&
-      fs.existsSync(legacyAction.backup)
-    ) {
-      await fs.promises.rename(legacyAction.backup, legacyAction.target);
+    for (const legacyAction of [...movedLegacyActions].reverse()) {
+      if (
+        legacyAction.backup &&
+        !fs.existsSync(legacyAction.target) &&
+        fs.existsSync(legacyAction.backup)
+      ) {
+        await fs.promises.rename(legacyAction.backup, legacyAction.target);
+      }
     }
     if (
       destinationMoved &&
@@ -354,12 +380,14 @@ function inspectCandidate(
   }
 
   if (source) {
-    const eggRMetadata =
-      manifest && isRecord(manifest.eggr) ? manifest.eggr : undefined;
+    const productMetadata =
+      manifest && isRecord(manifest.integratedPower)
+        ? manifest.integratedPower
+        : undefined;
     if (
-      !eggRMetadata ||
-      eggRMetadata.productId !== "eggr-orchestrator" ||
-      eggRMetadata.managed !== true
+      !productMetadata ||
+      productMetadata.productId !== "ip-orchestrator" ||
+      productMetadata.managed !== true
     ) {
       return {
         path: candidatePath,
@@ -367,7 +395,8 @@ function inspectCandidate(
         pluginName,
         skillName,
         version,
-        detail: "Bundled source is missing the EggR product ownership marker.",
+        detail:
+          "Bundled source is missing the Integrated Power ownership marker.",
       };
     }
     return {
@@ -388,17 +417,29 @@ function inspectCandidate(
         : undefined;
     const eggRMetadata =
       manifest && isRecord(manifest.eggr) ? manifest.eggr : undefined;
+    const productMetadata =
+      manifest && isRecord(manifest.integratedPower)
+        ? manifest.integratedPower
+        : undefined;
     const knownLegacyDistribution =
       expectedPluginName === LEGACY_PLUGIN_NAME &&
       matchesLegacyAuthor(author) &&
       typeof version === "string" &&
       /^1\./.test(version);
-    const knownEggRDistribution =
-      expectedPluginName === EGGR_PLUGIN_NAME &&
+    const knownPreviousDistribution =
+      expectedPluginName === PREVIOUS_PLUGIN_NAME &&
       ((eggRMetadata?.productId === "eggr-orchestrator" &&
         eggRMetadata.managed === true) ||
-        (matchesLegacyAuthor(author) && version === "2.0.0"));
-    if (!knownLegacyDistribution && !knownEggRDistribution) {
+        (matchesLegacyAuthor(author) && /^2\./.test(version ?? "")));
+    const knownCurrentDistribution =
+      expectedPluginName === IP_PLUGIN_NAME &&
+      productMetadata?.productId === "ip-orchestrator" &&
+      productMetadata.managed === true;
+    if (
+      !knownLegacyDistribution &&
+      !knownPreviousDistribution &&
+      !knownCurrentDistribution
+    ) {
       return {
         path: candidatePath,
         state: "conflict",
@@ -406,7 +447,7 @@ function inspectCandidate(
         skillName,
         version,
         detail:
-          "The plugin identity matches, but no known EggR ownership signature or install state was found.",
+          "The plugin identity matches, but no known Integrated Power ownership signature or install state was found.",
       };
     }
     return {
@@ -416,7 +457,7 @@ function inspectCandidate(
       skillName,
       version,
       detail:
-        "Recognized plugin without an EggR install state. It can be backed up, never deleted in place.",
+        "Recognized plugin without a current install state. It can be backed up, never deleted in place.",
     };
   }
   const currentHashes = hashManagedTree(candidatePath);
@@ -428,8 +469,8 @@ function inspectCandidate(
     skillName,
     version,
     detail: checksumsMatch
-      ? "EggR ownership marker and managed checksums match."
-      : "EggR ownership marker exists, but one or more managed files changed; the whole directory will be backed up before replacement.",
+      ? "Integrated Power ownership marker and managed checksums match."
+      : "Integrated Power ownership marker exists, but one or more managed files changed; the whole directory will be backed up before replacement.",
   };
 }
 
@@ -437,7 +478,7 @@ function createInstallState(
   pluginPath: string,
   extensionVersion: string,
   now: Date,
-): EggRInstallState {
+): IntegratedPowerInstallState {
   const manifest = readJsonObject(path.join(pluginPath, "plugin.json"));
   const version =
     manifest && typeof manifest.version === "string"
@@ -445,9 +486,9 @@ function createInstallState(
       : "unknown";
   return {
     schemaVersion: 1,
-    productId: "eggr-orchestrator",
-    pluginName: EGGR_PLUGIN_NAME,
-    skillName: EGGR_SKILL_NAME,
+    productId: "ip-orchestrator",
+    pluginName: IP_PLUGIN_NAME,
+    skillName: IP_SKILL_NAME,
     pluginVersion: version,
     extensionVersion,
     installedAt: now.toISOString(),
@@ -455,13 +496,15 @@ function createInstallState(
   };
 }
 
-function readInstallState(filePath: string): EggRInstallState | undefined {
+function readInstallState(
+  filePath: string,
+): IntegratedPowerInstallState | undefined {
   const value = readJsonObject(filePath);
   if (
     !value ||
     value.schemaVersion !== 1 ||
-    value.productId !== "eggr-orchestrator" ||
-    value.pluginName !== EGGR_PLUGIN_NAME ||
+    value.productId !== "ip-orchestrator" ||
+    value.pluginName !== IP_PLUGIN_NAME ||
     !isRecord(value.managedFiles)
   ) {
     return undefined;
@@ -473,9 +516,9 @@ function readInstallState(filePath: string): EggRInstallState | undefined {
   }
   return {
     schemaVersion: 1,
-    productId: "eggr-orchestrator",
-    pluginName: EGGR_PLUGIN_NAME,
-    skillName: EGGR_SKILL_NAME,
+    productId: "ip-orchestrator",
+    pluginName: IP_PLUGIN_NAME,
+    skillName: IP_SKILL_NAME,
     pluginVersion:
       typeof value.pluginVersion === "string" ? value.pluginVersion : "unknown",
     extensionVersion:

@@ -11,7 +11,7 @@ modification, embedding, redistribution or a separately negotiated product
 license.
 
 Submit a request with the public
-[commercial-license issue template](https://github.com/R-Github04/integrated-power-antigravity/issues/new?template=commercial-license.yml).
+[commercial-license issue template](https://github.com/EggR0/integrated-power/issues/new?template=commercial-license.yml).
 
 The issue form is public. Do not include confidential business information,
 credentials, source code that cannot be disclosed, personal data or proposed

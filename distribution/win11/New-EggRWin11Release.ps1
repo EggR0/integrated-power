@@ -48,7 +48,7 @@ $packageJson = Get-Content -LiteralPath $packageJsonPath -Raw -Encoding UTF8 | C
 if ([string]::IsNullOrWhiteSpace($ReleaseVersion)) {
     $ReleaseVersion = [string]$packageJson.version
 }
-if ([string]$packageJson.publisher + '.' + [string]$packageJson.name -ne 'integratedpower.integrated-power') {
+if ([string]$packageJson.publisher + '.' + [string]$packageJson.name -ne 'EggR.integrated-power') {
     throw 'Unexpected extension identity in package.json.'
 }
 if ([string]$packageJson.version -ne $ReleaseVersion) {
@@ -74,7 +74,7 @@ try {
     $vsixArchive.Dispose()
 }
 $vsixExtensionId = [string]$vsixPackageJson.publisher + '.' + [string]$vsixPackageJson.name
-if ($vsixExtensionId -ne 'integratedpower.integrated-power') {
+if ($vsixExtensionId -ne 'EggR.integrated-power') {
     throw "Unexpected extension identity inside VSIX: $vsixExtensionId"
 }
 if ([string]$vsixPackageJson.version -ne $ReleaseVersion) {
@@ -203,7 +203,7 @@ $manifest = [ordered]@{
     architecture   = 'any'
     generatedAt    = [DateTime]::UtcNow.ToString('o')
     extension      = [ordered]@{
-        id       = 'integratedpower.integrated-power'
+        id       = 'EggR.integrated-power'
         version  = $ReleaseVersion
         vsixFile = $vsixName
         sha256   = (Get-FileHash -LiteralPath (Join-Path $stageRoot $vsixName) -Algorithm SHA256).Hash

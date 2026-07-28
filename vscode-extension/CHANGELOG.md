@@ -1,6 +1,37 @@
 # Changelog
 
+## [0.7.3] - 2026-07-28
+
+### Changed
+
+- Changed the managed Antigravity IDE plugin and skill identity to
+  `ip-orchestrator-plugin` and `ip-orchestrator`.
+- Added exact-path, non-destructive migration from recognized
+  `eggr-orchestrator` and `codex-orchestrator` installations.
+- Moved the default product state root to
+  `%LOCALAPPDATA%\IntegratedPower\state`; legacy state is copied once without
+  deleting the old directory.
+- Made Configuration Center environment refresh re-read the live Windows
+  user/system PATH and standard CLI install locations, so newly installed
+  GitHub CLI can be detected without restarting the IDE.
+- Added GitHub login/remote detection and an explicit Knowledge `origin`
+  reconfiguration action.
+- Clarified which dependencies are optional and separated the non-mutating
+  Knowledge setup wizard from automatic `save-agent-worklog` synchronization.
+- Expanded the Configuration Center and README explanations of why Dashboard,
+  Integrated Orchestrator, and Private Git Knowledge are separate.
+
 All notable user-facing changes to Integrated Power are recorded here.
+
+## [0.7.2] - 2026-07-28
+
+### Changed
+
+- Adopted `EggR` as the publisher and `EggR.integrated-power` as the extension
+  identity.
+- Moved the public repository to `EggR0/integrated-power`.
+- Removed release numbers and review-state wording from the packaged README so
+  routine GitHub documentation changes do not become stale marketplace text.
 
 ## [0.7.1] - 2026-07-28
 

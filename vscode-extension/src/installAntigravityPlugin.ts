@@ -26,7 +26,7 @@ export function inspectAntigravityPluginInstall(
     sourcePath: path.join(
       context.extensionPath,
       "assets",
-      "eggr-orchestrator-plugin",
+      "ip-orchestrator-plugin",
     ),
     extensionVersion: String(context.extension.packageJSON.version ?? "unknown"),
   });
@@ -40,13 +40,13 @@ export async function installAntigravityPlugin(
     sourcePath: path.join(
       context.extensionPath,
       "assets",
-      "eggr-orchestrator-plugin",
+      "ip-orchestrator-plugin",
     ),
     extensionVersion: String(context.extension.packageJSON.version ?? "unknown"),
     journalPath: path.join(
       context.globalStorageUri.fsPath,
       "installations",
-      "eggr-orchestrator.json",
+      "ip-orchestrator.json",
     ),
   };
   const plan = createPluginInstallPlan(options);

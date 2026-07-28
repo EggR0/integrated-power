@@ -2,13 +2,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 function Get-EggROrchestratorSettingsPath {
-    if (-not [string]::IsNullOrWhiteSpace($env:EGGR_ORCHESTRATOR_SETTINGS)) {
-        return [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:EGGR_ORCHESTRATOR_SETTINGS))
+    if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS)) {
+        return [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS))
     }
     $userProfile = [Environment]::GetFolderPath("UserProfile")
-    $preferred = Join-Path $userProfile ".config\eggr\orchestrator.json"
+    $preferred = Join-Path $userProfile ".config\integrated-power\orchestrator.json"
     if (Test-Path -LiteralPath $preferred -PathType Leaf) {
         return $preferred
+    }
+    $previous = Join-Path $userProfile ".config\eggr\orchestrator.json"
+    if (Test-Path -LiteralPath $previous -PathType Leaf) {
+        return $previous
     }
     $legacy = Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
     if (Test-Path -LiteralPath $legacy -PathType Leaf) {
@@ -33,7 +37,7 @@ function Get-EggROrchestratorSettings {
     try {
         $raw = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
     } catch {
-        throw "EggR orchestrator settings are invalid: $settingsPath. $($_.Exception.Message)"
+        throw "Integrated Power orchestrator settings are invalid: $settingsPath. $($_.Exception.Message)"
     }
 
     $routes = @()
