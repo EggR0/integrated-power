@@ -1,0 +1,23 @@
+{
+  "name": "eggr-orchestrator-plugin",
+  "version": "2.1.0",
+  "description": "Integrated Orchestrator for active-agent work, Codex delegation, and hardware-aware local LLM preprocessing.",
+  "author": {
+    "name": "Integrated Power"
+  },
+  "eggr": {
+    "productId": "eggr-orchestrator",
+    "managed": true,
+    "schemaVersion": 1
+  },
+  "license": "PolyForm-Strict-1.0.0",
+  "keywords": [
+    "eggr",
+    "integrated-power",
+    "codex",
+    "orchestration",
+    "delegation",
+    "architecture",
+    "automation"
+  ]
+}

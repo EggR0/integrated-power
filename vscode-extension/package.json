@@ -1,0 +1,175 @@
+{
+  "name": "antigravity-ide-dashboard",
+  "publisher": "integratedpower",
+  "displayName": "Integrated Power",
+  "description": "Antigravity IDE dashboard for AI usage, local compute, first-run setup, and Integrated Orchestrator management.",
+  "version": "0.7.0",
+  "author": {
+    "name": "Integrated Power"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "icon": "images/integrated-power.png",
+  "galleryBanner": {
+    "color": "#121632",
+    "theme": "dark"
+  },
+  "preview": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/R-Github04/integrated-power-antigravity.git"
+  },
+  "homepage": "https://github.com/R-Github04/integrated-power-antigravity#readme",
+  "bugs": {
+    "url": "https://github.com/R-Github04/integrated-power-antigravity/issues"
+  },
+  "keywords": [
+    "antigravity",
+    "antigravity ide",
+    "ai usage",
+    "agent dashboard",
+    "token usage",
+    "quota",
+    "local llm",
+    "gpu",
+    "vram",
+    "orchestration",
+    "windows 11"
+  ],
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Visualization",
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:integratedPower.agentRunsDashboard",
+    "onCommand:integratedPower.eggr.openConfigurationCenter",
+    "onCommand:integratedPower.eggr.installOrUpdateOrchestrator",
+    "onCommand:integratedPower.eggr.runFirstRunSetup",
+    "onCommand:integratedPower.eggr.runDashboardSetup",
+    "onCommand:integratedPower.eggr.runOrchestratorSetup",
+    "onCommand:integratedPower.eggr.runPrivateKnowledgeSetup"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Integrated Power",
+      "properties": {
+        "integratedPower.view.showAntigravity": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Antigravity IDE capacity section in the dashboard."
+        },
+        "integratedPower.view.showCodex": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Codex capacity section in the dashboard."
+        },
+        "integratedPower.view.showLocalLlm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Local LLM capacity section in the dashboard."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "integratedPower",
+          "title": "Integrated Power",
+          "icon": "$(rocket)"
+        }
+      ]
+    },
+    "views": {
+      "integratedPower": [
+        {
+          "type": "webview",
+          "id": "integratedPower.agentRunsDashboard",
+          "name": "Agent Runs Dashboard",
+          "icon": "$(dashboard)"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "integratedPower.agentRuns.refresh",
+        "title": "Refresh Agent Runs Dashboard",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "integratedPower.agentRuns.openRunsFile",
+        "title": "Open Runs JSONL File",
+        "icon": "$(json)"
+      },
+      {
+        "command": "integratedPower.agentRuns.configureViews",
+        "title": "Antigravity IDE: Configure Dashboard Views"
+      },
+      {
+        "command": "integratedPower.eggr.installOrUpdateOrchestrator",
+        "title": "Integrated Power: Install or Update Integrated Orchestrator"
+      },
+      {
+        "command": "integratedPower.eggr.openConfigurationCenter",
+        "title": "Integrated Power: Open Configuration Center"
+      },
+      {
+        "command": "integratedPower.eggr.runFirstRunSetup",
+        "title": "Integrated Power: Run First-Run Setup"
+      },
+      {
+        "command": "integratedPower.eggr.runDashboardSetup",
+        "title": "Integrated Power: Configure Dashboard"
+      },
+      {
+        "command": "integratedPower.eggr.runOrchestratorSetup",
+        "title": "Integrated Power: Configure Integrated Orchestrator"
+      },
+      {
+        "command": "integratedPower.eggr.runPrivateKnowledgeSetup",
+        "title": "Integrated Power: Configure Private Git Knowledge"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "integratedPower.agentRuns.refresh",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        },
+        {
+          "command": "integratedPower.agentRuns.openRunsFile",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node ./scripts/build-extension.js",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "pnpm run compile && node ./scripts/run-headless-tests.js",
+    "test:extension": "pnpm run compile && node ./out/test/runTest.js",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.2",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^3.0.0",
+    "glob": "^13.0.6",
+    "esbuild": "^0.28.1",
+    "mocha": "^11.7.6",
+    "typescript": "^5.1.3"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3"
+  }
+}

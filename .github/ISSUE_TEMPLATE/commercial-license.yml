@@ -1,0 +1,45 @@
+name: Commercial or modification license
+description: Request separate written permission for commercial use, modification, or redistribution.
+title: "[License] "
+labels:
+  - licensing
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Integrated Power is distributed under the PolyForm Strict License 1.0.0.
+        Use this form to request separate written permission for commercial use,
+        modification, or redistribution. Do not include credentials, private
+        repository content, or other confidential material.
+  - type: input
+    id: organization
+    attributes:
+      label: Organization or project
+      description: A public-facing name is sufficient for the initial request.
+    validations:
+      required: true
+  - type: dropdown
+    id: permission
+    attributes:
+      label: Permission requested
+      options:
+        - Commercial use
+        - Modification
+        - Redistribution
+        - Multiple permissions
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Intended use
+      description: Describe the product, deployment, and expected scale without confidential details.
+    validations:
+      required: true
+  - type: textarea
+    id: contact
+    attributes:
+      label: Preferred contact method
+      description: You may provide a public business contact or ask to continue through a private channel.
+    validations:
+      required: true
