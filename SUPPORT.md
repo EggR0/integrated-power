@@ -12,7 +12,7 @@ and modified third-party IDE builds are outside the initial support scope.
 ## Before requesting help
 
 1. Confirm that the installed product is **Integrated Power** from Publisher
-   **Integrated Power**.
+   **EggR**.
 2. Run `Developer: Reload Window` in Antigravity IDE.
 3. Open `Integrated Power: Open Configuration Center` and review the three
    independent status sections.

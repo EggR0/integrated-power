@@ -37,7 +37,7 @@ function Get-InteractiveInstallerPath {
         }
     } catch { }
 
-    return Join-Path $env:USERPROFILE ".gemini\config\plugins\eggr-orchestrator-plugin\install\Install-Plugin.ps1"
+    return Join-Path $env:USERPROFILE ".gemini\config\plugins\ip-orchestrator-plugin\install\Install-Plugin.ps1"
 }
 
 function Resolve-CodexExeAutomatically {
@@ -46,10 +46,10 @@ function Resolve-CodexExeAutomatically {
     $requested = Test-CodexCandidate -Candidate $RequestedCodexExe
     if ($requested) { return $requested }
 
-    $settingsPath = if (-not [string]::IsNullOrWhiteSpace($env:EGGR_ORCHESTRATOR_SETTINGS)) {
-        [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:EGGR_ORCHESTRATOR_SETTINGS))
+    $settingsPath = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS)) {
+        [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS))
     } else {
-        Join-Path $env:USERPROFILE ".config\eggr\orchestrator.json"
+        Join-Path $env:USERPROFILE ".config\integrated-power\orchestrator.json"
     }
     if (-not (Test-Path -LiteralPath $settingsPath -PathType Leaf)) {
         $legacySettingsPath = Join-Path $env:USERPROFILE ".gemini\config\codex_plugin_settings.json"

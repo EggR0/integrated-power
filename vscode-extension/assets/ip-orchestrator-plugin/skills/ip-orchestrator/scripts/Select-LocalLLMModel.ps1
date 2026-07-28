@@ -60,10 +60,10 @@ function Get-PropertyValue {
 function Get-Settings {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path)) {
-        $Path = if (-not [string]::IsNullOrWhiteSpace($env:EGGR_ORCHESTRATOR_SETTINGS)) {
-            $env:EGGR_ORCHESTRATOR_SETTINGS
+        $Path = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS)) {
+            $env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS
         } else {
-            $preferredSettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".config\eggr\orchestrator.json"
+            $preferredSettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".config\integrated-power\orchestrator.json"
             $legacySettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".gemini\config\codex_plugin_settings.json"
             if (Test-Path -LiteralPath $preferredSettings -PathType Leaf) { $preferredSettings } else { $legacySettings }
         }
@@ -73,7 +73,7 @@ function Get-Settings {
     try {
         return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
     } catch {
-        throw "EggR orchestrator settings are invalid: $Path. $($_.Exception.Message)"
+        throw "Integrated Power orchestrator settings are invalid: $Path. $($_.Exception.Message)"
     }
 }
 

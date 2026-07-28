@@ -14,9 +14,14 @@ function Get-EggRUserHome {
 }
 
 function Get-EggRRootsConfig {
-    $configPath = Join-Path (Get-EggRUserHome) ".config\eggr\roots.json"
+    $configPath = Join-Path (Get-EggRUserHome) ".config\integrated-power\roots.json"
     if (!(Test-Path -LiteralPath $configPath -PathType Leaf)) {
-        return @{}
+        $previousConfigPath = Join-Path (Get-EggRUserHome) ".config\eggr\roots.json"
+        if (Test-Path -LiteralPath $previousConfigPath -PathType Leaf) {
+            $configPath = $previousConfigPath
+        } else {
+            return @{}
+        }
     }
 
     try {
@@ -32,7 +37,12 @@ function Get-EggRRootsConfig {
 }
 
 function Get-EggRStateRoot {
-    $candidate = $env:EGGR_STATE_ROOT
+    $explicitProductRoot = -not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_STATE_ROOT)
+    $candidate = if ($explicitProductRoot) {
+        $env:INTEGRATED_POWER_STATE_ROOT
+    } else {
+        $env:EGGR_STATE_ROOT
+    }
     if ([string]::IsNullOrWhiteSpace($candidate)) {
         $config = Get-EggRRootsConfig
         if ($config.ContainsKey("state_root")) {
@@ -43,17 +53,26 @@ function Get-EggRStateRoot {
     if ([string]::IsNullOrWhiteSpace($candidate)) {
         $isWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
         if ($isWindows -and -not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-            $candidate = Join-Path $env:LOCALAPPDATA "EggR\state"
+            $candidate = Join-Path $env:LOCALAPPDATA "IntegratedPower\state"
         } elseif (-not [string]::IsNullOrWhiteSpace($env:XDG_STATE_HOME)) {
-            $candidate = Join-Path $env:XDG_STATE_HOME "eggr"
+            $candidate = Join-Path $env:XDG_STATE_HOME "integrated-power"
         } else {
-            $candidate = Join-Path (Get-EggRUserHome) ".local\state\eggr"
+            $candidate = Join-Path (Get-EggRUserHome) ".local\state\integrated-power"
         }
     }
 
-    return [IO.Path]::GetFullPath(
+    $resolved = [IO.Path]::GetFullPath(
         [Environment]::ExpandEnvironmentVariables($candidate)
     )
+    if (-not $explicitProductRoot -and
+        [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT -and
+        -not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $legacyDefault = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "EggR\state"))
+        if ($resolved.Equals($legacyDefault, [StringComparison]::OrdinalIgnoreCase)) {
+            return [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "IntegratedPower\state"))
+        }
+    }
+    return $resolved
 }
 
 function Get-EggRRepositoryRoot {

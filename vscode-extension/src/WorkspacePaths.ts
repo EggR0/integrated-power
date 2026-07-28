@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import {
   normalizeWorkspacePathForStorage,
-  resolveEggRStateRoot,
+  resolveIntegratedPowerStateRoot,
   resolveEggRWorkspaceDescriptor,
   workspaceStoragePathForFolder,
 } from "./storagePath";
@@ -14,7 +14,7 @@ const DASHBOARD_STATE_RELATIVE_PATH = "reports/dashboard-state.json";
 
 export {
   normalizeWorkspacePathForStorage,
-  resolveEggRStateRoot,
+  resolveIntegratedPowerStateRoot,
   workspaceStoragePathForFolder,
 };
 
@@ -43,7 +43,7 @@ export class WorkspacePaths {
 
     const descriptor = resolveEggRWorkspaceDescriptor(folder.uri.fsPath);
     return workspaceStoragePathForFolder(
-      resolveEggRStateRoot(),
+      resolveIntegratedPowerStateRoot(),
       descriptor.repoRoot,
       descriptor.remoteUrl,
       descriptor.configuredId,

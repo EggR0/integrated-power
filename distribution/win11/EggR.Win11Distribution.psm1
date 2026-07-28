@@ -1,15 +1,19 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:ExpectedExtensionId = 'integratedpower.integrated-power'
+$script:ExpectedExtensionId = 'EggR.integrated-power'
 $script:AllowedKnowledgeTargets = @(
     'eggr-roots.ps1',
     'set-eggr-roots.ps1',
     'initialize-eggr-knowledge.ps1',
+    'route-knowledge.ps1',
+    'save-knowledge.ps1',
     'save-agent-worklog.ps1',
     'eggr-roots.cmd',
     'set-eggr-roots.cmd',
     'initialize-eggr-knowledge.cmd',
+    'route-knowledge.cmd',
+    'save-knowledge.cmd',
     'save-agent-worklog.cmd'
 )
 
@@ -309,8 +313,8 @@ function Get-EggRKnowledgeToolStatus {
     if ([string]::IsNullOrWhiteSpace($localAppData)) {
         throw 'LOCALAPPDATA could not be resolved.'
     }
-    $targetRoot = Join-Path $localAppData 'EggR\bin'
-    $statePath = Join-Path $localAppData 'EggR\installations\win11-distribution.json'
+    $targetRoot = Join-Path $localAppData 'IntegratedPower\bin'
+    $statePath = Join-Path $localAppData 'IntegratedPower\installations\win11-distribution.json'
     $fileStatus = @()
     foreach ($tool in @($Release.Manifest.knowledgeTools.files)) {
         $source = Get-EggRSafePackagePath -PackageRoot $Release.PackageRoot -RelativePath ([string]$tool.source)
@@ -387,6 +391,8 @@ function Test-EggRLegacyKnowledgeFile {
         'eggr-roots.ps1'                = @('EggR', 'roots.json')
         'set-eggr-roots.ps1'            = @('EggR', 'roots.json', 'WorkRoot')
         'initialize-eggr-knowledge.ps1' = @('EggR', 'KnowledgePath', 'Git')
+        'route-knowledge.ps1'           = @('Knowledge', 'knowledge-routing.json', 'canonical_branch')
+        'save-knowledge.ps1'            = @('Knowledge', 'canonical branch', 'main')
         'save-agent-worklog.ps1'        = @('EggR', 'Agent Worklog', 'git')
     }
     if (-not $requiredMarkers.ContainsKey($TargetName.ToLowerInvariant())) {
@@ -411,11 +417,11 @@ function Install-EggRKnowledgeTools {
     if ([string]::IsNullOrWhiteSpace($localAppData)) {
         throw 'LOCALAPPDATA could not be resolved.'
     }
-    $eggrRoot = Join-Path $localAppData 'EggR'
-    $targetRoot = Join-Path $eggrRoot 'bin'
-    $stateDirectory = Join-Path $eggrRoot 'installations'
+    $productRoot = Join-Path $localAppData 'IntegratedPower'
+    $targetRoot = Join-Path $productRoot 'bin'
+    $stateDirectory = Join-Path $productRoot 'installations'
     $statePath = Join-Path $stateDirectory 'win11-distribution.json'
-    $backupRoot = Join-Path $eggrRoot (
+    $backupRoot = Join-Path $productRoot (
         'backups\win11-distribution\' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmssfff')
     )
     $changed = @()

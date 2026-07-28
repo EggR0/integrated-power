@@ -4,7 +4,10 @@ import {
   DashboardConfiguration,
   KnowledgeConfiguration,
   OrchestratorConfiguration,
+  detectKnowledgeRemote,
+  installBundledKnowledgeTools,
   loadConfigurationCenterSnapshot,
+  reconfigureKnowledgeRemote,
   runPrivateKnowledgeConfiguration,
   saveDashboardConfiguration,
   saveOrchestratorConfiguration,
@@ -35,8 +38,8 @@ export class ConfigurationCenter implements vscode.Disposable {
     }
 
     const panel = vscode.window.createWebviewPanel(
-      "integratedPower.eggr.configurationCenter",
-      "EggR Configuration Center",
+      "integratedPower.configurationCenter",
+      "Integrated Power Configuration Center",
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -124,6 +127,7 @@ export class ConfigurationCenter implements vscode.Disposable {
         case "configureKnowledge": {
           this.postBusy(true);
           const result = await runPrivateKnowledgeConfiguration(
+            this.context,
             parseKnowledgeConfiguration(message.value),
           );
           const configuredPath =
@@ -137,9 +141,49 @@ export class ConfigurationCenter implements vscode.Disposable {
           this.postSnapshot("knowledge");
           return;
         }
+        case "installKnowledgeTools": {
+          this.postBusy(true);
+          const result = installBundledKnowledgeTools(this.context);
+          this.postResult(
+            "success",
+            result.changed.length > 0
+              ? `Knowledge 도구 ${result.changed.length}개 설치·갱신 완료: ${result.installRoot}`
+              : `Knowledge 도구가 이미 최신입니다: ${result.installRoot}`,
+          );
+          this.postSnapshot("knowledge");
+          return;
+        }
+        case "detectKnowledgeRemote": {
+          const detected = detectKnowledgeRemote(
+            parseKnowledgeRemoteReconfiguration(message.value),
+          );
+          void this.panel.webview.postMessage({
+            type: "knowledgeRemoteDetected",
+            value: detected,
+          });
+          this.postResult(
+            "success",
+            `GitHub 로그인 ${detected.githubLogin} 기준 remote를 제안했습니다. 적용하려면 origin 재설정 버튼을 누르세요.`,
+          );
+          return;
+        }
+        case "reconfigureKnowledgeRemote": {
+          this.postBusy(true);
+          const result = reconfigureKnowledgeRemote(
+            parseKnowledgeRemoteReconfiguration(message.value),
+          );
+          this.postResult(
+            "success",
+            result.previousRemote
+              ? `Knowledge origin 재설정 완료: ${result.previousRemote} → ${result.remoteUrl}`
+              : `Knowledge origin 추가 완료: ${result.remoteUrl}`,
+          );
+          this.postSnapshot("knowledge");
+          return;
+        }
         case "chooseStateRoot":
           await this.chooseDirectory(
-            "EggR 상태 폴더 선택",
+            "Integrated Power 상태 폴더 선택",
             "dashboardStateRoot",
           );
           return;
@@ -244,7 +288,7 @@ export class ConfigurationCenter implements vscode.Disposable {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
-  <title>EggR Configuration Center</title>
+  <title>Integrated Power Configuration Center</title>
   <style nonce="${nonce}">
     :root {
       color-scheme: light dark;
@@ -373,8 +417,8 @@ export class ConfigurationCenter implements vscode.Disposable {
 </head>
 <body>
   <header>
-    <h1>EggR Configuration Center</h1>
-    <div class="subtitle">Dashboard, Integrated Orchestrator, Private Git Knowledge를 한 화면에서 독립적으로 설정합니다.</div>
+    <h1>Integrated Power Configuration Center</h1>
+    <div class="subtitle">사용량 확인, 에이전트 작업 연결, 사용자 소유 지식 보존을 한 화면에서 각각 설정합니다.</div>
     <nav aria-label="설정 영역">
       <button type="button" data-section="overview">개요</button>
       <button type="button" data-section="dashboard">Dashboard</button>
@@ -385,9 +429,9 @@ export class ConfigurationCenter implements vscode.Disposable {
   <main>
     <section id="overview">
       <div class="grid">
-        <article class="card"><h3>Dashboard</h3><div id="status-dashboard" class="status">확인 중</div><p>Antigravity IDE, Codex, 로컬 LLM 사용량과 상태를 표시합니다.</p></article>
-        <article class="card"><h3>Integrated Orchestrator</h3><div id="status-orchestrator" class="status">확인 중</div><p>현재 에이전트, Codex, 하드웨어에 맞는 로컬 LLM 사이의 실행 경로를 선택합니다.</p></article>
-        <article class="card"><h3>Private Git Knowledge</h3><div id="status-knowledge" class="status">확인 중</div><p>각 사용자의 지식과 작업 기록을 사용자가 소유한 Git 저장소에 누적합니다.</p></article>
+        <article class="card"><h3>Dashboard</h3><div id="status-dashboard" class="status">확인 중</div><p>Antigravity IDE·Codex의 제공자 사용량과 로컬 GPU 상태를 한곳에서 비교해, 어느 실행 경로를 쓸지 판단할 근거를 제공합니다.</p></article>
+        <article class="card"><h3>Integrated Orchestrator</h3><div id="status-orchestrator" class="status">확인 중</div><p><code>ip-orchestrator</code>가 현재 에이전트, Codex, 하드웨어에 맞는 로컬 LLM 사이에서 작업 경로를 고릅니다. Dashboard와 분리 설치되어 사용량 화면을 열었다고 실행 규칙이 바뀌지는 않습니다.</p></article>
+        <article class="card"><h3>Private Git Knowledge</h3><div id="status-knowledge" class="status">확인 중</div><p>Obsidian vault의 <code>main</code>을 전역 지식의 단일 기준으로 사용합니다. 에이전트는 기존 문서를 먼저 찾고 Project·Knowledge·Area·Inbox 중 정해진 경로에 저장하며, 지식 종류를 Git 브랜치로 만들지 않습니다.</p></article>
       </div>
       <article class="card">
         <h2>환경 진단</h2>
@@ -403,11 +447,11 @@ export class ConfigurationCenter implements vscode.Disposable {
           <li><strong>Ollama 또는 vLLM</strong> — 로컬 LLM 경로를 켤 때만 필요합니다. GPU driver와 모델은 묵시적으로 설치하지 않습니다.</li>
           <li><strong>Agy</strong> — Agy 사용량을 표시할 때만 필요합니다.</li>
         </ul>
-        <p class="hint">경로와 설치 여부는 현재 사용자 환경에서만 진단합니다. 다른 사용자의 홈 폴더를 검색하거나 비슷한 이름의 폴더를 삭제하지 않습니다.</p>
+        <p class="hint">상태 다시 확인은 현재 Windows 사용자·시스템 PATH를 새로 읽으므로 IDE를 재시작하지 않아도 방금 설치한 CLI를 다시 찾습니다. 다른 사용자의 홈 폴더를 검색하거나 비슷한 이름의 폴더를 삭제하지 않습니다.</p>
       </article>
       <article class="card notice">
         <h2>GEMINI.md 경계</h2>
-        <p>EggR는 전역 <code>GEMINI.md</code>를 생성·추가·교체하지 않습니다. Antigravity IDE 연동은 플러그인, <code>eggr-orchestrator</code> 스킬, EggR 설정·상태 파일을 사용합니다.</p>
+        <p>Integrated Power는 전역 <code>GEMINI.md</code>를 생성·추가·교체하지 않습니다. Antigravity IDE 연동은 관리 플러그인, <code>ip-orchestrator</code> 스킬, 제품 전용 설정·상태 파일을 사용합니다.</p>
         <div id="gemini-status" class="hint"></div>
         <code id="gemini-path" class="path"></code>
       </article>
@@ -417,12 +461,12 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="dashboard">
       <article class="card">
         <h2>Dashboard 설정</h2>
-        <p class="hint">표시 영역과 EggR 상태 저장 위치만 변경합니다. 프로젝트 파일은 이동하지 않습니다.</p>
+        <p class="hint">표시 영역과 Integrated Power 상태 저장 위치만 변경합니다. 프로젝트 파일은 이동하지 않습니다. 기존 <code>EggR\state</code> 데이터는 최초 전환 때 새 경로로 누락 파일만 복사하고 원본을 남깁니다.</p>
         <label class="check"><input id="show-antigravity" type="checkbox"><span>Antigravity IDE 사용량 표시</span></label>
         <label class="check"><input id="show-codex" type="checkbox"><span>Codex 사용량 표시</span></label>
         <label class="check"><input id="show-local-llm" type="checkbox"><span>로컬 LLM·GPU 상태 표시</span></label>
         <div class="field">
-          <label for="dashboard-state-root">EggR 상태 경로</label>
+          <label for="dashboard-state-root">Integrated Power 상태 경로</label>
           <div class="inline"><input id="dashboard-state-root" type="text"><button type="button" class="secondary" data-action="chooseStateRoot">찾기</button></div>
         </div>
         <div class="actions"><button type="button" data-action="saveDashboard">Dashboard 설정 저장</button></div>
@@ -440,7 +484,7 @@ export class ConfigurationCenter implements vscode.Disposable {
           <h3>배포 마이그레이션 계획</h3>
           <div id="plugin-plan-status" class="status"></div>
           <ul id="plugin-plan-actions" class="diag-list"></ul>
-          <p class="hint">EggR가 소유한 정확한 신규·이전 경로만 확인합니다. 인식되지 않은 폴더는 자동 이동하지 않으며, 기존 항목은 삭제하지 않고 백업합니다.</p>
+          <p class="hint">Integrated Power가 소유한 정확한 <code>ip-orchestrator</code>, 이전 <code>eggr-orchestrator</code>, 더 이전 <code>codex-orchestrator</code> 경로만 확인합니다. 인식되지 않은 폴더는 자동 이동하지 않으며, 기존 항목은 삭제하지 않고 백업합니다.</p>
         </div>
 
         <label class="check"><input id="enable-codex" type="checkbox"><span>Codex 위임 경로 사용</span></label>
@@ -472,8 +516,10 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="knowledge">
       <article class="card">
         <h2>Private Git Knowledge 설정</h2>
-        <p class="hint">개발자의 저장소가 아니라 각 사용자가 소유한 로컬 또는 private 원격 Git 저장소를 구성합니다. commit·pull·push는 자동 실행하지 않습니다.</p>
+        <p class="hint">개발자의 저장소가 아니라 각 사용자가 소유한 로컬 또는 private 원격 Git 저장소를 구성합니다. 확장에 내장된 Win11 도구가 기존 문서를 덮어쓰지 않고 Obsidian 분류표와 빠진 기본 폴더만 추가합니다. 최초 설정 마법사는 commit·pull·push하지 않습니다. 이후 <code>route-knowledge</code>가 기존 문서와 허용 경로를 확인하고, <code>save-knowledge</code>와 <code>save-agent-worklog</code>만 명시된 파일을 canonical <code>main</code>에 저장합니다. 작업 이름으로 Knowledge 브랜치를 만들지 않습니다.</p>
         <div id="knowledge-wizard-status" class="status"></div>
+        <div id="knowledge-github-status" class="hint"></div>
+        <div id="knowledge-routing-status" class="hint"></div>
         <div class="field"><label for="knowledge-mode">저장 방식</label><select id="knowledge-mode"><option value="local_only">로컬 Git만 사용</option><option value="private_remote">Private 원격 Git 연결</option></select></div>
         <div class="field">
           <label for="knowledge-path">Knowledge 경로</label>
@@ -487,7 +533,10 @@ export class ConfigurationCenter implements vscode.Disposable {
         <label class="check"><input id="allow-non-empty" type="checkbox"><span>검토한 비어 있지 않은 폴더에 Git 초기화 허용</span></label>
         <label class="check"><input id="skip-remote-check" type="checkbox"><span>오프라인 설정: 원격 연결 확인을 생략</span></label>
         <div class="actions">
-          <button type="button" data-action="configureKnowledge">Knowledge 설정 실행</button>
+          <button type="button" class="secondary" data-action="installKnowledgeTools">내장 Knowledge 도구 설치·복구</button>
+          <button type="button" data-action="configureKnowledge">Knowledge 설정·재설정 실행</button>
+          <button type="button" class="secondary" data-action="detectKnowledgeRemote">현재 GitHub 로그인으로 remote 감지</button>
+          <button type="button" class="secondary" data-action="reconfigureKnowledgeRemote">입력한 remote로 origin 재설정</button>
           <button type="button" class="secondary" data-action="openGitHubNewRepository">GitHub private 저장소 만들기</button>
           <button type="button" class="secondary" data-action="openKnowledgeGuide">설치·보안 안내 열기</button>
         </div>
@@ -527,14 +576,17 @@ export class ConfigurationCenter implements vscode.Disposable {
       diagnostics.replaceChildren();
       snapshot.diagnostics.forEach((item) => {
         const li = document.createElement("li");
-        li.className = item.available ? "ok" : "warn";
-        li.textContent = (item.available ? "✓ " : "– ") + item.label + (item.path ? " · " + item.path : "");
+        li.className = item.available ? "ok" : (item.optional ? "hint" : "warn");
+        li.textContent =
+          (item.available ? "✓ " : (item.optional ? "○ 선택 사항 · " : "! 필요 · ")) +
+          item.label +
+          (item.path ? " · " + item.path : "");
         diagnostics.appendChild(li);
       });
       byId("gpu-summary").textContent = snapshot.gpuSummary;
       byId("gemini-status").textContent = snapshot.installation.globalGeminiExists
-        ? "기존 파일이 있습니다. EggR가 읽거나 수정하지 않습니다."
-        : "파일이 없습니다. EggR 설치 과정에서도 생성하지 않습니다.";
+        ? "기존 파일이 있습니다. Integrated Power가 읽거나 수정하지 않습니다."
+        : "파일이 없습니다. Integrated Power 설치 과정에서도 생성하지 않습니다.";
       byId("gemini-path").textContent = snapshot.paths.globalGemini;
 
       setChecked("show-antigravity", snapshot.dashboard.showAntigravity);
@@ -553,19 +605,21 @@ export class ConfigurationCenter implements vscode.Disposable {
       setChecked("allow-cpu-offload", snapshot.orchestrator.allowCpuOffload);
       setValue("default-route", snapshot.orchestrator.defaultRoute);
       byId("plugin-status").textContent = snapshot.installation.pluginInstalled
-        ? "✓ eggr-orchestrator 플러그인 설치됨"
+        ? "✓ ip-orchestrator 플러그인 설치됨"
         : snapshot.installation.legacyPluginInstalled
-          ? "△ 이전 codex-orchestrator 플러그인 발견 · 다음 설치에서 백업 후 전환"
+          ? "△ 이전 orchestrator 플러그인 발견 · 다음 설치에서 백업 후 ip-orchestrator로 전환"
           : "– 플러그인 설치 필요";
       byId("plugin-status").className = "status " + (snapshot.installation.pluginInstalled ? "ok" : "warn");
       byId("plugin-path").textContent = "플러그인: " + snapshot.paths.plugin;
       byId("orchestrator-settings-path").textContent =
         "설정: " + snapshot.paths.orchestrator +
-        (snapshot.installation.settingsSource === "legacy" ? " (이전 설정을 읽음; 저장 시 EggR 경로로 전환)" : "");
+        (snapshot.installation.settingsSource !== "integrated-power" && snapshot.installation.settingsSource !== "none"
+          ? " (이전 설정을 읽음; 저장 시 Integrated Power 경로로 전환)"
+          : "");
       const plan = snapshot.installation.pluginPlan;
       byId("plugin-plan-status").textContent = plan.blocked
         ? "설치 중단: " + plan.blockingReason
-        : "설치 가능 · 신규 상태: " + plan.destinationState + " · 이전 상태: " + plan.legacyState;
+        : "설치 가능 · ip 상태: " + plan.destinationState + " · eggr 이전 상태: " + plan.previousState + " · codex 이전 상태: " + plan.legacyState;
       byId("plugin-plan-status").className = "status " + (plan.blocked ? "bad" : "ok");
       const planActions = byId("plugin-plan-actions");
       planActions.replaceChildren();
@@ -582,9 +636,19 @@ export class ConfigurationCenter implements vscode.Disposable {
       setValue("author-email", snapshot.knowledge.authorEmail);
       setChecked("allow-non-empty", false);
       setChecked("skip-remote-check", false);
+      byId("knowledge-github-status").textContent =
+        "GitHub CLI 로그인: " + (snapshot.knowledge.githubLogin || "확인되지 않음") +
+        " · 실제 origin: " + (snapshot.knowledge.repositoryRemote || "없음");
+      byId("knowledge-routing-status").textContent =
+        "현재 브랜치: " + (snapshot.knowledge.currentBranch || "확인되지 않음") +
+        " · Obsidian 분류표: " + (snapshot.knowledge.routingPolicyExists ? "준비됨" : "없음") +
+        " · 남아 있는 agent 브랜치: " + snapshot.knowledge.taskBranchCount +
+        (snapshot.knowledge.currentBranch && snapshot.knowledge.currentBranch !== "main"
+          ? " · ⚠ Knowledge는 main으로 통합해야 합니다."
+          : "");
       byId("knowledge-wizard-status").textContent = snapshot.installation.knowledgeWizardInstalled
-        ? "✓ Windows Knowledge 설정 도구 준비됨"
-        : "– environment-bootstrap의 Windows Knowledge 설정 도구 설치 필요";
+        ? "✓ 확장 내장 Windows Knowledge 도구 준비됨 · " + snapshot.installation.knowledgeToolsRoot
+        : "– 내장 Knowledge 도구 설치·복구를 실행하세요.";
       byId("knowledge-wizard-status").className = "status " + (snapshot.installation.knowledgeWizardInstalled ? "ok" : "warn");
       syncConditionalFields();
     }
@@ -649,6 +713,16 @@ export class ConfigurationCenter implements vscode.Disposable {
       if (action === "saveDashboard") vscode.postMessage({ type: action, value: dashboardConfiguration() });
       else if (action === "saveOrchestrator" || action === "saveAndInstallOrchestrator") vscode.postMessage({ type: action, value: orchestratorConfiguration() });
       else if (action === "configureKnowledge") vscode.postMessage({ type: action, value: knowledgeConfiguration() });
+      else if (action === "installKnowledgeTools") vscode.postMessage({ type: action });
+      else if (action === "detectKnowledgeRemote" || action === "reconfigureKnowledgeRemote") {
+        vscode.postMessage({
+          type: action,
+          value: {
+            knowledgePath: value("knowledge-path"),
+            remoteUrl: value("knowledge-remote")
+          }
+        });
+      }
       else vscode.postMessage({ type: action, section: currentSection });
     }));
 
@@ -667,6 +741,12 @@ export class ConfigurationCenter implements vscode.Disposable {
       } else if (message.type === "fieldValue") {
         const map = { dashboardStateRoot: "dashboard-state-root", knowledgePath: "knowledge-path", codexExe: "codex-exe" };
         if (map[message.field]) setValue(map[message.field], message.value);
+      } else if (message.type === "knowledgeRemoteDetected") {
+        setValue("knowledge-remote", message.value.remoteUrl);
+        byId("knowledge-github-status").textContent =
+          "GitHub CLI 로그인: " + message.value.githubLogin +
+          " · 현재 origin: " + (message.value.currentRemote || "없음") +
+          " · 제안: " + message.value.remoteUrl;
       }
     });
 
@@ -678,13 +758,26 @@ export class ConfigurationCenter implements vscode.Disposable {
   }
 }
 
+function parseKnowledgeRemoteReconfiguration(value: unknown): {
+  knowledgePath: string;
+  remoteUrl: string;
+} {
+  if (!isRecord(value)) {
+    throw new Error("Knowledge remote 설정 형식이 올바르지 않습니다.");
+  }
+  return {
+    knowledgePath: requireString(value.knowledgePath, "Knowledge 경로"),
+    remoteUrl: optionalString(value.remoteUrl),
+  };
+}
+
 function parseDashboardConfiguration(value: unknown): DashboardConfiguration {
   if (!isRecord(value)) throw new Error("Dashboard 설정 형식이 올바르지 않습니다.");
   return {
     showAntigravity: value.showAntigravity === true,
     showCodex: value.showCodex === true,
     showLocalLlm: value.showLocalLlm === true,
-    stateRoot: requireString(value.stateRoot, "EggR 상태 경로"),
+    stateRoot: requireString(value.stateRoot, "Integrated Power 상태 경로"),
   };
 }
 

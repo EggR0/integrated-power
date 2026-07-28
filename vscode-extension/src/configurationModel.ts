@@ -4,8 +4,17 @@ import * as os from "os";
 import * as path from "path";
 import { execFile, execFileSync } from "child_process";
 import { readUtf8JsonFile } from "./jsonFile";
-import { resolveEggRStateRoot } from "./storagePath";
+import {
+  integratedPowerRootsConfigPath,
+  legacyEggRRootsConfigPath,
+  resolveIntegratedPowerStateRoot,
+  synchronizeIntegratedPowerRootsFromLegacy,
+} from "./storagePath";
 import { inspectAntigravityPluginInstall } from "./installAntigravityPlugin";
+import {
+  inspectKnowledgeTools,
+  installKnowledgeTools,
+} from "./KnowledgeToolInstaller";
 
 const DASHBOARD_SETUP_KEY = "eggr.setup.dashboard.completed.v1";
 const FIRST_RUN_PROMPT_KEY = "eggr.setup.firstRunPromptShown.v1";
@@ -43,6 +52,11 @@ export interface KnowledgeConfiguration {
   skipRemoteCheck: boolean;
 }
 
+export interface KnowledgeRemoteReconfiguration {
+  knowledgePath: string;
+  remoteUrl: string;
+}
+
 export interface FirstRunStatus {
   dashboard: boolean;
   orchestrator: boolean;
@@ -54,12 +68,19 @@ export interface ExecutableDiagnostic {
   label: string;
   available: boolean;
   path: string;
+  optional: boolean;
 }
 
 export interface ConfigurationCenterSnapshot {
   dashboard: DashboardConfiguration;
   orchestrator: OrchestratorConfiguration;
-  knowledge: KnowledgeConfiguration;
+  knowledge: KnowledgeConfiguration & {
+    githubLogin: string;
+    repositoryRemote: string;
+    currentBranch: string;
+    routingPolicyExists: boolean;
+    taskBranchCount: number;
+  };
   status: FirstRunStatus;
   diagnostics: ExecutableDiagnostic[];
   gpuSummary: string;
@@ -67,19 +88,22 @@ export interface ConfigurationCenterSnapshot {
     roots: string;
     orchestrator: string;
     plugin: string;
+    previousPlugin: string;
     legacyPlugin: string;
     globalGemini: string;
   };
   installation: {
     pluginInstalled: boolean;
     legacyPluginInstalled: boolean;
-    settingsSource: "eggr" | "legacy" | "none";
+    settingsSource: "integrated-power" | "eggr" | "legacy" | "none";
     knowledgeWizardInstalled: boolean;
+    knowledgeToolsRoot: string;
     globalGeminiExists: boolean;
     pluginPlan: {
       blocked: boolean;
       blockingReason: string;
       destinationState: string;
+      previousState: string;
       legacyState: string;
       actions: string[];
     };
@@ -131,31 +155,50 @@ export function loadConfigurationCenterSnapshot(
       : defaultKnowledgePath();
   const knowledgeMode =
     roots.knowledge_mode === "private_remote" ? "private_remote" : "local_only";
-  const remoteUrl =
+  const configuredRemoteUrl =
     typeof roots.knowledge_remote === "string" ? roots.knowledge_remote : "";
   const codexExecutable = findCodexExecutable(
     typeof orchestrator.CodexExe === "string" ? orchestrator.CodexExe : undefined,
   );
   const agyExecutable = findExecutable(["agy.exe", "agy"]);
-  const ollamaExecutable = findExecutable(["ollama.exe", "ollama"]);
-  const nvidiaExecutable = findExecutable(["nvidia-smi.exe", "nvidia-smi"]);
-  const gitExecutable = findExecutable(["git.exe", "git"]);
-  const ghExecutable = findExecutable(["gh.exe", "gh"]);
+  const ollamaExecutable = findExecutable(["ollama.exe", "ollama"], [
+    localAppDataPath("Programs", "Ollama", "ollama.exe"),
+    programFilesPath("Ollama", "ollama.exe"),
+  ]);
+  const nvidiaExecutable = findExecutable(["nvidia-smi.exe", "nvidia-smi"], [
+    systemRootPath("System32", "nvidia-smi.exe"),
+  ]);
+  const gitExecutable = findExecutable(["git.exe", "git"], [
+    programFilesPath("Git", "cmd", "git.exe"),
+  ]);
+  const ghExecutable = findExecutable(["gh.exe", "gh"], [
+    programFilesPath("GitHub CLI", "gh.exe"),
+  ]);
   const plugin = pluginPath();
+  const previousPlugin = previousPluginPath();
   const legacyPlugin = legacyPluginPath();
+  const repositoryRemote = readGitRemote(knowledgePath) ?? "";
+  const currentBranch = readGitBranch(knowledgePath) ?? "";
+  const taskBranchCount = readGitTaskBranchCount(knowledgePath);
+  const routingPolicyExists = fs.existsSync(
+    path.join(knowledgePath, ".ai", "knowledge-routing.json"),
+  );
+  const remoteUrl = repositoryRemote || configuredRemoteUrl;
+  const githubLogin = readGitHubLogin(ghExecutable) ?? "";
   const globalGemini = path.join(os.homedir(), ".gemini", "GEMINI.md");
   const configuredDefault =
     orchestrator.DefaultRoute === "codex" || orchestrator.DefaultRoute === "local_llm"
       ? orchestrator.DefaultRoute
       : "main_agent";
   const pluginPlan = inspectAntigravityPluginInstall(context);
+  const knowledgeTools = inspectKnowledgeTools(context);
 
   return {
     dashboard: {
       showAntigravity: viewConfig.get<boolean>("showAntigravity", true),
       showCodex: viewConfig.get<boolean>("showCodex", true),
       showLocalLlm: viewConfig.get<boolean>("showLocalLlm", true),
-      stateRoot: resolveEggRStateRoot(),
+      stateRoot: resolveIntegratedPowerStateRoot(),
     },
     orchestrator: {
       enableCodex: enabledRoutes.size === 0 || enabledRoutes.has("codex"),
@@ -183,34 +226,48 @@ export function loadConfigurationCenterSnapshot(
         "",
       allowNonEmptyDirectory: false,
       skipRemoteCheck: false,
+      githubLogin,
+      repositoryRemote,
+      currentBranch,
+      routingPolicyExists,
+      taskBranchCount,
     },
     status: getFirstRunStatus(context),
     diagnostics: [
-      diagnostic("agy", "Agy", agyExecutable),
-      diagnostic("codex", "Codex", codexExecutable),
-      diagnostic("git", "Git for Windows", gitExecutable),
-      diagnostic("gh", "GitHub CLI", ghExecutable),
-      diagnostic("ollama", "Ollama", ollamaExecutable),
-      diagnostic("nvidia", "NVIDIA", nvidiaExecutable),
+      diagnostic("agy", "Agy", agyExecutable, true),
+      diagnostic("codex", "Codex", codexExecutable, true),
+      diagnostic("git", "Git for Windows", gitExecutable, false),
+      diagnostic("gh", "GitHub CLI", ghExecutable, true),
+      diagnostic(
+        "ollama",
+        "Ollama",
+        ollamaExecutable,
+        !(enabledRoutes.has("local_llm") && localLlm?.Provider === "ollama"),
+      ),
+      diagnostic("nvidia", "NVIDIA", nvidiaExecutable, true),
     ],
     gpuSummary: summarizeDetectedHardware(detectNvidiaGpus()),
     paths: {
       roots: rootsConfigPath(),
       orchestrator: orchestratorSettingsPath(),
       plugin,
+      previousPlugin,
       legacyPlugin,
       globalGemini,
     },
     installation: {
       pluginInstalled: fs.existsSync(plugin),
-      legacyPluginInstalled: fs.existsSync(legacyPlugin),
+      legacyPluginInstalled:
+        fs.existsSync(previousPlugin) || fs.existsSync(legacyPlugin),
       settingsSource: settingsResult.source,
-      knowledgeWizardInstalled: Boolean(installedKnowledgeWizardPath()),
+      knowledgeWizardInstalled: knowledgeTools.installed,
+      knowledgeToolsRoot: knowledgeTools.installRoot,
       globalGeminiExists: fs.existsSync(globalGemini),
       pluginPlan: {
         blocked: pluginPlan.blocked,
         blockingReason: pluginPlan.blockingReason ?? "",
         destinationState: pluginPlan.destination.state,
+        previousState: pluginPlan.predecessor.state,
         legacyState: pluginPlan.legacy.state,
         actions: pluginPlan.actions.map((action) => action.description),
       },
@@ -224,7 +281,10 @@ export async function saveDashboardConfiguration(
   input: DashboardConfiguration,
   refresh: () => Promise<void>,
 ): Promise<string> {
-  const stateRoot = validateSafeAbsoluteDirectory(input.stateRoot, "EggR 상태 경로");
+  const stateRoot = validateSafeAbsoluteDirectory(
+    input.stateRoot,
+    "Integrated Power 상태 경로",
+  );
   const viewConfig = vscode.workspace.getConfiguration("integratedPower.view");
   await viewConfig.update(
     "showAntigravity",
@@ -313,12 +373,14 @@ export function saveOrchestratorConfiguration(
 }
 
 export async function runPrivateKnowledgeConfiguration(
+  context: vscode.ExtensionContext,
   input: KnowledgeConfiguration,
 ): Promise<Record<string, unknown>> {
+  installKnowledgeTools(context);
   const script = installedKnowledgeWizardPath();
   if (!script) {
     throw new Error(
-      "EggR Private Git Knowledge 도구가 없습니다. environment-bootstrap의 Windows 설치를 먼저 실행하세요.",
+      "확장에 포함된 Private Git Knowledge 도구를 설치하지 못했습니다.",
     );
   }
   const knowledgePath = validateSafeAbsoluteDirectory(
@@ -373,7 +435,100 @@ export async function runPrivateKnowledgeConfiguration(
   if (!isRecord(parsed)) {
     throw new Error("Knowledge 설정 도구가 올바른 JSON 결과를 반환하지 않았습니다.");
   }
+  synchronizeIntegratedPowerRootsFromLegacy();
   return parsed;
+}
+
+export function installBundledKnowledgeTools(
+  context: vscode.ExtensionContext,
+): {
+  installRoot: string;
+  changed: string[];
+  backupRoot: string;
+} {
+  const result = installKnowledgeTools(context);
+  return {
+    installRoot: result.installRoot,
+    changed: result.changed,
+    backupRoot: result.backupRoot,
+  };
+}
+
+export function detectKnowledgeRemote(
+  input: KnowledgeRemoteReconfiguration,
+): {
+  githubLogin: string;
+  remoteUrl: string;
+  currentRemote: string;
+} {
+  const knowledgePath = validateSafeAbsoluteDirectory(
+    input.knowledgePath,
+    "Knowledge 경로",
+  );
+  const ghExecutable = findExecutable(["gh.exe", "gh"], [
+    programFilesPath("GitHub CLI", "gh.exe"),
+  ]);
+  const githubLogin = readGitHubLogin(ghExecutable);
+  if (!githubLogin) {
+    throw new Error(
+      "GitHub CLI 로그인 계정을 확인하지 못했습니다. gh auth login 후 상태 다시 확인을 눌러주세요.",
+    );
+  }
+  const currentRemote = readGitRemote(knowledgePath) ?? input.remoteUrl.trim();
+  const remoteUrl = rewriteGitHubRemoteOwner(currentRemote, githubLogin);
+  if (!remoteUrl) {
+    throw new Error(
+      "현재 GitHub 저장소 이름을 확인하지 못했습니다. 원격 URL을 먼저 입력해주세요.",
+    );
+  }
+  return { githubLogin, remoteUrl, currentRemote };
+}
+
+export function reconfigureKnowledgeRemote(
+  input: KnowledgeRemoteReconfiguration,
+): {
+  previousRemote: string;
+  remoteUrl: string;
+} {
+  const knowledgePath = validateSafeAbsoluteDirectory(
+    input.knowledgePath,
+    "Knowledge 경로",
+  );
+  if (!fs.existsSync(path.join(knowledgePath, ".git"))) {
+    throw new Error(`Knowledge Git 저장소가 아닙니다: ${knowledgePath}`);
+  }
+  const remoteUrl = input.remoteUrl.trim();
+  if (!remoteUrl) throw new Error("재설정할 Git 원격 URL을 입력해주세요.");
+  if (remoteContainsCredential(remoteUrl)) {
+    throw new Error(
+      "원격 URL에 자격 증명을 넣지 마세요. Git Credential Manager 또는 SSH를 사용하세요.",
+    );
+  }
+  const gitExecutable = findExecutable(["git.exe", "git"], [
+    programFilesPath("Git", "cmd", "git.exe"),
+  ]);
+  if (!gitExecutable) throw new Error("Git for Windows를 찾지 못했습니다.");
+  const previousRemote = readGitRemote(knowledgePath) ?? "";
+  const args = previousRemote
+    ? ["-C", knowledgePath, "remote", "set-url", "origin", remoteUrl]
+    : ["-C", knowledgePath, "remote", "add", "origin", remoteUrl];
+  execFileSync(gitExecutable, args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+    timeout: 15_000,
+  });
+  updateRootsConfig({
+    knowledge: knowledgePath,
+    knowledge_mode: "private_remote",
+    knowledge_remote: remoteUrl,
+  });
+  updateLegacyKnowledgeRootsConfig({
+    knowledge: knowledgePath,
+    knowledge_mode: "private_remote",
+    knowledge_remote: remoteUrl,
+  });
+  return { previousRemote, remoteUrl };
 }
 
 export function getFirstRunStatus(context: vscode.ExtensionContext): FirstRunStatus {
@@ -391,11 +546,17 @@ export function getFirstRunStatus(context: vscode.ExtensionContext): FirstRunSta
     dashboard: Boolean(context.globalState.get(DASHBOARD_SETUP_KEY)),
     orchestrator:
       typeof orchestrator.FirstRunCompletedAt === "string" &&
-      (fs.existsSync(pluginPath()) || fs.existsSync(legacyPluginPath())),
+      (fs.existsSync(pluginPath()) ||
+        fs.existsSync(previousPluginPath()) ||
+        fs.existsSync(legacyPluginPath())),
     knowledge:
       knowledgeConfigured &&
       Boolean(knowledgePath.trim()) &&
-      fs.existsSync(path.join(knowledgePath, ".git")),
+      fs.existsSync(path.join(knowledgePath, ".git")) &&
+      fs.existsSync(
+        path.join(knowledgePath, ".ai", "knowledge-routing.json"),
+      ) &&
+      readGitBranch(knowledgePath) === "main",
   };
 }
 
@@ -444,7 +605,7 @@ export function installedKnowledgeWizardPath(): string | undefined {
       ? [
           path.join(
             process.env.LOCALAPPDATA ?? "",
-            "EggR",
+            "IntegratedPower",
             "bin",
             "initialize-eggr-knowledge.ps1",
           ),
@@ -453,12 +614,44 @@ export function installedKnowledgeWizardPath(): string | undefined {
   return candidates.find((candidate) => candidate && fs.existsSync(candidate));
 }
 
+function readGitBranch(repository: string): string | null {
+  return readGitValue(repository, ["branch", "--show-current"]);
+}
+
+function readGitTaskBranchCount(repository: string): number {
+  const value = readGitValue(repository, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/heads/agent",
+    "refs/remotes/origin/agent",
+  ]);
+  if (!value) return 0;
+  return new Set(
+    value
+      .split(/\r?\n/)
+      .map((entry) => entry.trim().replace(/^origin\//, ""))
+      .filter(Boolean),
+  ).size;
+}
+
 export function orchestratorSettingsPath(): string {
-  if (process.env.EGGR_ORCHESTRATOR_SETTINGS) {
+  const configured =
+    process.env.INTEGRATED_POWER_ORCHESTRATOR_SETTINGS ??
+    process.env.EGGR_ORCHESTRATOR_SETTINGS;
+  if (configured) {
     return path.resolve(
-      expandEnvironmentVariables(process.env.EGGR_ORCHESTRATOR_SETTINGS),
+      expandEnvironmentVariables(configured),
     );
   }
+  return path.join(
+    os.homedir(),
+    ".config",
+    "integrated-power",
+    "orchestrator.json",
+  );
+}
+
+export function previousOrchestratorSettingsPath(): string {
   return path.join(os.homedir(), ".config", "eggr", "orchestrator.json");
 }
 
@@ -473,10 +666,19 @@ export function legacyOrchestratorSettingsPath(): string {
 
 function readOrchestratorSettings(): {
   value: Record<string, unknown>;
-  source: "eggr" | "legacy" | "none";
+  source: "integrated-power" | "eggr" | "legacy" | "none";
 } {
   if (fs.existsSync(orchestratorSettingsPath())) {
-    return { value: readJsonObject(orchestratorSettingsPath()), source: "eggr" };
+    return {
+      value: readJsonObject(orchestratorSettingsPath()),
+      source: "integrated-power",
+    };
+  }
+  if (fs.existsSync(previousOrchestratorSettingsPath())) {
+    return {
+      value: readJsonObject(previousOrchestratorSettingsPath()),
+      source: "eggr",
+    };
   }
   if (fs.existsSync(legacyOrchestratorSettingsPath())) {
     return {
@@ -615,13 +817,30 @@ function diagnostic(
   id: ExecutableDiagnostic["id"],
   label: string,
   executable: string | null,
+  optional: boolean,
 ): ExecutableDiagnostic {
-  return { id, label, available: Boolean(executable), path: executable ?? "" };
+  return {
+    id,
+    label,
+    available: Boolean(executable),
+    path: executable ?? "",
+    optional,
+  };
 }
 
 function updateRootsConfig(patch: Record<string, unknown>): void {
   const configPath = rootsConfigPath();
   writeJsonObjectAtomic(configPath, { ...readJsonObject(configPath), ...patch });
+}
+
+function updateLegacyKnowledgeRootsConfig(
+  patch: Record<string, unknown>,
+): void {
+  const configPath = legacyEggRRootsConfigPath();
+  writeJsonObjectAtomic(configPath, {
+    ...readJsonObject(configPath),
+    ...patch,
+  });
 }
 
 function readJsonObject(filePath: string): Record<string, unknown> {
@@ -652,10 +871,20 @@ function writeJsonObjectAtomic(
 }
 
 function rootsConfigPath(): string {
-  return path.join(os.homedir(), ".config", "eggr", "roots.json");
+  return integratedPowerRootsConfigPath();
 }
 
 function pluginPath(): string {
+  return path.join(
+    os.homedir(),
+    ".gemini",
+    "config",
+    "plugins",
+    "ip-orchestrator-plugin",
+  );
+}
+
+function previousPluginPath(): string {
   return path.join(
     os.homedir(),
     ".gemini",
@@ -676,7 +905,7 @@ function legacyPluginPath(): string {
 }
 
 function defaultKnowledgePath(): string {
-  return path.join(os.homedir(), "Documents", "EggR", "Knowledge");
+  return path.join(os.homedir(), "Documents", "IntegratedPower", "Knowledge");
 }
 
 function validateSafeAbsoluteDirectory(value: string, label: string): string {
@@ -737,8 +966,16 @@ function findCodexExecutable(existing?: string): string | null {
   return null;
 }
 
-function findExecutable(names: string[]): string | null {
+export function findExecutable(
+  names: string[],
+  knownCandidates: Array<string | undefined> = [],
+): string | null {
+  for (const candidate of knownCandidates) {
+    if (candidate && fs.existsSync(candidate)) return path.resolve(candidate);
+  }
   const locator = process.platform === "win32" ? "where.exe" : "which";
+  const refreshedPath =
+    process.platform === "win32" ? refreshedWindowsPath() : process.env.PATH;
   for (const name of names) {
     try {
       const result = execFileSync(locator, [name], {
@@ -746,6 +983,7 @@ function findExecutable(names: string[]): string | null {
         stdio: ["ignore", "pipe", "ignore"],
         windowsHide: true,
         timeout: 5_000,
+        env: { ...process.env, PATH: refreshedPath },
       })
         .split(/\r?\n/)
         .map((entry) => entry.trim())
@@ -756,6 +994,64 @@ function findExecutable(names: string[]): string | null {
     }
   }
   return null;
+}
+
+function refreshedWindowsPath(): string {
+  const segments = [
+    process.env.PATH ?? "",
+    readWindowsRegistryPath("HKCU\\Environment"),
+    readWindowsRegistryPath(
+      "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+    ),
+  ]
+    .flatMap((value) =>
+      expandEnvironmentVariables(value)
+        .split(";")
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    );
+  const unique = new Map<string, string>();
+  for (const segment of segments) {
+    const key = segment.toLowerCase();
+    if (!unique.has(key)) unique.set(key, segment);
+  }
+  return [...unique.values()].join(";");
+}
+
+function readWindowsRegistryPath(key: string): string {
+  try {
+    const output = execFileSync("reg.exe", ["query", key, "/v", "Path"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+      timeout: 5_000,
+    });
+    return (
+      output.match(
+        /^\s*Path\s+REG_(?:EXPAND_)?SZ\s+(.+?)\s*$/im,
+      )?.[1] ?? ""
+    );
+  } catch {
+    return "";
+  }
+}
+
+function localAppDataPath(...segments: string[]): string | undefined {
+  return process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, ...segments)
+    : undefined;
+}
+
+function programFilesPath(...segments: string[]): string | undefined {
+  return process.env.ProgramFiles
+    ? path.join(process.env.ProgramFiles, ...segments)
+    : undefined;
+}
+
+function systemRootPath(...segments: string[]): string | undefined {
+  return process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, ...segments)
+    : undefined;
 }
 
 function findFiles(root: string, fileName: string, depth = 0): string[] {
@@ -778,7 +1074,11 @@ function readGitConfig(repository: string, key: string): string | null {
       ? ["-C", repository, "config", "--local", "--get", key]
       : ["config", "--global", "--get", key];
   try {
-    const value = execFileSync("git", args, {
+    const gitExecutable = findExecutable(["git.exe", "git"], [
+      programFilesPath("Git", "cmd", "git.exe"),
+    ]);
+    if (!gitExecutable) return null;
+    const value = execFileSync(gitExecutable, args, {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
@@ -788,6 +1088,67 @@ function readGitConfig(repository: string, key: string): string | null {
   } catch {
     return null;
   }
+}
+
+function readGitValue(repository: string, argumentsAfterRepository: string[]): string | null {
+  if (!fs.existsSync(path.join(repository, ".git"))) return null;
+  const gitExecutable = findExecutable(["git.exe", "git"], [
+    programFilesPath("Git", "cmd", "git.exe"),
+  ]);
+  if (!gitExecutable) return null;
+  try {
+    const value = execFileSync(
+      gitExecutable,
+      ["-C", repository, ...argumentsAfterRepository],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
+        timeout: 5_000,
+      },
+    ).trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+function readGitRemote(repository: string): string | null {
+  return readGitValue(repository, ["remote", "get-url", "origin"]);
+}
+
+function readGitHubLogin(executable: string | null): string | null {
+  if (!executable) return null;
+  try {
+    const value = execFileSync(executable, ["api", "user", "--jq", ".login"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+      timeout: 15_000,
+    }).trim();
+    return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(value)
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function rewriteGitHubRemoteOwner(
+  remoteUrl: string,
+  githubLogin: string,
+): string | null {
+  const normalized = remoteUrl.trim();
+  const match =
+    normalized.match(
+      /^https?:\/\/github\.com\/[^/]+\/([^/#]+?)(?:\.git)?\/?$/i,
+    ) ??
+    normalized.match(
+      /^(?:ssh:\/\/)?git@github\.com[:/][^/]+\/([^/#]+?)(?:\.git)?\/?$/i,
+    );
+  if (!match) return null;
+  const repository = match[1].replace(/\.git$/i, "");
+  return `https://github.com/${githubLogin}/${repository}.git`;
 }
 
 function executeFileUtf8(

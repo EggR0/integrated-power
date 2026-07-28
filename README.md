@@ -2,15 +2,16 @@
 
 Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Windows 11에서
 에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고,
-Integrated Orchestrator와 사용자 소유 Private Git Knowledge의 안전한 설정 진입점을
-제공한다.
+Integrated Orchestrator와 사용자 소유 Private Git Knowledge를 이어 주는 설정
+진입점을 제공한다. 목적은 단순한 상태 표시가 아니라, 서로 다른 에이전트와 PC를
+오가더라도 “어떤 실행 경로를 왜 골랐는지”와 “다음 작업이 무엇을 이어받아야
+하는지”를 잃지 않게 하는 것이다.
 
 | 항목 | 값 |
 |---|---|
 | 제품 표시명 | Integrated Power |
-| Publisher 표시명 | Integrated Power |
-| 현재 배포 준비판 | 0.7.0 |
-| 최초 공개판 | 0.7.0 |
+| Publisher | EggR |
+| 확장 ID | `EggR.integrated-power` |
 | 공개 배포 채널 | Open VSX Registry |
 | 우선 지원 환경 | Antigravity IDE on Windows 11 |
 
@@ -28,14 +29,33 @@ Open VSX는 배포 채널이다. Open VSX에 게시되더라도 Visual Studio Co
 | Integrated Orchestrator | 주 에이전트, Codex, 로컬 LLM 사이의 작업 경로 선택 | 사용자가 명시적으로 설치·설정 |
 | Private Git Knowledge | 지식, 작업 기록, 오류 이력을 사용자 자신의 Git에 누적 | 별도 Windows 도구가 사용자 선택으로 설정 |
 
-Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이고, 호환성을
-위한 기계 식별자는 `eggr-orchestrator`로 유지한다.
+Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이고, 현재
+기계 식별자는 `ip-orchestrator`다. 0.7.2 이하의 `eggr-orchestrator`와 더 이전
+`codex-orchestrator`는 새 설치가 정확한 관리 표식을 확인한 경우에만 백업한 뒤
+전환한다.
 
 세 구성은 설치 수명과 데이터 소유자가 다르다. 안전한 Configuration Center는 세
 상태와 설정 진입점을 한 화면에 보여 주지만, Dashboard 활성화만으로 Orchestrator나
 사용자 Knowledge를 설치·변경하지 않는다.
 
-## 0.7.0 주요 기능
+### 왜 세 구성을 분리하는가
+
+- **Dashboard는 관측 도구다.** 제공자가 보고한 사용량, 로컬에서 계산한 값,
+  추정값과 GPU 상태를 구분해 보여 준다. 상태 화면을 여는 행위가 실행 규칙이나
+  사용자 파일을 바꾸면 원인 추적이 어려워지므로 관측과 변경을 분리한다.
+- **Integrated Orchestrator는 실행 경로 선택 기능이다.** 현재 에이전트가 직접
+  처리할지, Codex에 맡길지, VRAM·backend 조건에 맞는 로컬 LLM을 전처리에 쓸지를
+  설정에 따라 결정한다. 로컬 모델이 없으면 해당 경로만 비활성이고 Dashboard와
+  Knowledge는 계속 사용할 수 있다.
+- **Private Git Knowledge는 사용자 소유 기억이다.** 제품 개발자의 저장소를
+  배포하는 기능이 아니라, 사용자가 선택한 Git 저장소에 작업 로그·오류 이력·계속
+  보존할 지식을 쌓아 PC, OS, 에이전트가 바뀌어도 다시 참조할 수 있게 한다.
+
+이 분리는 한 구성의 장애가 다른 두 구성을 망가뜨리지 않게 하고, 다른 사용자에게
+배포할 때 각자의 경로·계정·도구 설치 상태를 Configuration Center에서 다시 정할
+수 있게 한다.
+
+## 주요 기능
 
 - Antigravity IDE, Codex 및 로컬 LLM 상태 영역 선택 표시
 - GPU 사용률, VRAM, 전력 사용량과 현재 전력 제한 표시
@@ -65,7 +85,7 @@ Windows Credential Manager에서 관리하며, Integrated Power가 계정을 만
 ## GEMINI.md 경계
 
 Integrated Power는 전역 또는 프로젝트 `GEMINI.md`를 생성, 추가, 교체하거나
-내용을 병합하지 않는다. Antigravity IDE 연동에는 plugin, `eggr-orchestrator` 기계
+내용을 병합하지 않는다. Antigravity IDE 연동에는 plugin, `ip-orchestrator` 기계
 식별자, Integrated Power 설정과 상태 파일을 사용한다.
 
 확장 설치, 업데이트, Configuration Center 열기와 Integrated Orchestrator 설치 전후에
@@ -73,19 +93,21 @@ Integrated Power는 전역 또는 프로젝트 `GEMINI.md`를 생성, 추가, �
 
 ## 설치
 
-### Open VSX 공개판 0.7.0
+### Open VSX 검색 설치
 
-0.7.0은 Open VSX Registry에 게시할 최초 공개판이다. 실제 Registry 게시 완료 전에는
-검색 설치할 수 있다고 가정하지 않는다. 게시 후에는 Antigravity IDE의 Extensions 화면에서
-`Integrated Power`와 Publisher `Integrated Power`를 함께 확인한 뒤 설치한다.
+Antigravity IDE의 Extensions 화면에서 `Integrated Power`를 검색하고 제품명
+`Integrated Power`와 Publisher `EggR`를 함께 확인한 뒤 설치한다.
 
-### 0.7.0 VSIX 직접 설치
+### VSIX 직접 설치
 
-게시 전 검증이나 직접 배포에서는 0.7.0 VSIX를 Antigravity IDE 전용 CLI wrapper로 설치한다.
+검증이나 직접 배포에서는
+[GitHub Releases](https://github.com/EggR0/integrated-power/releases)의 VSIX를
+Antigravity IDE 전용 CLI wrapper로 설치한다. `<version>`은 받은 파일의 버전으로
+바꾼다.
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\integrated-power-0.7.1.vsix" `
+  --install-extension ".\integrated-power-<version>.vsix" `
   --force
 ```
 
@@ -115,8 +137,14 @@ Developer: Reload Window
 | `Integrated Power: Configure Private Git Knowledge` | 사용자 Knowledge 설정 영역 열기 |
 | `Integrated Power: Install or Update Integrated Orchestrator` | 설치 계획과 충돌 상태 확인 |
 
-명령의 내부 `integratedPower.*` ID와 `eggr-orchestrator` 기계 식별자는 호환성을
+명령의 내부 `integratedPower.*` ID와 `ip-orchestrator` 기계 식별자는 호환성을
 위해 유지한다.
+
+개요 탭의 **상태 다시 확인**은 단순히 이전 결과를 다시 표시하지 않는다. 버튼을
+누를 때 Windows 레지스트리의 최신 사용자·시스템 PATH와 GitHub CLI, Git, Ollama의
+표준 설치 위치를 다시 읽는다. 따라서 IDE 실행 후 설치한 CLI도 IDE를 재시작하지
+않고 감지할 수 있다. Ollama, Codex, Agy와 GitHub CLI는 관련 경로를 켜지 않았다면
+“고장”이 아니라 선택 사항으로 표시한다.
 
 Dashboard 표시 항목은 Antigravity IDE 설정에서 선택할 수 있다.
 
@@ -145,23 +173,63 @@ Integrated Orchestrator는 다음 두 정책을 제공한다.
 Integrated Power는 개발자의 Knowledge 저장소 내용을 배포하지 않는다. 각 사용자는
 자신의 private Git remote 또는 원격 없는 `local_only` 저장소를 선택한다.
 
+확장에는 Win11용 Knowledge 설정·분류·저장 도구가 포함된다. Configuration
+Center의 **내장 Knowledge 도구 설치·복구**가 이를
+`%LOCALAPPDATA%\IntegratedPower\bin`에 설치하므로 별도
+`environment-bootstrap` clone은 필수가 아니다.
+
 Git 작성자 email은 commit metadata이며 로그인 수단이 아니다. 원격 인증은 Git
-Credential Manager 또는 SSH agent가 담당한다. 최초 설정은 기존 branch와 dirty
-변경을 보존하며 commit, pull, rebase, checkout과 push를 자동 실행하지 않는다.
+Credential Manager 또는 SSH agent가 담당한다. 최초 설정·재설정 마법사는 기존
+branch와 dirty 변경을 보존하며 commit, pull, rebase, checkout과 push를 자동
+실행하지 않는다.
+
+마법사는 기존 파일을 덮어쓰지 않고 빠진 Obsidian 기본 구조와
+`.ai/knowledge-routing.json`만 만든다.
+
+| 경로 | 지식 종류 |
+|---|---|
+| `00 Inbox` | 분류가 불확실한 기록과 Agent Worklog |
+| `10 Projects` | 종료 조건이 있는 프로젝트 |
+| `20 Knowledge` | 여러 작업에서 재사용할 지식·방법 |
+| `30 Areas` | 지속적으로 관리할 운영·책임 영역 |
+| `90 Templates` | 재사용 서식 |
+
+에이전트는 `route-knowledge`로 기존 id·별칭·제목·파일명을 먼저 검사한다. 같은
+주제가 있으면 기존 문서를 갱신하고, 불확실하면 새 폴더 대신 `00 Inbox`를 쓴다.
+`save-knowledge`와 `save-agent-worklog`는 명시된 허용 파일만 검증·stage·commit하고
+origin이 있으면 `main`을 `pull --rebase --autostash`한 뒤 force 없이 push한다.
+Knowledge의 최종 기준은 항상 `main`이며 작업 이름의 `agent/...` 브랜치를 만들지
+않는다. 코드·설정 저장소의 임시 작업 브랜치 정책과 구분된다.
+
+GitHub 사용자명을 바꾼 경우 Configuration Center의 Knowledge 탭에서 다음 순서로
+재설정한다.
+
+1. **현재 GitHub 로그인으로 remote 감지**를 눌러 `gh api user`의 실제 로그인과
+   현재 origin의 저장소 이름을 조합한 URL을 제안받는다.
+2. 제안 URL을 확인한 뒤 **입력한 remote로 origin 재설정**을 눌러 해당 Knowledge
+   저장소의 정확한 `origin`과 제품 설정을 함께 갱신한다.
+
+이 작업은 commit, pull 또는 push를 실행하지 않는다.
 
 ## 상태와 설정 경로
 
 | 데이터 | Windows 경로 |
 |---|---|
-| 공통 root 설정 | `%USERPROFILE%\.config\eggr\roots.json` |
-| 기본 runtime state | `%LOCALAPPDATA%\EggR\state` |
-| Integrated Orchestrator 설정 | `%USERPROFILE%\.config\eggr\orchestrator.json` |
-| Antigravity IDE plugin | `%USERPROFILE%\.gemini\config\plugins\eggr-orchestrator-plugin` |
+| 공통 root 설정 | `%USERPROFILE%\.config\integrated-power\roots.json` |
+| 기본 runtime state | `%LOCALAPPDATA%\IntegratedPower\state` |
+| Integrated Orchestrator 설정 | `%USERPROFILE%\.config\integrated-power\orchestrator.json` |
+| Antigravity IDE plugin | `%USERPROFILE%\.gemini\config\plugins\ip-orchestrator-plugin` |
+| Win11 Knowledge 명령 | `%LOCALAPPDATA%\IntegratedPower\bin` |
 | Private Git Knowledge | 사용자가 최초 설정에서 선택 |
 
 현재 PC의 절대 경로나 Git 원격을 다른 사용자에게 배포하지 않는다. 새 PC에서는
-사용자 선택을 먼저 사용하고, 선택이 없을 때만 `%USERPROFILE%\Documents\EggR`를
+사용자 선택을 먼저 사용하고, 선택이 없을 때만 `%USERPROFILE%\Documents\IntegratedPower`를
 WorkRoot 권장값으로 제안한다. 기존 저장소는 자동 이동·병합·삭제하지 않는다.
+
+0.7.2 이하의 기본 `%LOCALAPPDATA%\EggR\state`가 있으면 0.7.3 최초 활성화 때 새
+`IntegratedPower\state`로 누락 파일만 한 번 복사한다. 이전 디렉터리는 삭제하지
+않고 migration 기록을 새 상태 루트에 남긴다. 사용자가 별도 드라이브를 명시한
+경우에는 그 사용자 지정 경로를 유지한다.
 
 ## 의존성
 

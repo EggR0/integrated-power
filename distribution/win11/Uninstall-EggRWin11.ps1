@@ -44,8 +44,11 @@ try {
         extensionAction   = 'none'
         preserved         = @(
             '%USERPROFILE%\.gemini\GEMINI.md',
+            '%USERPROFILE%\.gemini\config\plugins\ip-orchestrator-plugin',
             '%USERPROFILE%\.gemini\config\plugins\eggr-orchestrator-plugin',
+            '%USERPROFILE%\.config\integrated-power',
             '%USERPROFILE%\.config\eggr',
+            '%LOCALAPPDATA%\IntegratedPower',
             '%LOCALAPPDATA%\EggR',
             '사용자가 선택한 Private Knowledge 저장소'
         )
