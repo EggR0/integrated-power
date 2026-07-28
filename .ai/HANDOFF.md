@@ -3,8 +3,8 @@ session_id: 20260728-integrated-power-knowledge-main-routing
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: 3ac34e66d1f74bf51e212d15e3dedd8976c875e5
-branch: agent/codex/first-run-wizards
+base_commit: 6520d88cd2cf80d4d80542374fed08d2cc37c48f
+branch: agent/codex/finalize-0.7.4-record
 ownership:
   - ".ai/**"
   - ".github/**"
@@ -32,7 +32,7 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: knowledge_main_routing_verified
+state: integrated_power_0_7_4_released
 next_action: Implement deterministic Obsidian folder/file routing and temporary-branch integration for Knowledge without deleting existing branches.
 ---
 
@@ -231,3 +231,12 @@ next_action: Implement deterministic Obsidian folder/file routing and temporary-
   passed. Candidate VSIX:
   `vscode-extension/integrated-power-0.7.4.vsix`, SHA-256
   `F74883F8FE3DA35EC8DD5D433A1EC41FA2A1518F9D89D6FB49AEA87F3E18A8B7`.
+- **2026-07-28 Integrated Power 0.7.4 released**: PR #1 merged the private
+  source at `6520d88`; public PR #3 merged at `50e2314`. Public CI passed,
+  GitHub Release `v0.7.4` was published, and its VSIX asset digest is
+  `E2902535D565AB9A28CE7368F0F2A033DDE19A51FB27793573DE2CBC4F3E298C`.
+  The public and private builds contain the same 46 internal files. The public
+  release VSIX was installed into Antigravity IDE as
+  `eggr.integrated-power@0.7.4`. All 32 audited remote agent branches across
+  the private source, public source, environment-bootstrap, Knowledge, and
+  dotfiles repositories were removed after merge or manual content recovery.
