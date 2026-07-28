@@ -272,3 +272,18 @@
   `f9ab76943258c70cc4e5593ea827d35d6497bce5`로 병합했다. 병합 후 CI도 통과했다.
 - GitHub Release `v0.7.1`을 게시하고 `integrated-power-0.7.1.vsix`를 첨부했다.
   GitHub asset digest가 위 로컬 SHA-256과 일치한다.
+
+## 2026-07-28 — Open VSX 게시 CLI의 빌드 절차 분리 설치
+
+- VSIX 생성과 이미 생성된 VSIX의 마켓 게시가 별도 작업이라는 경계를 바로잡았다.
+- Win11에 공식 Node.js LTS 24.18.0과 npm 11.16.0을 설치하고, 사용자 전역 npm
+  경로에 `ovsx` 1.0.2를 설치했다. 새 레지스트리 PATH 기준으로 `node`, `npm`,
+  `ovsx` 명령의 경로와 버전을 확인했다.
+- 앞서 잘못 추가한 프로젝트 내부 `ovsx` 개발 의존성과 미게시 GitHub Actions
+  워크플로 초안은 제거했다. 확장 기능 및 기존 0.7.2 변경은 수정하지 않았다.
+- 게시 대상은 공개 소스에서 이미 만들어진 `EggR.integrated-power` 0.7.2
+  VSIX이며 SHA-256은
+  `052F392F6EB50F6265CC88B96F62727A18E492D14C1F10024EF875FDF43879D6`이다.
+- 설치 직후 Open VSX의 `EggR` namespace는 HTTP 404였고 저장된 PAT가 없었다.
+  토큰이 화면·채팅·Git에 노출되지 않도록 별도 PowerShell의 보안 입력으로
+  namespace 생성과 자격 증명 검증을 시작했다.

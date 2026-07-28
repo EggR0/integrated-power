@@ -1,9 +1,9 @@
 ---
-session_id: 20260728-integrated-power-canonical-id
+session_id: 20260728-eggr-publisher-and-repository-identity
 author: Codex GPT-5.6
 host_os: windows-11-25h2
 repo_root: Intergrated-POWER
-base_commit: e0900bff0bfa413ea8cf468efab5b6e4e190dc32
+base_commit: 5c6ff172eb2357b40a07ae8200d34234dfd6896f
 branch: agent/codex/first-run-wizards
 ownership:
   - ".ai/**"
@@ -26,8 +26,8 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: canonical_extension_v0.7.1_released_openvsx_pending
-next_action: Upload the verified integrated-power-0.7.1.vsix to Open VSX under the integratedpower namespace.
+state: eggr_openvsx_cli_installed_auth_pending
+next_action: Complete the secure Open VSX PAT prompt, verify the EggR namespace, and publish the already-built EggR.integrated-power 0.7.2 VSIX without rebuilding it.
 ---
 
 # Handoff Log
@@ -165,3 +165,13 @@ next_action: Upload the verified integrated-power-0.7.1.vsix to Open VSX under t
   SHA-256. The required
   `save-agent-worklog` command is not installed on this Windows host; the
   central worklog line was appended but automatic sync could not run.
+- **2026-07-28 Open VSX CLI separated from VSIX builds**: Installed official
+  Node.js LTS 24.18.0, npm 11.16.0, and global `ovsx` 1.0.2. Confirmed the
+  command resolves from `%APPDATA%\npm` in a fresh registry-derived PATH.
+  Removed the mistakenly added project-local `ovsx` dependency and unpublished
+  GitHub Actions draft so the extension build and marketplace publication
+  remain separate processes. The existing public candidate is
+  `EggR.integrated-power` 0.7.2 with SHA-256
+  `052F392F6EB50F6265CC88B96F62727A18E492D14C1F10024EF875FDF43879D6`.
+  Open VSX still returned 404 for the `EggR` namespace and no stored PAT was
+  available before opening a secure interactive token prompt.
