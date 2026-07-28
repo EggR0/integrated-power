@@ -268,3 +268,7 @@
 - 비공개 원본과 공개 소스에서 만든 VSIX의 39개 내부 entry가 모두 byte-identical이다.
   공개 배포 후보 SHA-256은
   `FC9255FEE24D0BAC45A9F29FD35A7AF2CAB24F5046C08BA502CAF63D3D470339`이다.
+- 공개 commit `69af20a`를 PR #2와 CI를 거쳐 `main` merge commit
+  `f9ab76943258c70cc4e5593ea827d35d6497bce5`로 병합했다. 병합 후 CI도 통과했다.
+- GitHub Release `v0.7.1`을 게시하고 `integrated-power-0.7.1.vsix`를 첨부했다.
+  GitHub asset digest가 위 로컬 SHA-256과 일치한다.

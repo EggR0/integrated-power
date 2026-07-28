@@ -26,8 +26,8 @@ forbidden:
   - "C:/Users/test/.gemini/GEMINI.md"
   - "C:/Users/test/.gemini/config/GEMINI.md"
   - "../Intergrated-POWER-public/**"
-state: canonical_extension_identity_pr_open
-next_action: Review PR #2 CI, merge when ready, publish v0.7.1, and upload integrated-power-0.7.1.vsix to Open VSX.
+state: canonical_extension_v0.7.1_released_openvsx_pending
+next_action: Upload the verified integrated-power-0.7.1.vsix to Open VSX under the integratedpower namespace.
 ---
 
 # Handoff Log
@@ -158,6 +158,10 @@ next_action: Review PR #2 CI, merge when ready, publish v0.7.1, and upload integ
   8/8, the 83-file public privacy scan, and 39-entry cross-build equality
   passed. Public VSIX SHA-256:
   `FC9255FEE24D0BAC45A9F29FD35A7AF2CAB24F5046C08BA502CAF63D3D470339`.
-  Public commit `69af20a` is in draft PR #2. The required
+  Public commit `69af20a` was merged through PR #2 at
+  `f9ab76943258c70cc4e5593ea827d35d6497bce5`; post-merge CI passed.
+  GitHub Release `v0.7.1` contains the verified
+  `integrated-power-0.7.1.vsix`, and GitHub's asset digest matches the local
+  SHA-256. The required
   `save-agent-worklog` command is not installed on this Windows host; the
   central worklog line was appended but automatic sync could not run.
