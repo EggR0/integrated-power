@@ -6,7 +6,9 @@
 
 Integrated Power 확장에는 Win11용 Knowledge 도구가 포함된다. Configuration
 Center에서 **내장 Knowledge 도구 설치·복구**를 누른 뒤 설정 마법사를 실행한다.
-명령은 다음 제품 전용 경로에도 설치된다.
+명령은 기본적으로 다음 제품 전용 경로에 설치된다. Configuration Center 또는
+`INTEGRATED_POWER_TOOLS_ROOT`로 다른 위치를 명시할 수 있으며, 다른 사용자 폴더를
+검색해서 설치 위치를 추측하지 않는다.
 
 ```powershell
 %LOCALAPPDATA%\IntegratedPower\bin\initialize-eggr-knowledge.cmd
@@ -14,9 +16,15 @@ Center에서 **내장 Knowledge 도구 설치·복구**를 누른 뒤 설정 마
 
 마법사가 묻는 항목:
 
+- 이 PC에서 사용할 에이전트 공통 작업 루트
 - Knowledge 로컬 경로
 - 사용자가 소유한 private Git remote URL 또는 명시적 local-only 모드
 - Git 작성자 이름과 이메일
+
+선택한 경로는 이 PC의
+`%USERPROFILE%\.config\integrated-power\roots.json`에 저장한다. 이 파일은 다른
+PC와 공유하는 Knowledge Git에 넣지 않는다. 새 PC에서는 경로를 다시 선택하고 같은
+Knowledge remote를 연결한다.
 
 마법사는 기존 문서를 덮어쓰지 않고 빠진 Obsidian 기본 경로와
 `.ai\knowledge-routing.json`만 추가한다.

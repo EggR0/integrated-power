@@ -9,7 +9,12 @@ const {
   normalizeEggRRemoteIdentity,
   normalizeWorkspacePathForStorage,
   ensureIntegratedPowerStorageMigration,
+  integratedPowerRootsConfigPath,
+  resolveAntigravityPluginRoot,
+  resolveIntegratedPowerKnowledgeRoot,
   resolveIntegratedPowerStateRoot,
+  resolveIntegratedPowerToolsRoot,
+  resolveIntegratedPowerWorkRoot,
   resolveEggRStateRoot,
   workspaceStoragePathForFolder,
 } = require("../out/storagePath");
@@ -81,6 +86,94 @@ test("bundled Knowledge resolver prefers canonical roots and avoids pwsh reserve
   assert.ok(source.includes(".config\\eggr\\roots.json"));
   assert.ok(source.includes("$runningOnWindows"));
   assert.ok(!source.includes("$isWindows ="));
+});
+
+test("portable roots resolve from one machine-local contract without scanning user folders", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-portable-"));
+  const configPath = path.join(tempHome, "settings", "roots.json");
+  const workRoot = path.join(tempHome, "chosen", "Work");
+  const knowledgeRoot = path.join(tempHome, "elsewhere", "Knowledge");
+  const pluginRoot = path.join(tempHome, "antigravity-profile", "plugins");
+  const toolsRoot = path.join(tempHome, "portable-bin");
+  const env = {
+    INTEGRATED_POWER_ROOTS_CONFIG: configPath,
+    LOCALAPPDATA: path.join(tempHome, "LocalAppData"),
+  };
+  try {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      `${JSON.stringify({
+        work_root: workRoot,
+        knowledge: knowledgeRoot,
+        antigravity_plugin_root: pluginRoot,
+        tools_root: toolsRoot,
+      }, null, 2)}\n`,
+      "utf8",
+    );
+    assert.strictEqual(integratedPowerRootsConfigPath(tempHome, env), path.resolve(configPath));
+    assert.deepStrictEqual(resolveIntegratedPowerWorkRoot(env, tempHome), {
+      path: path.resolve(workRoot), source: "config", configured: true,
+    });
+    assert.deepStrictEqual(resolveIntegratedPowerKnowledgeRoot(env, tempHome), {
+      path: path.resolve(knowledgeRoot), source: "config", configured: true,
+    });
+    assert.deepStrictEqual(resolveAntigravityPluginRoot(env, tempHome), {
+      path: path.resolve(pluginRoot), source: "config", configured: true,
+    });
+    assert.deepStrictEqual(resolveIntegratedPowerToolsRoot(env, tempHome, "win32"), {
+      path: path.resolve(toolsRoot), source: "config", configured: true,
+    });
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("portable path environment overrides are explicit and user-scoped", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-env-"));
+  const env = {
+    INTEGRATED_POWER_ROOTS_CONFIG: path.join(tempHome, "missing", "roots.json"),
+    INTEGRATED_POWER_WORK_ROOT: path.join(tempHome, "WorkOverride"),
+    INTEGRATED_POWER_KNOWLEDGE_ROOT: path.join(tempHome, "KnowledgeOverride"),
+    INTEGRATED_POWER_ANTIGRAVITY_PLUGIN_ROOT: path.join(tempHome, "PluginOverride"),
+    INTEGRATED_POWER_TOOLS_ROOT: path.join(tempHome, "ToolsOverride"),
+  };
+  try {
+    for (const resolved of [
+      resolveIntegratedPowerWorkRoot(env, tempHome),
+      resolveIntegratedPowerKnowledgeRoot(env, tempHome),
+      resolveAntigravityPluginRoot(env, tempHome),
+      resolveIntegratedPowerToolsRoot(env, tempHome, "win32"),
+    ]) {
+      assert.strictEqual(resolved.source, "environment");
+      assert.strictEqual(resolved.configured, true);
+      assert.ok(resolved.path.startsWith(tempHome));
+    }
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("an explicit roots file never falls through to another profile's legacy config", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-no-fallback-"));
+  const legacyConfig = path.join(tempHome, ".config", "eggr", "roots.json");
+  const env = {
+    INTEGRATED_POWER_ROOTS_CONFIG: path.join(tempHome, "isolated", "roots.json"),
+  };
+  try {
+    fs.mkdirSync(path.dirname(legacyConfig), { recursive: true });
+    fs.writeFileSync(
+      legacyConfig,
+      `${JSON.stringify({ work_root: path.join(tempHome, "legacy-work") })}\n`,
+      "utf8",
+    );
+    const resolved = resolveIntegratedPowerWorkRoot(env, tempHome);
+    assert.strictEqual(resolved.source, "default");
+    assert.strictEqual(resolved.configured, false);
+    assert.notStrictEqual(resolved.path, path.join(tempHome, "legacy-work"));
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test("Integrated Power uses its product state root and copies legacy files without deleting them", () => {
@@ -169,8 +262,12 @@ test("configuration center keeps three independent setup models", () => {
   assert.ok(centerSource.includes("save-agent-worklog"));
   assert.ok(centerSource.includes("내장 Knowledge 도구 설치·복구"));
   assert.ok(centerSource.includes("Knowledge는 main으로 통합해야 합니다."));
-  assert.ok(installerSource.includes('"IntegratedPower", "bin"'));
+  assert.ok(installerSource.includes("resolveIntegratedPowerToolsRoot"));
   assert.ok(installerSource.includes(".integrated-power-backups"));
+  assert.ok(centerSource.includes('id="plugin-root"'));
+  assert.ok(centerSource.includes('id="work-root"'));
+  assert.ok(centerSource.includes('id="tools-root"'));
+  assert.ok(centerSource.includes("다른 PC의 절대 경로를 복사하거나 사용자 홈을 훑어 추측하지 않습니다."));
   assert.ok(fs.existsSync(path.join(extensionRoot, "assets", "private-git-knowledge.md")));
   for (const name of [
     "eggr-roots.ps1",
@@ -299,6 +396,32 @@ async function runPluginDistributionTests() {
       assert.ok(fs.existsSync(path.join(result.destination, ".integrated-power-install-state.json")));
     } finally {
       fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("plugin installer honors a user-selected root outside the default home profile", async () => {
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ip-plugin-custom-root-"));
+    const homeDir = path.join(scratch, "user-home");
+    const pluginRoot = path.join(scratch, "custom-antigravity", "plugins");
+    try {
+      fs.mkdirSync(homeDir, { recursive: true });
+      const options = {
+        homeDir,
+        pluginRoot,
+        sourcePath,
+        extensionVersion: "test",
+        now: fixedNow,
+        processId: 1010,
+      };
+      const plan = createPluginInstallPlan(options);
+      assert.strictEqual(plan.pluginRoot, path.resolve(pluginRoot));
+      assert.strictEqual(plan.blocked, false);
+      const result = await executePluginInstallPlan(options, plan);
+      assert.strictEqual(result.installed, true);
+      assert.ok(result.destination.startsWith(path.resolve(pluginRoot)));
+      assert.strictEqual(fs.existsSync(path.join(homeDir, ".gemini")), false);
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
     }
   });
 

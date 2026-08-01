@@ -14,8 +14,13 @@ function Get-EggRUserHome {
 }
 
 function Get-EggRRootsConfig {
-    $configPath = Join-Path (Get-EggRUserHome) ".config\integrated-power\roots.json"
-    if (!(Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    $configPath = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ROOTS_CONFIG)) {
+        [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:INTEGRATED_POWER_ROOTS_CONFIG))
+    } else {
+        Join-Path (Get-EggRUserHome) ".config\integrated-power\roots.json"
+    }
+    if (!(Test-Path -LiteralPath $configPath -PathType Leaf) -and
+        [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ROOTS_CONFIG)) {
         $previousConfigPath = Join-Path (Get-EggRUserHome) ".config\eggr\roots.json"
         if (Test-Path -LiteralPath $previousConfigPath -PathType Leaf) {
             $configPath = $previousConfigPath
@@ -23,6 +28,7 @@ function Get-EggRRootsConfig {
             return @{}
         }
     }
+    if (!(Test-Path -LiteralPath $configPath -PathType Leaf)) { return @{} }
 
     try {
         $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -51,8 +57,8 @@ function Get-EggRStateRoot {
     }
 
     if ([string]::IsNullOrWhiteSpace($candidate)) {
-        $isWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
-        if ($isWindows -and -not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $runningOnWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+        if ($runningOnWindows -and -not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
             $candidate = Join-Path $env:LOCALAPPDATA "IntegratedPower\state"
         } elseif (-not [string]::IsNullOrWhiteSpace($env:XDG_STATE_HOME)) {
             $candidate = Join-Path $env:XDG_STATE_HOME "integrated-power"
@@ -61,9 +67,14 @@ function Get-EggRStateRoot {
         }
     }
 
-    $resolved = [IO.Path]::GetFullPath(
-        [Environment]::ExpandEnvironmentVariables($candidate)
-    )
+    $expanded = [Environment]::ExpandEnvironmentVariables($candidate)
+    $userHome = Get-EggRUserHome
+    if ($expanded -eq '~') {
+        $expanded = $userHome
+    } elseif ($expanded.StartsWith('~\') -or $expanded.StartsWith('~/')) {
+        $expanded = Join-Path $userHome $expanded.Substring(2)
+    }
+    $resolved = [IO.Path]::GetFullPath($expanded)
     if (-not $explicitProductRoot -and
         [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT -and
         -not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {

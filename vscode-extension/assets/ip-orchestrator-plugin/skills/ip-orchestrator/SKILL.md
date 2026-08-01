@@ -7,8 +7,10 @@ description: Routes non-trivial AI engineering work between the active agent, Co
 
 This is the primary routing skill for token-efficient AI work. When a task may benefit from delegation, classify the work first and choose one of three routes:
 
-Before choosing a route, read `~/.config/integrated-power/orchestrator.json` when it
-exists. Never select a route that is absent from `EnabledRoutes`. Use
+Before choosing a route, resolve the settings path with the bundled settings
+module; do not assume another user's home path. Read `references/paths.md` for
+any install, migration, Knowledge, state, or cross-PC path operation. Never
+select a route that is absent from `EnabledRoutes`. Use
 `DefaultRoute` only when task evidence does not favor another enabled route.
 `LocalLlm.Endpoint` and `LocalLlm.Model` are non-secret defaults; API key values
 must come from the named environment variable and must never be written to this

@@ -235,13 +235,23 @@ GitHub 사용자명을 바꾼 경우 Configuration Center의 Knowledge 탭에서
 | 기본 runtime state | `%LOCALAPPDATA%\IntegratedPower\state` |
 | Integrated Orchestrator 설정 | `%USERPROFILE%\.config\integrated-power\orchestrator.json` |
 | 사용자 로컬 LLM 레지스트리 | `%USERPROFILE%\.config\integrated-power\local_llm_model_registry.csv` |
-| Antigravity IDE plugin | `%USERPROFILE%\.gemini\config\plugins\ip-orchestrator-plugin` |
-| Win11 Knowledge 명령 | `%LOCALAPPDATA%\IntegratedPower\bin` |
+| Antigravity IDE plugin | Configuration Center에서 확정한 plugin root 아래 `ip-orchestrator-plugin` |
+| Win11 Knowledge 명령 | 기본 `%LOCALAPPDATA%\IntegratedPower\bin`, 사용자 지정 가능 |
 | Private Git Knowledge | 사용자가 최초 설정에서 선택 |
 
-현재 PC의 절대 경로나 Git 원격을 다른 사용자에게 배포하지 않는다. 새 PC에서는
-사용자 선택을 먼저 사용하고, 선택이 없을 때만 `%USERPROFILE%\Documents\IntegratedPower`를
-WorkRoot 권장값으로 제안한다. 기존 저장소는 자동 이동·병합·삭제하지 않는다.
+경로 결정은 **명시적 환경 변수 → 이 PC의 canonical `roots.json` → 현재 OS·사용자의
+제안값** 순서다. 확장은 사용자 홈 전체나 다른 드라이브에서 비슷한 이름의 폴더를
+검색하지 않는다. Configuration Center에서 공통 작업 루트, Knowledge 경로,
+Antigravity 플러그인 루트를 확인하고 저장한 값만 사용한다. Knowledge가 WorkRoot 밖에
+있어도 사용자 선택을 존중하며 기존 저장소를 자동 이동·병합·삭제하지 않는다.
+
+새 PC에서는 이전 PC의 절대 경로를 가져오지 않는다. 확장을 설치하고 Configuration
+Center에서 세 경로를 현재 PC 기준으로 다시 확정한 다음, 사용자의 Knowledge Git
+remote를 연결한다. 로컬 경로 설정은 Git에 넣지 않으며, 지식과 작업 기록만 Git으로
+이어받는다. 자동화 환경은 `INTEGRATED_POWER_ROOTS_CONFIG`,
+`INTEGRATED_POWER_WORK_ROOT`, `INTEGRATED_POWER_KNOWLEDGE_ROOT`,
+`INTEGRATED_POWER_STATE_ROOT`, `INTEGRATED_POWER_TOOLS_ROOT`,
+`INTEGRATED_POWER_ANTIGRAVITY_PLUGIN_ROOT`로 같은 선택을 명시할 수 있다.
 
 0.7.2 이하의 기본 `%LOCALAPPDATA%\EggR\state`가 있으면 0.7.3 최초 활성화 때 새
 `IntegratedPower\state`로 누락 파일만 한 번 복사한다. 이전 디렉터리는 삭제하지

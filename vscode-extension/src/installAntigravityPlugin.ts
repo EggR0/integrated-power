@@ -6,6 +6,7 @@ import {
   createPluginInstallPlan,
   executePluginInstallPlan,
 } from "./pluginInstallerCore";
+import { resolveAntigravityPluginRoot } from "./storagePath";
 
 export interface AntigravityPluginInstallResult {
   installed: boolean;
@@ -21,8 +22,12 @@ export function inspectAntigravityPluginInstall(
   context: vscode.ExtensionContext,
   homeDir = os.homedir(),
 ): PluginInstallPlan {
+  const resolvedPluginRoot = resolveAntigravityPluginRoot(process.env, homeDir);
   return createPluginInstallPlan({
     homeDir,
+    ...(resolvedPluginRoot.configured
+      ? { pluginRoot: resolvedPluginRoot.path }
+      : {}),
     sourcePath: path.join(
       context.extensionPath,
       "assets",
@@ -35,8 +40,16 @@ export function inspectAntigravityPluginInstall(
 export async function installAntigravityPlugin(
   context: vscode.ExtensionContext,
 ): Promise<AntigravityPluginInstallResult> {
+  const homeDir = os.homedir();
+  const resolvedPluginRoot = resolveAntigravityPluginRoot(
+    process.env,
+    homeDir,
+  );
   const options = {
-    homeDir: os.homedir(),
+    homeDir,
+    ...(resolvedPluginRoot.configured
+      ? { pluginRoot: resolvedPluginRoot.path }
+      : {}),
     sourcePath: path.join(
       context.extensionPath,
       "assets",

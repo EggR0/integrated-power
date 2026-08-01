@@ -25,6 +25,18 @@ export interface IntegratedPowerStorageMigration {
   productConfigPath: string;
 }
 
+export type IntegratedPowerPathSource =
+  | "environment"
+  | "config"
+  | "legacy-config"
+  | "default";
+
+export interface ResolvedIntegratedPowerPath {
+  path: string;
+  source: IntegratedPowerPathSource;
+  configured: boolean;
+}
+
 export function normalizeWorkspacePathForStorage(folderPath: string): string {
   const resolved = path.resolve(folderPath);
   return /^[a-z]:/i.test(resolved) ? resolved[0].toUpperCase() + resolved.slice(1) : resolved;
@@ -67,7 +79,12 @@ export function eggRWorkspaceId(
 
 export function integratedPowerRootsConfigPath(
   userHome: string = os.homedir(),
+  env: NodeJS.ProcessEnv = process.env,
 ): string {
+  const configured = envValue(env, "INTEGRATED_POWER_ROOTS_CONFIG");
+  if (configured) {
+    return resolvePortablePath(configured, env, userHome);
+  }
   return path.join(userHome, ".config", PRODUCT_CONFIG_DIRECTORY, "roots.json");
 }
 
@@ -75,6 +92,105 @@ export function legacyEggRRootsConfigPath(
   userHome: string = os.homedir(),
 ): string {
   return path.join(userHome, ".config", LEGACY_CONFIG_DIRECTORY, "roots.json");
+}
+
+export function readIntegratedPowerRoots(
+  env: NodeJS.ProcessEnv = process.env,
+  userHome: string = os.homedir(),
+): Record<string, unknown> {
+  const canonicalPath = integratedPowerRootsConfigPath(userHome, env);
+  if (fs.existsSync(canonicalPath)) return readOptionalJsonObject(canonicalPath);
+  if (envValue(env, "INTEGRATED_POWER_ROOTS_CONFIG")) return {};
+  return readOptionalJsonObject(legacyEggRRootsConfigPath(userHome));
+}
+
+export function resolveIntegratedPowerWorkRoot(
+  env: NodeJS.ProcessEnv = process.env,
+  userHome: string = os.homedir(),
+): ResolvedIntegratedPowerPath {
+  return resolveRootSetting({
+    env,
+    userHome,
+    environmentNames: ["INTEGRATED_POWER_WORK_ROOT", "EGGR_WORK_ROOT"],
+    configName: "work_root",
+    defaultPath: path.join(userHome, "Documents", "IntegratedPower"),
+  });
+}
+
+export function resolveIntegratedPowerKnowledgeRoot(
+  env: NodeJS.ProcessEnv = process.env,
+  userHome: string = os.homedir(),
+): ResolvedIntegratedPowerPath {
+  const workRoot = resolveIntegratedPowerWorkRoot(env, userHome);
+  return resolveRootSetting({
+    env,
+    userHome,
+    environmentNames: ["INTEGRATED_POWER_KNOWLEDGE_ROOT"],
+    configName: "knowledge",
+    defaultPath: path.join(workRoot.path, "Knowledge"),
+  });
+}
+
+export function resolveAntigravityPluginRoot(
+  env: NodeJS.ProcessEnv = process.env,
+  userHome: string = os.homedir(),
+): ResolvedIntegratedPowerPath {
+  return resolveRootSetting({
+    env,
+    userHome,
+    environmentNames: ["INTEGRATED_POWER_ANTIGRAVITY_PLUGIN_ROOT"],
+    configName: "antigravity_plugin_root",
+    defaultPath: path.join(userHome, ".gemini", "config", "plugins"),
+  });
+}
+
+export function resolveIntegratedPowerToolsRoot(
+  env: NodeJS.ProcessEnv = process.env,
+  userHome: string = os.homedir(),
+  platform: NodeJS.Platform = process.platform,
+): ResolvedIntegratedPowerPath {
+  const platformDefault =
+    platform === "win32" && envValue(env, "LOCALAPPDATA")
+      ? path.join(envValue(env, "LOCALAPPDATA")!, "IntegratedPower", "bin")
+      : envValue(env, "XDG_DATA_HOME")
+        ? path.join(envValue(env, "XDG_DATA_HOME")!, "integrated-power", "bin")
+        : path.join(userHome, ".local", "share", "integrated-power", "bin");
+  return resolveRootSetting({
+    env,
+    userHome,
+    environmentNames: ["INTEGRATED_POWER_TOOLS_ROOT"],
+    configName: "tools_root",
+    defaultPath: platformDefault,
+  });
+}
+
+export function resolvePortablePath(
+  value: string,
+  env: NodeJS.ProcessEnv = process.env,
+  userHome: string = os.homedir(),
+): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("Configured path cannot be empty.");
+  let expanded = trimmed;
+  if (expanded === "~") {
+    expanded = userHome;
+  } else if (/^~[\\/]/.test(expanded)) {
+    expanded = path.join(userHome, expanded.slice(2));
+  }
+  expanded = expanded
+    .replace(/%([^%]+)%/g, (match, name: string) => envValue(env, name) ?? match)
+    .replace(/\$\{([^}]+)\}/g, (match, name: string) => envValue(env, name) ?? match);
+  if (/%[^%]+%|\$\{[^}]+\}/.test(expanded)) {
+    throw new Error(`Configured path contains an unresolved environment variable: ${value}`);
+  }
+  if (!path.isAbsolute(expanded)) {
+    throw new Error(`Configured path must be absolute after expansion: ${value}`);
+  }
+  const resolved = path.resolve(expanded);
+  if (path.parse(resolved).root === resolved) {
+    throw new Error(`Configured path cannot be a filesystem root: ${resolved}`);
+  }
+  return resolved;
 }
 
 export function resolveIntegratedPowerStateRoot(
@@ -87,8 +203,11 @@ export function resolveIntegratedPowerStateRoot(
   let candidate =
     env.INTEGRATED_POWER_STATE_ROOT?.trim() || env.EGGR_STATE_ROOT?.trim();
   if (!candidate) {
-    const configPath = fs.existsSync(integratedPowerRootsConfigPath(userHome))
-      ? integratedPowerRootsConfigPath(userHome)
+    const explicitRootsConfig = envValue(env, "INTEGRATED_POWER_ROOTS_CONFIG");
+    const configPath = explicitRootsConfig
+      ? integratedPowerRootsConfigPath(userHome, env)
+      : fs.existsSync(integratedPowerRootsConfigPath(userHome, env))
+      ? integratedPowerRootsConfigPath(userHome, env)
       : legacyEggRRootsConfigPath(userHome);
     if (fs.existsSync(configPath)) {
       const config = readUtf8JsonFile<{ state_root?: unknown }>(configPath);
@@ -100,7 +219,7 @@ export function resolveIntegratedPowerStateRoot(
 
   if (!candidate) candidate = productDefault;
 
-  const resolved = path.resolve(expandEnvironmentVariables(candidate, env));
+  const resolved = resolvePortablePath(candidate, env, userHome);
   if (
     !env.INTEGRATED_POWER_STATE_ROOT?.trim() &&
     pathsEqual(resolved, legacyDefault, platform)
@@ -122,12 +241,12 @@ export function ensureIntegratedPowerStorageMigration(
   userHome: string = os.homedir(),
   platform: NodeJS.Platform = process.platform,
 ): IntegratedPowerStorageMigration {
-  const productConfigPath = integratedPowerRootsConfigPath(userHome);
+  const productConfigPath = integratedPowerRootsConfigPath(userHome, env);
   const explicitSessionRoot = env.INTEGRATED_POWER_STATE_ROOT?.trim();
   if (explicitSessionRoot) {
     return {
       destinationRoot: path.resolve(
-        expandEnvironmentVariables(explicitSessionRoot, env),
+        resolvePortablePath(explicitSessionRoot, env, userHome),
       ),
       copiedFiles: 0,
       productConfigPath,
@@ -135,16 +254,19 @@ export function ensureIntegratedPowerStorageMigration(
   }
   const legacyConfigPath = legacyEggRRootsConfigPath(userHome);
   const productConfig = readOptionalJsonObject(productConfigPath);
-  const legacyConfig = readOptionalJsonObject(legacyConfigPath);
+  const legacyConfig = envValue(env, "INTEGRATED_POWER_ROOTS_CONFIG")
+    ? {}
+    : readOptionalJsonObject(legacyConfigPath);
   const destinationRoot = resolveIntegratedPowerStateRoot(
     env,
     userHome,
     platform,
   );
   const legacyDefault = defaultLegacyStateRoot(env, userHome, platform);
-  const configuredLegacyRoot =
-    typeof legacyConfig.state_root === "string" && legacyConfig.state_root.trim()
-      ? path.resolve(expandEnvironmentVariables(legacyConfig.state_root, env))
+  const configuredLegacyRoot = envValue(env, "INTEGRATED_POWER_ROOTS_CONFIG")
+    ? destinationRoot
+    : typeof legacyConfig.state_root === "string" && legacyConfig.state_root.trim()
+      ? resolvePortablePath(legacyConfig.state_root, env, userHome)
       : legacyDefault;
   const markerPath = path.join(destinationRoot, STATE_MIGRATION_MARKER);
   let copiedFiles = 0;
@@ -188,17 +310,20 @@ export function synchronizeIntegratedPowerRootsFromLegacy(
 ): string {
   const productConfigPath = integratedPowerRootsConfigPath(userHome);
   const productConfig = readOptionalJsonObject(productConfigPath);
-  const legacyConfig = readOptionalJsonObject(
-    legacyEggRRootsConfigPath(userHome),
-  );
+  const legacyConfig = envValue(process.env, "INTEGRATED_POWER_ROOTS_CONFIG")
+    ? {}
+    : readOptionalJsonObject(legacyEggRRootsConfigPath(userHome));
   const stateRoot =
     typeof productConfig.state_root === "string" &&
     productConfig.state_root.trim()
       ? productConfig.state_root
+      : typeof legacyConfig.state_root === "string" &&
+          legacyConfig.state_root.trim()
+        ? legacyConfig.state_root
       : resolveIntegratedPowerStateRoot(process.env, userHome);
   writeJsonAtomic(productConfigPath, {
-    ...productConfig,
     ...legacyConfig,
+    ...productConfig,
     state_root: stateRoot,
   });
   return productConfigPath;
@@ -259,8 +384,76 @@ function runGit(cwd: string, args: string[]): string | undefined {
   }
 }
 
-function expandEnvironmentVariables(value: string, env: NodeJS.ProcessEnv): string {
-  return value.replace(/%([^%]+)%/g, (match, name: string) => env[name] ?? match);
+interface RootSettingOptions {
+  env: NodeJS.ProcessEnv;
+  userHome: string;
+  environmentNames: string[];
+  configName: string;
+  defaultPath: string;
+}
+
+function resolveRootSetting(
+  options: RootSettingOptions,
+): ResolvedIntegratedPowerPath {
+  for (const name of options.environmentNames) {
+    const value = envValue(options.env, name);
+    if (value) {
+      return {
+        path: resolvePortablePath(value, options.env, options.userHome),
+        source: "environment",
+        configured: true,
+      };
+    }
+  }
+  const canonicalPath = integratedPowerRootsConfigPath(
+    options.userHome,
+    options.env,
+  );
+  const canonical = readOptionalJsonObject(canonicalPath);
+  const canonicalValue = canonical[options.configName];
+  if (typeof canonicalValue === "string" && canonicalValue.trim()) {
+    return {
+      path: resolvePortablePath(canonicalValue, options.env, options.userHome),
+      source: "config",
+      configured: true,
+    };
+  }
+  if (
+    !fs.existsSync(canonicalPath) &&
+    !envValue(options.env, "INTEGRATED_POWER_ROOTS_CONFIG")
+  ) {
+    const legacy = readOptionalJsonObject(
+      legacyEggRRootsConfigPath(options.userHome),
+    );
+    const legacyValue = legacy[options.configName];
+    if (typeof legacyValue === "string" && legacyValue.trim()) {
+      return {
+        path: resolvePortablePath(legacyValue, options.env, options.userHome),
+        source: "legacy-config",
+        configured: true,
+      };
+    }
+  }
+  return {
+    path: path.resolve(options.defaultPath),
+    source: "default",
+    configured: false,
+  };
+}
+
+function envValue(
+  env: NodeJS.ProcessEnv,
+  name: string,
+): string | undefined {
+  const exact = env[name];
+  if (typeof exact === "string" && exact.trim()) return exact.trim();
+  const matchedName = Object.keys(env).find(
+    (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+  );
+  const matched = matchedName ? env[matchedName] : undefined;
+  return typeof matched === "string" && matched.trim()
+    ? matched.trim()
+    : undefined;
 }
 
 function defaultProductStateRoot(

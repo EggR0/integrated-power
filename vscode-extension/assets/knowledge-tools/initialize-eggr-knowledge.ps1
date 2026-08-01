@@ -11,6 +11,12 @@
 .PARAMETER KnowledgePath
     Absolute local path for the user's Knowledge repository. Defaults to the
     dynamically resolved Knowledge path.
+.PARAMETER WorkRoot
+    Absolute common root selected for this PC. It is persisted locally and is
+    not inferred from another user's checkout path.
+.PARAMETER ToolsRoot
+    Absolute directory where this PC keeps the Integrated Power Knowledge
+    commands. Defaults to the resolver result.
 .PARAMETER RemoteUrl
     Optional private Git remote. HTTPS, SSH, and Git-supported local URLs are
     accepted, but URLs containing embedded credentials are rejected.
@@ -41,6 +47,8 @@
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
 param(
     [string]$KnowledgePath = '',
+    [string]$WorkRoot = '',
+    [string]$ToolsRoot = '',
     [string]$RemoteUrl = '',
     [string]$AuthorName = '',
     [string]$AuthorEmail = '',
@@ -358,6 +366,8 @@ if (-not (Test-Path -LiteralPath $rootResolver -PathType Leaf)) {
 }
 $roots = (& $rootResolver -Json) | ConvertFrom-Json
 $defaultKnowledgePath = [string]$roots.Knowledge
+$defaultWorkRoot = [string]$roots.WorkRoot
+$defaultToolsRoot = [string]$roots.ToolsRoot
 $configuredRemote = if ($roots.PSObject.Properties['KnowledgeRemote']) {
     [string]$roots.KnowledgeRemote
 } else {
@@ -375,6 +385,12 @@ if (-not $NonInteractive) {
 if ([string]::IsNullOrWhiteSpace($KnowledgePath)) {
     $KnowledgePath = $defaultKnowledgePath
 }
+$WorkRoot = ConvertTo-SafeAbsolutePath -PathValue $(
+    if ([string]::IsNullOrWhiteSpace($WorkRoot)) { $defaultWorkRoot } else { $WorkRoot }
+) -Label 'WorkRoot'
+$ToolsRoot = ConvertTo-SafeAbsolutePath -PathValue $(
+    if ([string]::IsNullOrWhiteSpace($ToolsRoot)) { $defaultToolsRoot } else { $ToolsRoot }
+) -Label 'ToolsRoot'
 $KnowledgePath = ConvertTo-SafeAbsolutePath -PathValue $KnowledgePath -Label 'KnowledgePath'
 
 $isRepository = Test-Path -LiteralPath (Join-Path $KnowledgePath '.git')
@@ -499,7 +515,8 @@ if (-not $isRepository) {
 $diagnostic = [ordered]@{
     schema_version          = 1
     knowledge_path         = $KnowledgePath
-    work_root              = [string]$roots.WorkRoot
+    work_root              = $WorkRoot
+    tools_root             = $ToolsRoot
     operation              = $operation
     preview_only           = $previewOnly
     repository_exists      = $isRepository
@@ -604,7 +621,8 @@ if (-not $SkipRootPersistence) {
         throw "EggR root setter was not found beside this wizard: $rootSetter"
     }
     $setterArguments = @{
-        WorkRoot     = [string]$roots.WorkRoot
+        WorkRoot     = $WorkRoot
+        ToolsRoot    = $ToolsRoot
         Knowledge    = $KnowledgePath
         KnowledgeMode = if ([string]::IsNullOrWhiteSpace($RemoteUrl)) { 'local_only' } else { 'private_remote' }
     }

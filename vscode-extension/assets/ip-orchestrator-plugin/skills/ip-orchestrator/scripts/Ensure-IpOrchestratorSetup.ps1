@@ -31,7 +31,24 @@ function Get-InteractiveInstallerPath {
             if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
         }
     } catch { }
-    return Join-Path $env:USERPROFILE ".gemini\config\plugins\ip-orchestrator-plugin\install\Install-Plugin.ps1"
+    $configuredPluginRoot = $env:INTEGRATED_POWER_ANTIGRAVITY_PLUGIN_ROOT
+    if ([string]::IsNullOrWhiteSpace($configuredPluginRoot)) {
+        $pathModule = Join-Path $PSScriptRoot "lib\EggR.Paths.psm1"
+        if (Test-Path -LiteralPath $pathModule -PathType Leaf) {
+            Import-Module $pathModule -Force -DisableNameChecking
+            $roots = Get-EggRRootsConfig
+            if ($roots.ContainsKey("antigravity_plugin_root")) {
+                $configuredPluginRoot = [string]$roots["antigravity_plugin_root"]
+            }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($configuredPluginRoot)) {
+        $configuredPluginRoot = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".gemini\config\plugins"
+    }
+    $configuredPluginRoot = [IO.Path]::GetFullPath(
+        [Environment]::ExpandEnvironmentVariables($configuredPluginRoot)
+    )
+    return Join-Path $configuredPluginRoot "ip-orchestrator-plugin\install\Install-Plugin.ps1"
 }
 
 function Get-PropertyValue {

@@ -25,9 +25,15 @@ $ErrorActionPreference = 'Stop'
 $userProfile = [Environment]::GetFolderPath('UserProfile')
 $documents = [Environment]::GetFolderPath('MyDocuments')
 $runningOnWindows = [Environment]::OSVersion.Platform -eq 'Win32NT'
-$preferredConfigFile = Join-Path $userProfile '.config\integrated-power\roots.json'
+$preferredConfigFile = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ROOTS_CONFIG)) {
+    [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:INTEGRATED_POWER_ROOTS_CONFIG))
+} else {
+    Join-Path $userProfile '.config\integrated-power\roots.json'
+}
 $previousConfigFile = Join-Path $userProfile '.config\eggr\roots.json'
-$configFile = if (Test-Path -LiteralPath $preferredConfigFile -PathType Leaf) {
+$configFile = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ROOTS_CONFIG)) {
+    $preferredConfigFile
+} elseif (Test-Path -LiteralPath $preferredConfigFile -PathType Leaf) {
     $preferredConfigFile
 } elseif (Test-Path -LiteralPath $previousConfigFile -PathType Leaf) {
     $previousConfigFile
@@ -147,6 +153,9 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($WorkRoot)) {
         $resolvedWorkRoot = ConvertTo-EggRAbsolutePath -PathValue $WorkRoot -Label 'WorkRoot override'
         $workRootSource = 'parameter'
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_WORK_ROOT)) {
+        $resolvedWorkRoot = ConvertTo-EggRAbsolutePath -PathValue $env:INTEGRATED_POWER_WORK_ROOT -Label 'INTEGRATED_POWER_WORK_ROOT'
+        $workRootSource = 'environment'
     } elseif (-not [string]::IsNullOrWhiteSpace($env:EGGR_WORK_ROOT)) {
         $resolvedWorkRoot = ConvertTo-EggRAbsolutePath -PathValue $env:EGGR_WORK_ROOT -Label 'EGGR_WORK_ROOT'
         $workRootSource = 'environment'
@@ -196,17 +205,57 @@ $bootstrapCandidates += @(
     [IO.Path]::Combine($resolvedWorkRoot, 'eggr-environment-bootstrap')
 )
 $bootstrap = Resolve-EggRRepository -ConfigName 'bootstrap' -Candidates $bootstrapCandidates
-$knowledge = Resolve-EggRRepository -ConfigName 'knowledge' -Candidates @(
-    ([IO.Path]::Combine($resolvedWorkRoot, 'Knowledge')),
-    ([IO.Path]::Combine($resolvedWorkRoot, 'eggr-knowledge')),
-    (Join-Path $userProfile 'Knowledge')
-)
+$knowledge = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_KNOWLEDGE_ROOT)) {
+    ConvertTo-EggRAbsolutePath -PathValue $env:INTEGRATED_POWER_KNOWLEDGE_ROOT -Label 'INTEGRATED_POWER_KNOWLEDGE_ROOT'
+} else {
+    Resolve-EggRRepository -ConfigName 'knowledge' -Candidates @(
+        ([IO.Path]::Combine($resolvedWorkRoot, 'Knowledge')),
+        ([IO.Path]::Combine($resolvedWorkRoot, 'eggr-knowledge')),
+        (Join-Path $userProfile 'Knowledge')
+    )
+}
 $dotfiles = Resolve-EggRRepository -ConfigName 'dotfiles' -Candidates @(
     ([IO.Path]::Combine($resolvedWorkRoot, 'dotfiles')),
     ([IO.Path]::Combine($resolvedWorkRoot, 'eggr-dotfiles')),
     (Join-Path $userProfile '.dotfiles')
 )
 $worklog = [IO.Path]::Combine($knowledge, '00 Inbox', 'Agent Worklog.md')
+$stateRootDefault = if ($runningOnWindows -and -not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    Join-Path $env:LOCALAPPDATA 'IntegratedPower\state'
+} elseif (-not [string]::IsNullOrWhiteSpace($env:XDG_STATE_HOME)) {
+    Join-Path $env:XDG_STATE_HOME 'integrated-power'
+} else {
+    Join-Path $userProfile '.local\state\integrated-power'
+}
+$stateRoot = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_STATE_ROOT)) {
+    ConvertTo-EggRAbsolutePath -PathValue $env:INTEGRATED_POWER_STATE_ROOT -Label 'INTEGRATED_POWER_STATE_ROOT'
+} elseif ($configRoots.ContainsKey('state_root') -and -not [string]::IsNullOrWhiteSpace($configRoots['state_root'])) {
+    ConvertTo-EggRAbsolutePath -PathValue $configRoots['state_root'] -Label 'roots.json state_root'
+} else {
+    ConvertTo-EggRAbsolutePath -PathValue $stateRootDefault -Label 'default state_root'
+}
+$toolsRootDefault = if ($runningOnWindows -and -not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    Join-Path $env:LOCALAPPDATA 'IntegratedPower\bin'
+} elseif (-not [string]::IsNullOrWhiteSpace($env:XDG_DATA_HOME)) {
+    Join-Path $env:XDG_DATA_HOME 'integrated-power\bin'
+} else {
+    Join-Path $userProfile '.local\share\integrated-power\bin'
+}
+$toolsRoot = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_TOOLS_ROOT)) {
+    ConvertTo-EggRAbsolutePath -PathValue $env:INTEGRATED_POWER_TOOLS_ROOT -Label 'INTEGRATED_POWER_TOOLS_ROOT'
+} elseif ($configRoots.ContainsKey('tools_root') -and -not [string]::IsNullOrWhiteSpace($configRoots['tools_root'])) {
+    ConvertTo-EggRAbsolutePath -PathValue $configRoots['tools_root'] -Label 'roots.json tools_root'
+} else {
+    ConvertTo-EggRAbsolutePath -PathValue $toolsRootDefault -Label 'default tools_root'
+}
+$pluginRootDefault = Join-Path $userProfile '.gemini\config\plugins'
+$pluginRoot = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ANTIGRAVITY_PLUGIN_ROOT)) {
+    ConvertTo-EggRAbsolutePath -PathValue $env:INTEGRATED_POWER_ANTIGRAVITY_PLUGIN_ROOT -Label 'INTEGRATED_POWER_ANTIGRAVITY_PLUGIN_ROOT'
+} elseif ($configRoots.ContainsKey('antigravity_plugin_root') -and -not [string]::IsNullOrWhiteSpace($configRoots['antigravity_plugin_root'])) {
+    ConvertTo-EggRAbsolutePath -PathValue $configRoots['antigravity_plugin_root'] -Label 'roots.json antigravity_plugin_root'
+} else {
+    ConvertTo-EggRAbsolutePath -PathValue $pluginRootDefault -Label 'default antigravity_plugin_root'
+}
 
 foreach ($pair in @(
     @('Bootstrap', $bootstrap),
@@ -239,6 +288,9 @@ $result = [PSCustomObject]@{
     }
     Dotfiles         = $dotfiles
     Worklog          = $worklog
+    StateRoot        = $stateRoot
+    ToolsRoot        = $toolsRoot
+    AntigravityPluginRoot = $pluginRoot
     Warnings         = @($script:resolutionWarnings)
 }
 

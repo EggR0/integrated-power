@@ -53,6 +53,7 @@ export interface PluginInstallPlan {
 
 export interface PluginInstallOptions {
   homeDir: string;
+  pluginRoot?: string;
   sourcePath: string;
   extensionVersion: string;
   journalPath?: string;
@@ -90,7 +91,9 @@ export function createPluginInstallPlan(
 ): PluginInstallPlan {
   const homeDir = path.resolve(options.homeDir);
   const geminiRoot = path.join(homeDir, ".gemini");
-  const pluginRoot = path.join(geminiRoot, "config", "plugins");
+  const pluginRoot = path.resolve(
+    options.pluginRoot ?? path.join(geminiRoot, "config", "plugins"),
+  );
   const destinationPath = path.join(pluginRoot, IP_PLUGIN_NAME);
   const predecessorPath = path.join(pluginRoot, PREVIOUS_PLUGIN_NAME);
   const legacyPath = path.join(pluginRoot, LEGACY_PLUGIN_NAME);
@@ -132,7 +135,7 @@ export function createPluginInstallPlan(
   const actions: PluginInstallAction[] = [];
   let blockingReason: string | undefined;
 
-  if (!fs.existsSync(geminiRoot)) {
+  if (!options.pluginRoot && !fs.existsSync(geminiRoot)) {
     blockingReason = `Antigravity configuration directory was not found: ${geminiRoot}`;
   } else if (source.state === "conflict" || source.state === "absent") {
     blockingReason = `Bundled Integrated Power plugin is invalid: ${source.detail}`;

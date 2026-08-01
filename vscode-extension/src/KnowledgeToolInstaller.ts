@@ -1,8 +1,8 @@
 import * as crypto from "crypto";
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { resolveIntegratedPowerToolsRoot } from "./storagePath";
 
 const SCRIPT_NAMES = [
   "eggr-roots.ps1",
@@ -28,11 +28,10 @@ export interface KnowledgeToolsInstallResult extends KnowledgeToolsStatus {
   backupRoot: string;
 }
 
-function productRoot(): string {
-  const localAppData =
-    process.env.LOCALAPPDATA ??
-    path.join(os.homedir(), "AppData", "Local");
-  return path.join(localAppData, "IntegratedPower", "bin");
+function productRoot(installRootOverride?: string): string {
+  return installRootOverride
+    ? path.resolve(installRootOverride)
+    : resolveIntegratedPowerToolsRoot().path;
 }
 
 function sourceRoot(context: vscode.ExtensionContext): string {
@@ -75,8 +74,9 @@ function writeAtomic(target: string, content: Buffer | string): void {
 
 export function inspectKnowledgeTools(
   context?: vscode.ExtensionContext,
+  installRootOverride?: string,
 ): KnowledgeToolsStatus {
-  const installRoot = productRoot();
+  const installRoot = productRoot(installRootOverride);
   const expected = [
     ...SCRIPT_NAMES,
     ...SCRIPT_NAMES.map((name) => `${path.parse(name).name}.cmd`),
@@ -115,6 +115,7 @@ export function inspectKnowledgeTools(
 
 export function installKnowledgeTools(
   context: vscode.ExtensionContext,
+  installRootOverride?: string,
 ): KnowledgeToolsInstallResult {
   const assets = sourceRoot(context);
   for (const name of SCRIPT_NAMES) {
@@ -124,7 +125,7 @@ export function installKnowledgeTools(
     }
   }
 
-  const installRoot = productRoot();
+  const installRoot = productRoot(installRootOverride);
   fs.mkdirSync(installRoot, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupRoot = path.join(
@@ -172,7 +173,7 @@ export function installKnowledgeTools(
   );
 
   return {
-    ...inspectKnowledgeTools(context),
+    ...inspectKnowledgeTools(context, installRoot),
     changed,
     backupRoot:
       fs.existsSync(backupRoot) && fs.readdirSync(backupRoot).length > 0

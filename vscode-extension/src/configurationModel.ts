@@ -6,8 +6,12 @@ import { execFile, execFileSync } from "child_process";
 import { readUtf8JsonFile } from "./jsonFile";
 import {
   integratedPowerRootsConfigPath,
-  legacyEggRRootsConfigPath,
+  resolveAntigravityPluginRoot,
+  resolveIntegratedPowerKnowledgeRoot,
   resolveIntegratedPowerStateRoot,
+  resolveIntegratedPowerToolsRoot,
+  resolveIntegratedPowerWorkRoot,
+  resolvePortablePath,
   synchronizeIntegratedPowerRootsFromLegacy,
 } from "./storagePath";
 import { inspectAntigravityPluginInstall } from "./installAntigravityPlugin";
@@ -41,10 +45,13 @@ export interface OrchestratorConfiguration {
   model: string;
   reserveVramGB: number;
   allowCpuOffload: boolean;
+  pluginRoot: string;
 }
 
 export interface KnowledgeConfiguration {
   mode: "local_only" | "private_remote";
+  workRoot: string;
+  toolsRoot: string;
   knowledgePath: string;
   remoteUrl: string;
   authorName: string;
@@ -90,6 +97,9 @@ export interface ConfigurationCenterSnapshot {
   dashboard: DashboardConfiguration;
   orchestrator: OrchestratorConfiguration;
   knowledge: KnowledgeConfiguration & {
+    workRootConfigured: boolean;
+    toolsRootConfigured: boolean;
+    knowledgePathConfigured: boolean;
     githubLogin: string;
     repositoryRemote: string;
     currentBranch: string;
@@ -104,6 +114,8 @@ export interface ConfigurationCenterSnapshot {
     roots: string;
     orchestrator: string;
     plugin: string;
+    pluginRoot: string;
+    pluginRootConfigured: boolean;
     previousPlugin: string;
     legacyPlugin: string;
     globalGemini: string;
@@ -153,6 +165,10 @@ export function loadConfigurationCenterSnapshot(
   context: vscode.ExtensionContext,
 ): ConfigurationCenterSnapshot {
   const roots = readJsonObject(rootsConfigPath());
+  const workRoot = resolveIntegratedPowerWorkRoot();
+  const knowledgeRoot = resolveIntegratedPowerKnowledgeRoot();
+  const toolsRoot = resolveIntegratedPowerToolsRoot();
+  const antigravityPluginRoot = resolveAntigravityPluginRoot();
   const settingsResult = readOrchestratorSettings();
   const orchestrator = settingsResult.value;
   const viewConfig = vscode.workspace.getConfiguration("integratedPower.view");
@@ -165,10 +181,7 @@ export function loadConfigurationCenterSnapshot(
         )
       : [],
   );
-  const knowledgePath =
-    typeof roots.knowledge === "string" && roots.knowledge.trim()
-      ? path.resolve(roots.knowledge)
-      : defaultKnowledgePath();
+  const knowledgePath = knowledgeRoot.path;
   const knowledgeMode =
     roots.knowledge_mode === "private_remote" ? "private_remote" : "local_only";
   const configuredRemoteUrl =
@@ -190,9 +203,9 @@ export function loadConfigurationCenterSnapshot(
   const ghExecutable = findExecutable(["gh.exe", "gh"], [
     programFilesPath("GitHub CLI", "gh.exe"),
   ]);
-  const plugin = pluginPath();
-  const previousPlugin = previousPluginPath();
-  const legacyPlugin = legacyPluginPath();
+  const plugin = pluginPath(antigravityPluginRoot.path);
+  const previousPlugin = previousPluginPath(antigravityPluginRoot.path);
+  const legacyPlugin = legacyPluginPath(antigravityPluginRoot.path);
   const repositoryRemote = readGitRemote(knowledgePath) ?? "";
   const currentBranch = readGitBranch(knowledgePath) ?? "";
   const taskBranchCount = readGitTaskBranchCount(knowledgePath);
@@ -227,9 +240,12 @@ export function loadConfigurationCenterSnapshot(
       model: localLlm?.Model ?? "",
       reserveVramGB: localLlm?.HardwarePolicy.ReserveVramGB ?? 2,
       allowCpuOffload: localLlm?.HardwarePolicy.AllowCpuOffload ?? false,
+      pluginRoot: antigravityPluginRoot.path,
     },
     knowledge: {
       mode: knowledgeMode,
+      workRoot: workRoot.path,
+      toolsRoot: toolsRoot.path,
       knowledgePath,
       remoteUrl,
       authorName:
@@ -247,6 +263,9 @@ export function loadConfigurationCenterSnapshot(
       currentBranch,
       routingPolicyExists,
       taskBranchCount,
+      workRootConfigured: workRoot.configured,
+      toolsRootConfigured: toolsRoot.configured,
+      knowledgePathConfigured: knowledgeRoot.configured,
     },
     status: getFirstRunStatus(context),
     diagnostics: [
@@ -270,6 +289,8 @@ export function loadConfigurationCenterSnapshot(
       roots: rootsConfigPath(),
       orchestrator: orchestratorSettingsPath(),
       plugin,
+      pluginRoot: antigravityPluginRoot.path,
+      pluginRootConfigured: antigravityPluginRoot.configured,
       previousPlugin,
       legacyPlugin,
       globalGemini,
@@ -333,6 +354,10 @@ export function saveOrchestratorConfiguration(
   context: vscode.ExtensionContext,
   input: OrchestratorConfiguration,
 ): string {
+  const pluginRoot = validateSafeAbsoluteDirectory(
+    input.pluginRoot,
+    "Antigravity 플러그인 루트",
+  );
   const enabledRoutes: EggRRoute[] = ["main_agent"];
   let codexExe: string | null = null;
   if (input.enableCodex === true) {
@@ -397,6 +422,7 @@ export function saveOrchestratorConfiguration(
     )}`,
   };
   writeJsonObjectAtomic(orchestratorSettingsPath(), { ...existing, ...settings });
+  updateRootsConfig({ antigravity_plugin_root: pluginRoot });
   return orchestratorSettingsPath();
 }
 
@@ -483,16 +509,17 @@ export async function runPrivateKnowledgeConfiguration(
   context: vscode.ExtensionContext,
   input: KnowledgeConfiguration,
 ): Promise<Record<string, unknown>> {
-  installKnowledgeTools(context);
-  const script = installedKnowledgeWizardPath();
-  if (!script) {
-    throw new Error(
-      "확장에 포함된 Private Git Knowledge 도구를 설치하지 못했습니다.",
-    );
-  }
+  const toolsRoot = validateSafeAbsoluteDirectory(
+    input.toolsRoot,
+    "Knowledge 도구 설치 루트",
+  );
   const knowledgePath = validateSafeAbsoluteDirectory(
     input.knowledgePath,
     "Knowledge 경로",
+  );
+  const workRoot = validateSafeAbsoluteDirectory(
+    input.workRoot,
+    "공통 작업 루트",
   );
   const authorName = input.authorName.trim();
   const authorEmail = input.authorEmail.trim();
@@ -510,6 +537,14 @@ export async function runPrivateKnowledgeConfiguration(
     }
   }
 
+  installKnowledgeTools(context, toolsRoot);
+  const script = path.join(toolsRoot, "initialize-eggr-knowledge.ps1");
+  if (!fs.existsSync(script)) {
+    throw new Error(
+      "확장에 포함된 Private Git Knowledge 도구를 설치하지 못했습니다.",
+    );
+  }
+
   const args = [
     "-NoProfile",
     "-ExecutionPolicy",
@@ -518,6 +553,10 @@ export async function runPrivateKnowledgeConfiguration(
     script,
     "-KnowledgePath",
     knowledgePath,
+    "-WorkRoot",
+    workRoot,
+    "-ToolsRoot",
+    toolsRoot,
     "-AuthorName",
     authorName,
     "-AuthorEmail",
@@ -548,12 +587,20 @@ export async function runPrivateKnowledgeConfiguration(
 
 export function installBundledKnowledgeTools(
   context: vscode.ExtensionContext,
+  requestedToolsRoot?: string,
 ): {
   installRoot: string;
   changed: string[];
   backupRoot: string;
 } {
-  const result = installKnowledgeTools(context);
+  const toolsRoot = requestedToolsRoot
+    ? validateSafeAbsoluteDirectory(
+        requestedToolsRoot,
+        "Knowledge 도구 설치 루트",
+      )
+    : resolveIntegratedPowerToolsRoot().path;
+  const result = installKnowledgeTools(context, toolsRoot);
+  updateRootsConfig({ tools_root: toolsRoot });
   return {
     installRoot: result.installRoot,
     changed: result.changed,
@@ -630,17 +677,15 @@ export function reconfigureKnowledgeRemote(
     knowledge_mode: "private_remote",
     knowledge_remote: remoteUrl,
   });
-  updateLegacyKnowledgeRootsConfig({
-    knowledge: knowledgePath,
-    knowledge_mode: "private_remote",
-    knowledge_remote: remoteUrl,
-  });
   return { previousRemote, remoteUrl };
 }
 
 export function getFirstRunStatus(context: vscode.ExtensionContext): FirstRunStatus {
   const roots = readJsonObject(rootsConfigPath());
-  const knowledgePath = typeof roots.knowledge === "string" ? roots.knowledge : "";
+  const resolvedKnowledge = resolveIntegratedPowerKnowledgeRoot();
+  const knowledgePath = resolvedKnowledge.configured
+    ? resolvedKnowledge.path
+    : "";
   const knowledgeRemote =
     typeof roots.knowledge_remote === "string" ? roots.knowledge_remote : "";
   const knowledgeMode =
@@ -709,17 +754,13 @@ export function validateReserveVram(value: string): string | undefined {
 }
 
 export function installedKnowledgeWizardPath(): string | undefined {
-  const candidates =
-    process.platform === "win32"
-      ? [
-          path.join(
-            process.env.LOCALAPPDATA ?? "",
-            "IntegratedPower",
-            "bin",
-            "initialize-eggr-knowledge.ps1",
-          ),
-        ]
-      : [path.join(os.homedir(), ".local", "bin", "initialize-eggr-knowledge")];
+  const toolsRoot = resolveIntegratedPowerToolsRoot().path;
+  const candidates = process.platform === "win32"
+    ? [path.join(toolsRoot, "initialize-eggr-knowledge.ps1")]
+    : [
+        path.join(toolsRoot, "initialize-eggr-knowledge.ps1"),
+        path.join(toolsRoot, "initialize-eggr-knowledge"),
+      ];
   return candidates.find((candidate) => candidate && fs.existsSync(candidate));
 }
 
@@ -746,9 +787,7 @@ function readGitTaskBranchCount(repository: string): number {
 export function orchestratorSettingsPath(): string {
   const configured = process.env.INTEGRATED_POWER_ORCHESTRATOR_SETTINGS;
   if (configured) {
-    return path.resolve(
-      expandEnvironmentVariables(configured),
-    );
+    return resolvePortablePath(configured);
   }
   return path.join(
     os.homedir(),
@@ -761,18 +800,16 @@ export function orchestratorSettingsPath(): string {
 export function previousOrchestratorSettingsPath(): string {
   const configured = process.env.EGGR_ORCHESTRATOR_SETTINGS;
   if (configured) {
-    return path.resolve(expandEnvironmentVariables(configured));
+    return resolvePortablePath(configured);
   }
   return path.join(os.homedir(), ".config", "eggr", "orchestrator.json");
 }
 
 export function ollamaModelRegistryPath(): string {
-  return path.join(
-    os.homedir(),
-    ".config",
-    "integrated-power",
-    "local_llm_model_registry.csv",
-  );
+  const configured = process.env.INTEGRATED_POWER_LOCAL_LLM_REGISTRY;
+  return configured
+    ? resolvePortablePath(configured)
+    : path.join(path.dirname(orchestratorSettingsPath()), "local_llm_model_registry.csv");
 }
 
 export function legacyOrchestratorSettingsPath(): string {
@@ -1008,16 +1045,6 @@ function updateRootsConfig(patch: Record<string, unknown>): void {
   writeJsonObjectAtomic(configPath, { ...readJsonObject(configPath), ...patch });
 }
 
-function updateLegacyKnowledgeRootsConfig(
-  patch: Record<string, unknown>,
-): void {
-  const configPath = legacyEggRRootsConfigPath();
-  writeJsonObjectAtomic(configPath, {
-    ...readJsonObject(configPath),
-    ...patch,
-  });
-}
-
 function readJsonObject(filePath: string): Record<string, unknown> {
   if (!fs.existsSync(filePath)) return {};
   const parsed: unknown = readUtf8JsonFile<unknown>(filePath);
@@ -1049,50 +1076,25 @@ function rootsConfigPath(): string {
   return integratedPowerRootsConfigPath();
 }
 
-function pluginPath(): string {
-  return path.join(
-    os.homedir(),
-    ".gemini",
-    "config",
-    "plugins",
-    "ip-orchestrator-plugin",
-  );
+function pluginPath(pluginRoot = resolveAntigravityPluginRoot().path): string {
+  return path.join(pluginRoot, "ip-orchestrator-plugin");
 }
 
-function previousPluginPath(): string {
-  return path.join(
-    os.homedir(),
-    ".gemini",
-    "config",
-    "plugins",
-    "eggr-orchestrator-plugin",
-  );
+function previousPluginPath(pluginRoot = resolveAntigravityPluginRoot().path): string {
+  return path.join(pluginRoot, "eggr-orchestrator-plugin");
 }
 
-function legacyPluginPath(): string {
-  return path.join(
-    os.homedir(),
-    ".gemini",
-    "config",
-    "plugins",
-    "codex-orchestrator-plugin",
-  );
-}
-
-function defaultKnowledgePath(): string {
-  return path.join(os.homedir(), "Documents", "IntegratedPower", "Knowledge");
+function legacyPluginPath(pluginRoot = resolveAntigravityPluginRoot().path): string {
+  return path.join(pluginRoot, "codex-orchestrator-plugin");
 }
 
 function validateSafeAbsoluteDirectory(value: string, label: string): string {
-  const expanded = expandEnvironmentVariables(value.trim());
-  if (!expanded || !path.isAbsolute(expanded)) {
-    throw new Error(`${label}는 절대 경로여야 합니다.`);
+  try {
+    return resolvePortablePath(value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label}가 올바르지 않습니다: ${message}`);
   }
-  const resolved = path.resolve(expanded);
-  if (path.parse(resolved).root === resolved) {
-    throw new Error(`${label}로 드라이브 또는 파일시스템 루트를 사용할 수 없습니다.`);
-  }
-  return resolved;
 }
 
 function expandEnvironmentVariables(value: string): string {

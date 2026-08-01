@@ -182,7 +182,10 @@ export class ConfigurationCenter implements vscode.Disposable {
         }
         case "installKnowledgeTools": {
           this.postBusy(true);
-          const result = installBundledKnowledgeTools(this.context);
+          const result = installBundledKnowledgeTools(
+            this.context,
+            requireString(message.value, "Knowledge 도구 설치 루트"),
+          );
           this.postResult(
             "success",
             result.changed.length > 0
@@ -224,6 +227,24 @@ export class ConfigurationCenter implements vscode.Disposable {
           await this.chooseDirectory(
             "Integrated Power 상태 폴더 선택",
             "dashboardStateRoot",
+          );
+          return;
+        case "choosePluginRoot":
+          await this.chooseDirectory(
+            "Antigravity IDE 플러그인 루트 선택",
+            "pluginRoot",
+          );
+          return;
+        case "chooseWorkRoot":
+          await this.chooseDirectory(
+            "에이전트 공통 작업 루트 선택",
+            "workRoot",
+          );
+          return;
+        case "chooseToolsRoot":
+          await this.chooseDirectory(
+            "Knowledge 도구 설치 루트 선택",
+            "toolsRoot",
           );
           return;
         case "chooseKnowledgePath":
@@ -478,6 +499,11 @@ export class ConfigurationCenter implements vscode.Disposable {
         <p id="gpu-summary" class="hint"></p>
       </article>
       <article class="card">
+        <h2>이 PC의 경로 기준</h2>
+        <p class="hint">다른 사용자나 다른 PC의 경로를 가져오지 않습니다. 아래 로컬 설정과 각 탭에서 사용자가 확정한 경로만 사용합니다.</p>
+        <code id="roots-config-path" class="path"></code>
+      </article>
+      <article class="card">
         <h2>의존성 안내</h2>
         <ul class="diag-list">
           <li><strong>Git for Windows</strong> — Private Git Knowledge에 필요합니다. 확장이 자동 설치하지 않습니다.</li>
@@ -515,10 +541,15 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="orchestrator">
       <article class="card">
         <h2>Integrated Orchestrator 설정 및 설치</h2>
-        <p class="hint">설정 파일과 Antigravity IDE 플러그인은 분리되어 있습니다. 설치는 명시적으로 ‘저장 및 설치’를 누를 때만 수행합니다.</p>
+        <p class="hint">설정 파일과 Antigravity IDE 플러그인은 분리되어 있습니다. 현재 사용자 홈의 표준 위치는 제안값일 뿐이며, 실제 설치 루트는 여기서 확인·변경한 뒤 저장합니다. 다른 사용자 폴더를 검색하지 않습니다.</p>
         <div id="plugin-status" class="status"></div>
         <code id="plugin-path" class="path"></code>
         <code id="orchestrator-settings-path" class="path"></code>
+        <div class="field">
+          <label for="plugin-root">Antigravity IDE 플러그인 루트</label>
+          <div class="inline"><input id="plugin-root" type="text"><button type="button" class="secondary" data-action="choosePluginRoot">찾기</button></div>
+          <div id="plugin-root-source" class="hint"></div>
+        </div>
         <div class="subform">
           <h3>배포 마이그레이션 계획</h3>
           <div id="plugin-plan-status" class="status"></div>
@@ -564,14 +595,25 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="knowledge">
       <article class="card">
         <h2>Private Git Knowledge 설정</h2>
-        <p class="hint">개발자의 저장소가 아니라 각 사용자가 소유한 로컬 또는 private 원격 Git 저장소를 구성합니다. 확장에 내장된 Win11 도구가 기존 문서를 덮어쓰지 않고 Obsidian 분류표와 빠진 기본 폴더만 추가합니다. 최초 설정 마법사는 commit·pull·push하지 않습니다. 이후 <code>route-knowledge</code>가 기존 문서와 허용 경로를 확인하고, <code>save-knowledge</code>와 <code>save-agent-worklog</code>만 명시된 파일을 canonical <code>main</code>에 저장합니다. 작업 이름으로 Knowledge 브랜치를 만들지 않습니다.</p>
+        <p class="hint">개발자의 저장소가 아니라 각 사용자가 소유한 로컬 또는 private 원격 Git 저장소를 구성합니다. 공통 작업 루트와 Knowledge 경로는 이 PC에서 사용자가 확정하며, 다른 PC의 절대 경로를 복사하거나 사용자 홈을 훑어 추측하지 않습니다. 확장에 내장된 Win11 도구가 기존 문서를 덮어쓰지 않고 Obsidian 분류표와 빠진 기본 폴더만 추가합니다. 최초 설정 마법사는 commit·pull·push하지 않습니다. 이후 <code>route-knowledge</code>가 기존 문서와 허용 경로를 확인하고, <code>save-knowledge</code>와 <code>save-agent-worklog</code>만 명시된 파일을 canonical <code>main</code>에 저장합니다. 작업 이름으로 Knowledge 브랜치를 만들지 않습니다.</p>
         <div id="knowledge-wizard-status" class="status"></div>
         <div id="knowledge-github-status" class="hint"></div>
         <div id="knowledge-routing-status" class="hint"></div>
         <div class="field"><label for="knowledge-mode">저장 방식</label><select id="knowledge-mode"><option value="local_only">로컬 Git만 사용</option><option value="private_remote">Private 원격 Git 연결</option></select></div>
         <div class="field">
+          <label for="work-root">에이전트 공통 작업 루트</label>
+          <div class="inline"><input id="work-root" type="text"><button type="button" class="secondary" data-action="chooseWorkRoot">찾기</button></div>
+          <div id="work-root-source" class="hint"></div>
+        </div>
+        <div class="field">
+          <label for="tools-root">Knowledge 도구 설치 루트</label>
+          <div class="inline"><input id="tools-root" type="text"><button type="button" class="secondary" data-action="chooseToolsRoot">찾기</button></div>
+          <div id="tools-root-source" class="hint"></div>
+        </div>
+        <div class="field">
           <label for="knowledge-path">Knowledge 경로</label>
           <div class="inline"><input id="knowledge-path" type="text"><button type="button" class="secondary" data-action="chooseKnowledgePath">찾기</button></div>
+          <div id="knowledge-path-source" class="hint"></div>
         </div>
         <div id="remote-field" class="field"><label for="knowledge-remote">Private Git 원격 URL</label><input id="knowledge-remote" type="text" placeholder="https://github.com/owner/private-repo.git 또는 git@github.com:owner/private-repo.git"></div>
         <div class="grid">
@@ -632,6 +674,7 @@ export class ConfigurationCenter implements vscode.Disposable {
         diagnostics.appendChild(li);
       });
       byId("gpu-summary").textContent = snapshot.gpuSummary;
+      byId("roots-config-path").textContent = "canonical roots: " + snapshot.paths.roots;
       byId("gemini-status").textContent = snapshot.installation.globalGeminiExists
         ? "기존 파일이 있습니다. Integrated Power가 읽거나 수정하지 않습니다."
         : "파일이 없습니다. Integrated Power 설치 과정에서도 생성하지 않습니다.";
@@ -652,6 +695,10 @@ export class ConfigurationCenter implements vscode.Disposable {
       setValue("reserve-vram", String(snapshot.orchestrator.reserveVramGB));
       setChecked("allow-cpu-offload", snapshot.orchestrator.allowCpuOffload);
       setValue("default-route", snapshot.orchestrator.defaultRoute);
+      setValue("plugin-root", snapshot.orchestrator.pluginRoot);
+      byId("plugin-root-source").textContent = snapshot.paths.pluginRootConfigured
+        ? "이 PC에 저장된 설치 루트입니다."
+        : "현재 사용자 홈에서 계산한 제안값입니다. 저장 및 설치 전에 확인하세요.";
       byId("plugin-status").textContent = snapshot.installation.pluginInstalled
         ? "✓ ip-orchestrator 플러그인 설치됨"
         : snapshot.installation.legacyPluginInstalled
@@ -711,7 +758,18 @@ export class ConfigurationCenter implements vscode.Disposable {
       });
 
       setValue("knowledge-mode", snapshot.knowledge.mode);
+      setValue("work-root", snapshot.knowledge.workRoot);
+      setValue("tools-root", snapshot.knowledge.toolsRoot);
       setValue("knowledge-path", snapshot.knowledge.knowledgePath);
+      byId("work-root-source").textContent = snapshot.knowledge.workRootConfigured
+        ? "이 PC의 canonical roots.json에 저장됨"
+        : "제안값입니다. 다른 PC에서는 자동 승계하지 않으며 사용자가 확정해야 합니다.";
+      byId("tools-root-source").textContent = snapshot.knowledge.toolsRootConfigured
+        ? "이 PC의 canonical roots.json에 저장됨"
+        : "현재 OS의 사용자 데이터 위치에서 계산한 제안값입니다.";
+      byId("knowledge-path-source").textContent = snapshot.knowledge.knowledgePathConfigured
+        ? "이 PC의 canonical roots.json에 저장됨"
+        : "공통 작업 루트 아래의 제안값입니다. 필요하면 다른 위치를 선택할 수 있습니다.";
       setValue("knowledge-remote", snapshot.knowledge.remoteUrl);
       setValue("author-name", snapshot.knowledge.authorName);
       setValue("author-email", snapshot.knowledge.authorEmail);
@@ -770,13 +828,16 @@ export class ConfigurationCenter implements vscode.Disposable {
         selectionMode: value("selection-mode"),
         model: value("local-model"),
         reserveVramGB: Number(value("reserve-vram")),
-        allowCpuOffload: bool("allow-cpu-offload")
+        allowCpuOffload: bool("allow-cpu-offload"),
+        pluginRoot: value("plugin-root")
       };
     }
 
     function knowledgeConfiguration() {
       return {
         mode: value("knowledge-mode"),
+        workRoot: value("work-root"),
+        toolsRoot: value("tools-root"),
         knowledgePath: value("knowledge-path"),
         remoteUrl: value("knowledge-remote"),
         authorName: value("author-name"),
@@ -794,7 +855,7 @@ export class ConfigurationCenter implements vscode.Disposable {
       if (action === "saveDashboard") vscode.postMessage({ type: action, value: dashboardConfiguration() });
       else if (action === "saveOrchestrator" || action === "saveAndInstallOrchestrator" || action === "syncOllamaInventory") vscode.postMessage({ type: action, value: orchestratorConfiguration() });
       else if (action === "configureKnowledge") vscode.postMessage({ type: action, value: knowledgeConfiguration() });
-      else if (action === "installKnowledgeTools") vscode.postMessage({ type: action });
+      else if (action === "installKnowledgeTools") vscode.postMessage({ type: action, value: value("tools-root") });
       else if (action === "detectKnowledgeRemote" || action === "reconfigureKnowledgeRemote") {
         vscode.postMessage({
           type: action,
@@ -820,7 +881,7 @@ export class ConfigurationCenter implements vscode.Disposable {
         result.textContent = message.message;
         result.className = "result visible " + (message.kind === "error" ? "bad" : "ok");
       } else if (message.type === "fieldValue") {
-        const map = { dashboardStateRoot: "dashboard-state-root", knowledgePath: "knowledge-path", codexExe: "codex-exe" };
+        const map = { dashboardStateRoot: "dashboard-state-root", pluginRoot: "plugin-root", workRoot: "work-root", toolsRoot: "tools-root", knowledgePath: "knowledge-path", codexExe: "codex-exe" };
         if (map[message.field]) setValue(map[message.field], message.value);
       } else if (message.type === "knowledgeRemoteDetected") {
         setValue("knowledge-remote", message.value.remoteUrl);
@@ -894,6 +955,7 @@ function parseOrchestratorConfiguration(
     reserveVramGB:
       typeof value.reserveVramGB === "number" ? value.reserveVramGB : Number.NaN,
     allowCpuOffload: value.allowCpuOffload === true,
+    pluginRoot: requireString(value.pluginRoot, "Antigravity 플러그인 루트"),
   };
 }
 
@@ -904,6 +966,8 @@ function parseKnowledgeConfiguration(value: unknown): KnowledgeConfiguration {
   }
   return {
     mode: value.mode,
+    workRoot: requireString(value.workRoot, "공통 작업 루트"),
+    toolsRoot: requireString(value.toolsRoot, "Knowledge 도구 설치 루트"),
     knowledgePath: requireString(value.knowledgePath, "Knowledge 경로"),
     remoteUrl: optionalString(value.remoteUrl),
     authorName: requireString(value.authorName, "Git 작성자 이름"),

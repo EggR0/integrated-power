@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.6] - 2026-08-01
+
+### Changed
+
+- Made the current PC's canonical
+  `~/.config/integrated-power/roots.json` the single writable path contract;
+  previous `eggr` roots remain read-only migration input.
+- Added Configuration Center selectors for the common work root, Knowledge
+  root, Knowledge tools root, and Antigravity IDE plugin root.
+- Routed extension state, plugin installation, Knowledge setup, and bundled
+  tools through shared resolvers with explicit environment-variable overrides.
+- Treats OS-derived locations as visible suggestions until the user explicitly
+  saves or installs; it does not scan other users, drives, or similarly named
+  directories to guess an installation path.
+- Added isolated distribution tests using custom roots outside the simulated
+  user's home directory.
+
 ## [0.7.5] - 2026-08-01
 
 ### Fixed

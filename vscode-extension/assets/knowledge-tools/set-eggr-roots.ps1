@@ -12,6 +12,9 @@ param(
     [string]$KnowledgeMode = "",
     [string]$Bootstrap = "",
     [string]$Dotfiles = "",
+    [string]$StateRoot = "",
+    [string]$ToolsRoot = "",
+    [string]$AntigravityPluginRoot = "",
     [switch]$ClearKnowledgeRemote,
     [switch]$CreateWorkRoot,
     [switch]$Json,
@@ -23,10 +26,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $userProfile = [Environment]::GetFolderPath('UserProfile')
-$configFile = if ([string]::IsNullOrWhiteSpace($ConfigFileOverride)) {
-    Join-Path $userProfile '.config\eggr\roots.json'
-} else {
+$configFile = if (-not [string]::IsNullOrWhiteSpace($ConfigFileOverride)) {
     [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($ConfigFileOverride))
+} elseif (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ROOTS_CONFIG)) {
+    [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:INTEGRATED_POWER_ROOTS_CONFIG))
+} else {
+    Join-Path $userProfile '.config\integrated-power\roots.json'
 }
 $configDirectory = Split-Path -Parent $configFile
 
@@ -96,7 +101,10 @@ $values['work_root'] = $resolvedWorkRoot
 foreach ($pair in @(
     @('knowledge', $Knowledge),
     @('bootstrap', $Bootstrap),
-    @('dotfiles', $Dotfiles)
+    @('dotfiles', $Dotfiles),
+    @('state_root', $StateRoot),
+    @('tools_root', $ToolsRoot),
+    @('antigravity_plugin_root', $AntigravityPluginRoot)
 )) {
     if (-not [string]::IsNullOrWhiteSpace($pair[1])) {
         $values[$pair[0]] = ConvertTo-SafeAbsolutePath -PathValue $pair[1] -Label $pair[0]

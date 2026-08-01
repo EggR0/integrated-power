@@ -3,7 +3,7 @@
   "publisher": "EggR",
   "displayName": "Integrated Power",
   "description": "Antigravity IDE dashboard for AI usage, local compute, first-run setup, and Integrated Orchestrator management.",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "author": {
     "name": "EggR"
   },

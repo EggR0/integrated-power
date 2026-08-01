@@ -7,8 +7,10 @@ Antigravity IDE에서 현재 에이전트 직접 처리, Codex 위임, 하드웨
 
 1. 권장: Antigravity IDE의 `EggR: Open Configuration Center`에서
    Integrated Orchestrator 설정을 저장하고 플러그인을 설치합니다.
-2. 수동 설치: 이 폴더를
-   `~/.gemini/config/plugins/ip-orchestrator-plugin/`에 복사합니다.
+2. 기본 수동 설치: 이 폴더를 현재 사용자의
+   `~/.gemini/config/plugins/ip-orchestrator-plugin/`에 복사합니다. Antigravity
+   profile이 다른 위치에 있으면 Configuration Center에서 plugin root를 먼저
+   선택하거나 `INTEGRATED_POWER_ANTIGRAVITY_PLUGIN_ROOT`를 명시합니다.
 3. 독립 설정: `install/Install-Plugin.ps1`을 실행합니다.
 
 설정은 기본적으로 `~/.config/integrated-power/orchestrator.json`에 저장됩니다.
@@ -16,6 +18,10 @@ Antigravity IDE에서 현재 에이전트 직접 처리, Codex 위임, 하드웨
 이전 `~/.config/eggr/orchestrator.json`과
 `~/.gemini/config/codex_plugin_settings.json`은 새 설정이 없을 때만 마이그레이션
 입력으로 읽으며 원본을 삭제하지 않습니다.
+
+공통 작업·Knowledge·상태·도구·plugin root의 우선순위는
+`skills/ip-orchestrator/references/paths.md`를 따릅니다. 배포 패키지에는 개발자나
+다른 사용자의 절대 경로를 넣지 않습니다.
 
 Ollama 경로를 설정하면 `scripts/Sync-OllamaModelRegistry.ps1`이 `/api/tags` 또는
 `ollama ls`로 설치 모델을 확인하고

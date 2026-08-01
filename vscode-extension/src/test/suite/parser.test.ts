@@ -29,8 +29,14 @@ suite('Parser and Store Test Suite', () => {
 
   test('Bundled Knowledge tools install independently with backup-on-update', () => {
     const previousLocalAppData = process.env.LOCALAPPDATA;
+    const previousRootsConfig = process.env.INTEGRATED_POWER_ROOTS_CONFIG;
     const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'integrated-power-tools-'));
     process.env.LOCALAPPDATA = scratchRoot;
+    process.env.INTEGRATED_POWER_ROOTS_CONFIG = path.join(
+      scratchRoot,
+      'config',
+      'roots.json',
+    );
     const extensionRoot = path.resolve(__dirname, '../../..');
     const context = {
       extensionPath: extensionRoot,
@@ -60,6 +66,11 @@ suite('Parser and Store Test Suite', () => {
         delete process.env.LOCALAPPDATA;
       } else {
         process.env.LOCALAPPDATA = previousLocalAppData;
+      }
+      if (previousRootsConfig === undefined) {
+        delete process.env.INTEGRATED_POWER_ROOTS_CONFIG;
+      } else {
+        process.env.INTEGRATED_POWER_ROOTS_CONFIG = previousRootsConfig;
       }
     }
   });
