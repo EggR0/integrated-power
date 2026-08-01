@@ -76,7 +76,9 @@ Valid `-TaskType` values are `summarization`, `extraction`, `coding`, `reasoning
 
 - For Ollama, use workspace `scripts/dispatch/Invoke-LocalLLM.ps1` when present; otherwise use bundled `scripts/Invoke-LocalLLM.ps1`.
 - For OpenAI-compatible vLLM, use workspace `scripts/dispatch/Invoke-vLLMJob.ps1` when present; otherwise use bundled `scripts/Invoke-vLLMJob.ps1`.
-- Always provide the instruction via `-PromptFile`.
+- Prefer `-PromptText` for generated instructions and `-ContextFile` for existing inputs. Use `-PromptFile` only for an existing reusable workspace file; do not create a per-call prompt below Antigravity `brain/`.
+- Reuse one `-TaskKey` for the logical task. The default output is the stable `reports/tasks/<task-key>.md`, not a timestamped file.
+- On Antigravity IDE, pass the session's stable `ip-orchestrator.md` as `-OutputFile`. The default `Coalesce` policy also redirects any path below that brain session to this one file.
 - Pass `-TaskType`, `-SuccessRegex`, and `-MinOutputChars` when the output has a verifiable shape.
 - For Ollama, `-KeepAlive` defaults to `30m` and is sent in the actual
   `/api/generate` request. `-TimeoutSeconds` defaults to 900 seconds for an
@@ -93,7 +95,9 @@ Example after an approved selector result:
 
 ```powershell
 .\scripts\dispatch\Invoke-LocalLLM.ps1 `
-  -PromptFile .\prompt.md `
+  -PromptText "Review the supplied context and return a concise risk list." `
+  -ContextFile @($fileA, $fileB) `
+  -TaskKey "current-task" `
   -Model gemma4:26b `
   -SelectedBy selector `
   -SelectionReason "<selector Reason>" `
@@ -104,7 +108,7 @@ Example after an approved selector result:
 
 ## Output
 
-- The final local LLM response is written to `-OutputFile` or a timestamped report under Integrated Power workspace state `reports/`.
+- The final local LLM response is written to `-OutputFile` or the stable `reports/tasks/<task-key>.md` path. `-ArtifactWriteMode Append` adds a timestamped section to the same file; `Replace` recomposes the latest result.
 - Token metrics are appended to Integrated Power workspace state `reports/token_usage.csv` when available.
 - Task metrics are appended to Integrated Power workspace state `reports/local_llm_metrics.csv`.
 - The task metrics CSV records `TaskType`, `Success`, `ActualElapsedSeconds`, `OutputChars`, `TokensPerSecond`, `SelectedBy`, `SelectionReason`, and `ErrorMessage`.

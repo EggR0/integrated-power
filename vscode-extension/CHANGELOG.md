@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.7] - 2026-08-01
+
+### Fixed
+
+- Stopped Integrated Orchestrator from encouraging a new Antigravity IDE
+  artifact for every local-model prompt, response, or helper command.
+- Added direct `-PromptText` and `-ContextFile` inputs so generated prompts no
+  longer require a file under `brain/scratch`.
+- Coalesced output paths anywhere below one Antigravity brain session into its
+  stable `ip-orchestrator.md` by default; explicit `Separate` mode remains
+  available when the user asks for distinct deliverables.
+- Replaced timestamped default local/Codex result paths with stable
+  `reports/tasks/<task-key>.md` paths and kept Codex machine logs outside the
+  Antigravity brain.
+- Added a regression test proving one local LLM invocation leaves exactly one
+  file in a simulated Antigravity brain session.
+
 ## [0.7.6] - 2026-08-01
 
 ### Changed

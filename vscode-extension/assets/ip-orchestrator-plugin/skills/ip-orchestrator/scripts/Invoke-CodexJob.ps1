@@ -1,8 +1,22 @@
+[CmdletBinding(DefaultParameterSetName = "PromptFile")]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = "PromptFile")]
     [string]$PromptFile,
 
+    [Parameter(Mandatory = $true, ParameterSetName = "PromptText")]
+    [AllowEmptyString()]
+    [string]$PromptText,
+
+    [string[]]$ContextFile = @(),
+
     [string]$OutputFile = "",
+
+    [string]$TaskTitle = "Codex Job",
+
+    [string]$TaskKey = "",
+
+    [ValidateSet("Coalesce", "Separate")]
+    [string]$ArtifactPolicy = "Coalesce",
 
     [ValidateSet("read-only", "workspace-write", "danger-full-access")]
     [string]$Sandbox = "read-only",
@@ -40,6 +54,7 @@ if ([string]::IsNullOrWhiteSpace($repoRoot)) {
 }
 
 Import-Module (Join-Path $PSScriptRoot "lib\EggR.Paths.psm1") -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot "lib\IntegratedPower.Artifacts.psm1") -Force -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
 
 $ensureSetup = Join-Path $PSScriptRoot "Ensure-CodexOrchestratorSetup.ps1"
@@ -48,18 +63,51 @@ if (!(Test-Path -LiteralPath $ensureSetup -PathType Leaf)) {
 }
 $codexExe = & $ensureSetup -RequestedCodexExe $CodexExe -PassThru
 
-$promptPath = Resolve-Path -LiteralPath $PromptFile
-$prompt = Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath
-
-if ([string]::IsNullOrWhiteSpace($OutputFile)) {
-    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputFile = Join-Path $storagePath "reports\codex-$stamp.md"
+$promptPath = ""
+if ($PSCmdlet.ParameterSetName -eq "PromptText") {
+    $prompt = [string]$PromptText
+}
+else {
+    $promptPath = [string](Resolve-Path -LiteralPath $PromptFile)
+    $prompt = [string](Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath)
+    $promptBrainRoot = Get-IntegratedPowerAntigravityBrainSessionRoot -Path $promptPath
+    if (-not [string]::IsNullOrWhiteSpace($promptBrainRoot)) {
+        Write-Warning "PromptFile is inside Antigravity IDE brain and may appear as another artifact. Reuse a workspace file or pass -PromptText on the next run. The existing file was not modified or deleted."
+    }
 }
 
-$outputPath = if ([System.IO.Path]::IsPathRooted($OutputFile)) {
-    $OutputFile
-} else {
-    Join-Path $repoRoot $OutputFile
+$resolvedContextFiles = @()
+foreach ($contextCandidate in @($ContextFile)) {
+    if ([string]::IsNullOrWhiteSpace($contextCandidate)) { continue }
+    $contextPath = if ([IO.Path]::IsPathRooted($contextCandidate)) {
+        [IO.Path]::GetFullPath($contextCandidate)
+    }
+    else {
+        [IO.Path]::GetFullPath((Join-Path $repoRoot $contextCandidate))
+    }
+    if (-not (Test-Path -LiteralPath $contextPath -PathType Leaf)) {
+        throw "Context file was not found: $contextPath"
+    }
+    $resolvedContextFiles += $contextPath
+}
+if ($resolvedContextFiles.Count -gt 0) {
+    $contextList = $resolvedContextFiles | ForEach-Object { "- $_" }
+    $prompt = @(
+        $prompt,
+        "# Context files`r`nRead these files with your sandbox tools; do not ask the caller to paste their contents.`r`n$($contextList -join "`r`n")"
+    ) -join "`r`n`r`n"
+}
+
+$artifactTarget = Resolve-IntegratedPowerArtifactTarget `
+    -OutputFile $OutputFile `
+    -RepoRoot $repoRoot `
+    -StateRoot $storagePath `
+    -TaskKey $TaskKey `
+    -TaskTitle $TaskTitle `
+    -ArtifactPolicy $ArtifactPolicy
+$outputPath = [string]$artifactTarget.Path
+if ([bool]$artifactTarget.Coalesced) {
+    Write-Warning "Antigravity IDE indexes every brain file as an artifact. Coalescing '$($artifactTarget.RequestedPath)' into '$outputPath'. Use -ArtifactPolicy Separate only when the user explicitly requests another visible artifact."
 }
 
 $outputDir = Split-Path -Parent $outputPath
@@ -81,10 +129,10 @@ if ($JsonLog) {
 }
 $arguments += "-"
 
-$logPath = [System.IO.Path]::ChangeExtension($outputPath, ".log")
-if ($JsonLog) {
-    $logPath = [System.IO.Path]::ChangeExtension($outputPath, ".jsonl")
-}
+$logExtension = if ($JsonLog) { ".jsonl" } else { ".log" }
+$logDirectory = Join-Path $storagePath "logs\tasks"
+New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
+$logPath = Join-Path $logDirectory "$($artifactTarget.TaskKey).codex$logExtension"
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $writer = New-Object System.IO.StreamWriter($logPath, $false, $Utf8NoBom)
@@ -187,7 +235,7 @@ Write-Host "Log saved to: $logPath"
 if ($JsonLog) {
     $usageParser = Join-Path $repoRoot "scripts\metrics\Parse-CodexUsage.ps1"
     if (Test-Path -LiteralPath $usageParser) {
-        & $usageParser -JsonlPath $logPath -OperationName (Split-Path -Leaf $PromptFile) -Model $Model | Out-Null
+        & $usageParser -JsonlPath $logPath -OperationName $TaskTitle -Model $Model | Out-Null
     }
 }
 

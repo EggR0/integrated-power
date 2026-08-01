@@ -288,7 +288,7 @@ $existing["EnabledRoutes"] = $EnabledRoutes
 $existing["DefaultRoute"] = $DefaultRoute
 $existing["LocalLlm"] = $localLlm
 $existing["FirstRunCompletedAt"] = [DateTimeOffset]::UtcNow.ToString("o")
-$existing["ConfiguredBy"] = "ip-orchestrator-standalone/3.2.0"
+$existing["ConfiguredBy"] = "ip-orchestrator-standalone/3.3.0"
 
 New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
 $temporary = Join-Path $configDirectory ("orchestrator.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))

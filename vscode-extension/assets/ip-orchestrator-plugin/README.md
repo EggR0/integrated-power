@@ -1,11 +1,11 @@
 # Integrated Orchestrator Plugin
 
 Antigravity IDE에서 현재 에이전트 직접 처리, Codex 위임, 하드웨어에 맞는
-로컬 LLM 전처리 경로를 선택하는 EggR 플러그인입니다.
+로컬 LLM 전처리 경로를 선택하는 Integrated Power 플러그인입니다.
 
 ## 설치
 
-1. 권장: Antigravity IDE의 `EggR: Open Configuration Center`에서
+1. 권장: Antigravity IDE의 `Integrated Power: Open Configuration Center`에서
    Integrated Orchestrator 설정을 저장하고 플러그인을 설치합니다.
 2. 기본 수동 설치: 이 폴더를 현재 사용자의
    `~/.gemini/config/plugins/ip-orchestrator-plugin/`에 복사합니다. Antigravity
@@ -29,6 +29,14 @@ Ollama 경로를 설정하면 `scripts/Sync-OllamaModelRegistry.ps1`이 `/api/ta
 모델에는 중립 점수를 적용하고, 레지스트리에만 있는 모델은 자동 설치하지 않습니다.
 선택기가 `NeedsUserConfirmation=true`를 반환한 경우에만 에이전트가 후보를 설명하고
 사용자에게 물어야 하며, 승인 전 `ollama pull`은 금지됩니다.
+
+## Antigravity IDE 아티팩트
+
+Antigravity IDE는 `brain/<작업 ID>` 아래의 일반 파일을 각각 아티팩트로 표시합니다.
+플러그인은 기본적으로 같은 작업의 출력을 `ip-orchestrator.md` 하나로 합치며,
+`-PromptText`와 `-ContextFile`을 지원해 호출용 prompt/response 파일이 `scratch/`에
+늘어나지 않게 합니다. 기존 사용자 파일은 삭제하지 않으며, 명시적으로 서로 다른
+결과물이 필요할 때만 `-ArtifactPolicy Separate`를 사용합니다.
 
 ## 전역 규칙 경계
 

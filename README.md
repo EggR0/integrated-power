@@ -68,6 +68,23 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
 - Dashboard, Integrated Orchestrator, Private Git Knowledge의 독립 설정 센터
 - Orchestrator 설치 전 계획 표시, 소유권 충돌 차단, backup, rollback과 재실행 안전성
 - 개발자 절대 경로를 내장하지 않는 WorkRoot와 상태 경로 해석
+- Antigravity IDE 작업별 `ip-orchestrator.md` 단일 아티팩트 재사용
+
+## Antigravity IDE 아티팩트 관리
+
+Antigravity IDE는 `~/.gemini/antigravity-ide/brain/<작업 ID>/` 아래의 일반 파일을
+아티팩트로 표시한다. 그래서 모델 호출마다 `scratch/prompt_*.txt`,
+`scratch/response_*.txt`, 임시 실행 스크립트를 만들면 같은 작업의 목록이 계속
+늘어난다.
+
+Integrated Orchestrator 3.3.0부터는 한 `brain/<작업 ID>`를 하나의 논리 작업으로 보고
+그 안의 출력 경로를 기본적으로 `<작업 ID>/ip-orchestrator.md` 하나로 합친다. 짧은
+지시는 파일 대신 `-PromptText`, 기존 프로젝트 자료는 `-ContextFile`로 전달하며,
+출력 경로를 생략해도 타임스탬프 대신 안정된 작업 키 경로를 재사용한다. 별도
+아티팩트가 정말 필요할 때만 사용자가 요청한 경우 `-ArtifactPolicy Separate`를 쓴다.
+
+업데이트는 새 파일의 과잉 생성을 막지만 기존 `brain` 파일을 자동 삭제하거나
+수정하지 않는다. 이전 목록 정리는 사용자 데이터 삭제가 포함되므로 별도 작업이다.
 
 ## Agy 사용량 경계
 

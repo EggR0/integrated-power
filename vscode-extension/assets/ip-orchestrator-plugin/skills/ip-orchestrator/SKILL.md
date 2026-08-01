@@ -12,6 +12,9 @@ module; do not assume another user's home path. Read `references/paths.md` for
 any install, migration, Knowledge, state, or cross-PC path operation. Never
 select a route that is absent from `EnabledRoutes`. Use
 `DefaultRoute` only when task evidence does not favor another enabled route.
+When the active surface is Antigravity IDE, read `references/artifacts.md`
+before creating a prompt, response, helper script, or delegated output. Reuse
+one visible artifact and one task key for the current logical task.
 `LocalLlm.Endpoint` and `LocalLlm.Model` are non-secret defaults; API key values
 must come from the named environment variable and must never be written to this
 settings file. `LocalLlm.HardwarePolicy.Mode=user_default` means the named model
@@ -81,7 +84,7 @@ Follow these explicit rules:
 
 ## General Rules
 
-- Do NOT pass repository file contents directly inside prompts when dispatching. Always pass file paths (e.g. `-ContextFile`) or let Codex use its sandbox to read them.
+- For Codex, pass source paths through `-ContextFile` and let Codex read them with its sandbox. For a local LLM, use the invoke script's `-ContextFile` so the script composes context without a separate prompt artifact.
 - Ensure you select the appropriate `-Sandbox` permissions (`read-only`, `workspace-write`, `danger-full-access`).
 - Prefer local LLM preprocessing before sending broad noisy context to Codex.
 - Never call a local LLM model arbitrarily; use the selector first unless the user explicitly names an exact model and accepts bypassing measured routing.
@@ -93,7 +96,7 @@ Follow these explicit rules:
   requires that native dtype.
 - If local LLM is offline, fall back to Main Agent Direct or Codex only after noting the fallback in the artifact.
 - If Codex Debate fails or is inconclusive, fall back to a narrower Main Agent Direct step or a bounded Codex Job rather than repeating broad debate prompts.
-- Every delegated route must produce an artifact: report, discussion, generated prompt, output file, metrics row, or implementation summary.
+- Produce at most one durable, user-visible artifact per logical task by default. Metrics and machine logs are state, not additional user artifacts; transient prompts and raw responses must not become separate Antigravity brain files.
 - Record why the chosen route is token-efficient, especially when skipping local preprocessing.
 - Treat user-owned Knowledge `main` as the canonical global store. Code
   repositories still use isolated task branches; do not transfer that branch

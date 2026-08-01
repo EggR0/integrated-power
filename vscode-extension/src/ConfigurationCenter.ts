@@ -490,7 +490,7 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="overview">
       <div class="grid">
         <article class="card"><h3>Dashboard</h3><div id="status-dashboard" class="status">확인 중</div><p>Antigravity IDE·Codex의 제공자 사용량과 로컬 GPU 상태를 한곳에서 비교해, 어느 실행 경로를 쓸지 판단할 근거를 제공합니다.</p></article>
-        <article class="card"><h3>Integrated Orchestrator</h3><div id="status-orchestrator" class="status">확인 중</div><p><code>ip-orchestrator</code>가 현재 에이전트, Codex, 하드웨어에 맞는 로컬 LLM 사이에서 작업 경로를 고릅니다. Dashboard와 분리 설치되어 사용량 화면을 열었다고 실행 규칙이 바뀌지는 않습니다.</p></article>
+        <article class="card"><h3>Integrated Orchestrator</h3><div id="status-orchestrator" class="status">확인 중</div><p><code>ip-orchestrator</code>가 현재 에이전트, Codex, 하드웨어에 맞는 로컬 LLM 사이에서 작업 경로를 고릅니다. Antigravity IDE에서는 같은 작업의 출력을 <code>ip-orchestrator.md</code> 하나로 합쳐 prompt/response 아티팩트가 계속 늘지 않게 합니다. Dashboard와 분리 설치되어 사용량 화면을 열었다고 실행 규칙이 바뀌지는 않습니다.</p></article>
         <article class="card"><h3>Private Git Knowledge</h3><div id="status-knowledge" class="status">확인 중</div><p>Obsidian vault의 <code>main</code>을 전역 지식의 단일 기준으로 사용합니다. 에이전트는 기존 문서를 먼저 찾고 Project·Knowledge·Area·Inbox 중 정해진 경로에 저장하며, 지식 종류를 Git 브랜치로 만들지 않습니다.</p></article>
       </div>
       <article class="card">
@@ -541,7 +541,7 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="orchestrator">
       <article class="card">
         <h2>Integrated Orchestrator 설정 및 설치</h2>
-        <p class="hint">설정 파일과 Antigravity IDE 플러그인은 분리되어 있습니다. 현재 사용자 홈의 표준 위치는 제안값일 뿐이며, 실제 설치 루트는 여기서 확인·변경한 뒤 저장합니다. 다른 사용자 폴더를 검색하지 않습니다.</p>
+        <p class="hint">설정 파일과 Antigravity IDE 플러그인은 분리되어 있습니다. 현재 사용자 홈의 표준 위치는 제안값일 뿐이며, 실제 설치 루트는 여기서 확인·변경한 뒤 저장합니다. 다른 사용자 폴더를 검색하지 않습니다. 플러그인 3.3.0부터 한 Antigravity 작업 안의 모델 호출 결과는 기본적으로 단일 <code>ip-orchestrator.md</code>를 재사용하며 기존 brain 파일은 삭제하지 않습니다.</p>
         <div id="plugin-status" class="status"></div>
         <code id="plugin-path" class="path"></code>
         <code id="orchestrator-settings-path" class="path"></code>
