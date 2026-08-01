@@ -24,8 +24,16 @@ $ErrorActionPreference = 'Stop'
 
 $userProfile = [Environment]::GetFolderPath('UserProfile')
 $documents = [Environment]::GetFolderPath('MyDocuments')
-$isWindows = [Environment]::OSVersion.Platform -eq 'Win32NT'
-$configFile = Join-Path $userProfile '.config\eggr\roots.json'
+$runningOnWindows = [Environment]::OSVersion.Platform -eq 'Win32NT'
+$preferredConfigFile = Join-Path $userProfile '.config\integrated-power\roots.json'
+$previousConfigFile = Join-Path $userProfile '.config\eggr\roots.json'
+$configFile = if (Test-Path -LiteralPath $preferredConfigFile -PathType Leaf) {
+    $preferredConfigFile
+} elseif (Test-Path -LiteralPath $previousConfigFile -PathType Leaf) {
+    $previousConfigFile
+} else {
+    $preferredConfigFile
+}
 $script:resolutionWarnings = @()
 $configRoots = @{}
 
@@ -75,7 +83,7 @@ function Test-PathInsideRoot {
         [string]$Root
     )
 
-    $comparison = if ($isWindows) {
+    $comparison = if ($runningOnWindows) {
         [StringComparison]::OrdinalIgnoreCase
     } else {
         [StringComparison]::Ordinal
@@ -130,7 +138,7 @@ if (Test-RemoteContainsCredential -Value $configuredKnowledgeRemote) {
 $bootstrapSelf = Split-Path -Parent $PSScriptRoot
 $bootstrapName = Split-Path -Leaf $bootstrapSelf
 $bootstrapParent = Split-Path -Parent $bootstrapSelf
-$legacyWindowsRoot = if ($isWindows) { Join-Path $documents 'Codex' } else { $null }
+$legacyWindowsRoot = if ($runningOnWindows) { Join-Path $documents 'Codex' } else { $null }
 
 $resolvedWorkRoot = $null
 $workRootSource = $null
@@ -148,10 +156,10 @@ try {
     } elseif ($bootstrapName -in @('environment-bootstrap', 'eggr-environment-bootstrap')) {
         $resolvedWorkRoot = ConvertTo-EggRAbsolutePath -PathValue $bootstrapParent -Label 'bootstrap parent'
         $workRootSource = 'bootstrap_parent'
-    } elseif ($isWindows -and (Test-Path -LiteralPath $legacyWindowsRoot) -and (Test-ContainsCoreRepository $legacyWindowsRoot)) {
+    } elseif ($runningOnWindows -and (Test-Path -LiteralPath $legacyWindowsRoot) -and (Test-ContainsCoreRepository $legacyWindowsRoot)) {
         $resolvedWorkRoot = ConvertTo-EggRAbsolutePath -PathValue $legacyWindowsRoot -Label 'legacy Windows root'
         $workRootSource = 'legacy_detected'
-    } elseif ($isWindows) {
+    } elseif ($runningOnWindows) {
         $resolvedWorkRoot = Join-Path $documents 'EggR'
         $workRootSource = 'windows_default'
     } else {
@@ -214,7 +222,7 @@ if (-not (Test-Path -LiteralPath $resolvedWorkRoot)) {
 }
 
 $result = [PSCustomObject]@{
-    OS               = if ($isWindows) { 'Windows' } else { 'Linux/macOS' }
+    OS               = if ($runningOnWindows) { 'Windows' } else { 'Linux/macOS' }
     WorkRoot         = $resolvedWorkRoot
     WorkRootSource   = $workRootSource
     WorkRootExists   = Test-Path -LiteralPath $resolvedWorkRoot

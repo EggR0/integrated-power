@@ -75,6 +75,14 @@ test("legacy roots config accepts a Windows PowerShell UTF-8 BOM", () => {
   }
 });
 
+test("bundled Knowledge resolver prefers canonical roots and avoids pwsh reserved variables", () => {
+  const source = readText("assets", "knowledge-tools", "eggr-roots.ps1");
+  assert.ok(source.includes(".config\\integrated-power\\roots.json"));
+  assert.ok(source.includes(".config\\eggr\\roots.json"));
+  assert.ok(source.includes("$runningOnWindows"));
+  assert.ok(!source.includes("$isWindows ="));
+});
+
 test("Integrated Power uses its product state root and copies legacy files without deleting them", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-state-"));
   const localAppData = path.join(tempHome, "AppData", "Local");

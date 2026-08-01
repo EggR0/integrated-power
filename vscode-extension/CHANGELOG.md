@@ -10,6 +10,8 @@
   selection.
 - Added explicit Ollama cold-load timeouts and `keep_alive` to the real
   generation request instead of treating a short warm-up as a readiness gate.
+- Made the bundled Knowledge root resolver prefer canonical Integrated Power
+  roots and avoid the PowerShell 7 reserved `$IsWindows` variable collision.
 
 ### Added
 
