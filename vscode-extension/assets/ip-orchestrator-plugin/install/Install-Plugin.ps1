@@ -102,7 +102,11 @@ function Get-NvidiaSummary {
 
 $existing = [ordered]@{}
 $readConfigPath = $configPath
-$previousConfigPath = Join-Path $userProfile ".config\eggr\orchestrator.json"
+$previousConfigPath = if (-not [string]::IsNullOrWhiteSpace($env:EGGR_ORCHESTRATOR_SETTINGS)) {
+    [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:EGGR_ORCHESTRATOR_SETTINGS))
+} else {
+    Join-Path $userProfile ".config\eggr\orchestrator.json"
+}
 $legacyConfigPath = Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
 if (-not (Test-Path -LiteralPath $readConfigPath -PathType Leaf) -and
     (Test-Path -LiteralPath $previousConfigPath -PathType Leaf)) {
@@ -119,6 +123,70 @@ if (Test-Path -LiteralPath $readConfigPath -PathType Leaf) {
         }
     } catch {
         throw "Existing orchestrator settings are invalid: $readConfigPath"
+    }
+}
+
+function Get-ObjectPropertyValue {
+    param(
+        [AllowNull()][object]$Object,
+        [string]$Name,
+        [AllowNull()][object]$Default = $null
+    )
+    if ($null -eq $Object) { return $Default }
+    if ($Object -is [Collections.IDictionary]) {
+        if ($Object.Contains($Name)) { return $Object[$Name] }
+        return $Default
+    }
+    if ($Object.PSObject.Properties.Name -contains $Name) {
+        return $Object.$Name
+    }
+    return $Default
+}
+
+$existingLocalLlm = Get-ObjectPropertyValue -Object $existing -Name "LocalLlm"
+$existingPolicy = Get-ObjectPropertyValue -Object $existingLocalLlm -Name "HardwarePolicy"
+if ($NonInteractive) {
+    if (-not $PSBoundParameters.ContainsKey("EnabledRoutes")) {
+        $savedRoutes = @(Get-ObjectPropertyValue -Object $existing -Name "EnabledRoutes" -Default @())
+        if ($savedRoutes.Count -gt 0) { $EnabledRoutes = $savedRoutes }
+    }
+    if (-not $PSBoundParameters.ContainsKey("DefaultRoute")) {
+        $savedDefaultRoute = [string](Get-ObjectPropertyValue -Object $existing -Name "DefaultRoute" -Default "")
+        if ($savedDefaultRoute -in @("main_agent", "codex", "local_llm")) {
+            $DefaultRoute = $savedDefaultRoute
+        }
+    }
+    if (-not $PSBoundParameters.ContainsKey("LocalLlmProvider")) {
+        $LocalLlmProvider = [string](Get-ObjectPropertyValue -Object $existingLocalLlm -Name "Provider" -Default "")
+        if ([string]::IsNullOrWhiteSpace($LocalLlmProvider)) {
+            $savedEndpoint = [string](Get-ObjectPropertyValue -Object $existingLocalLlm -Name "Endpoint" -Default "")
+            if ($savedEndpoint -match ":11434(?:/|$)") { $LocalLlmProvider = "ollama" }
+            elseif (-not [string]::IsNullOrWhiteSpace($savedEndpoint)) { $LocalLlmProvider = "vllm" }
+        }
+    }
+    if (-not $PSBoundParameters.ContainsKey("LocalLlmEndpoint")) {
+        $LocalLlmEndpoint = [string](Get-ObjectPropertyValue -Object $existingLocalLlm -Name "Endpoint" -Default "")
+    }
+    if (-not $PSBoundParameters.ContainsKey("LocalLlmModel")) {
+        $LocalLlmModel = [string](Get-ObjectPropertyValue -Object $existingLocalLlm -Name "Model" -Default "")
+    }
+    if (-not $PSBoundParameters.ContainsKey("LocalLlmSelectionMode")) {
+        $savedMode = [string](Get-ObjectPropertyValue -Object $existingPolicy -Name "Mode" -Default "")
+        if ($savedMode -in @("auto", "user_default")) {
+            $LocalLlmSelectionMode = $savedMode
+        } elseif (-not [string]::IsNullOrWhiteSpace($LocalLlmModel)) {
+            $LocalLlmSelectionMode = "user_default"
+        }
+    }
+    if (-not $PSBoundParameters.ContainsKey("ReserveVramGB")) {
+        $savedReserve = Get-ObjectPropertyValue -Object $existingPolicy -Name "ReserveVramGB"
+        if ($null -ne $savedReserve) { $ReserveVramGB = [double]$savedReserve }
+    }
+    if (-not $PSBoundParameters.ContainsKey("AllowCpuOffload")) {
+        $AllowCpuOffload = [bool](Get-ObjectPropertyValue -Object $existingPolicy -Name "AllowCpuOffload" -Default $false)
+    }
+    if ($null -ne $existingLocalLlm -and $LocalLlmProvider -in @("ollama", "vllm") -and $EnabledRoutes -notcontains "local_llm") {
+        $EnabledRoutes += "local_llm"
     }
 }
 
@@ -180,7 +248,7 @@ if ($EnabledRoutes -contains "codex") {
     }
 }
 
-$localLlm = if ($existing.Contains("LocalLlm")) { $existing["LocalLlm"] } else { $null }
+$localLlm = $existingLocalLlm
 if ($EnabledRoutes -contains "local_llm") {
     if ([string]::IsNullOrWhiteSpace($LocalLlmProvider)) {
         throw "local_llm is enabled but LocalLlmProvider is missing."
@@ -194,28 +262,33 @@ if ($EnabledRoutes -contains "local_llm") {
     if ($LocalLlmSelectionMode -eq "user_default" -and [string]::IsNullOrWhiteSpace($LocalLlmModel)) {
         throw "LocalLlmModel is required when LocalLlmSelectionMode is user_default."
     }
-    $localLlm = [ordered]@{
-        Provider = $LocalLlmProvider
-        Endpoint = $LocalLlmEndpoint.TrimEnd("/")
-        Model = if ($LocalLlmSelectionMode -eq "user_default") { $LocalLlmModel } else { $null }
-        HardwarePolicy = [ordered]@{
+    $normalizedLocalLlm = [ordered]@{}
+    if ($null -ne $existingLocalLlm) {
+        foreach ($property in $existingLocalLlm.PSObject.Properties) {
+            $normalizedLocalLlm[$property.Name] = $property.Value
+        }
+    }
+    $normalizedLocalLlm["Provider"] = $LocalLlmProvider
+    $normalizedLocalLlm["Endpoint"] = $LocalLlmEndpoint.TrimEnd("/")
+    $normalizedLocalLlm["Model"] = if ($LocalLlmSelectionMode -eq "user_default") { $LocalLlmModel } else { $null }
+    $normalizedLocalLlm["HardwarePolicy"] = [ordered]@{
             Mode = $LocalLlmSelectionMode
             ReserveVramGB = $ReserveVramGB
             AllowCpuOffload = [bool]$AllowCpuOffload
-        }
     }
     if ($LocalLlmProvider -eq "vllm") {
-        $localLlm["ApiKeyEnvironmentVariable"] = "VLLM_API_KEY"
+        $normalizedLocalLlm["ApiKeyEnvironmentVariable"] = "VLLM_API_KEY"
     }
+    $localLlm = $normalizedLocalLlm
 }
 
-$existing["SchemaVersion"] = 1
+$existing["SchemaVersion"] = 2
 $existing["CodexExe"] = $codexExe
 $existing["EnabledRoutes"] = $EnabledRoutes
 $existing["DefaultRoute"] = $DefaultRoute
 $existing["LocalLlm"] = $localLlm
 $existing["FirstRunCompletedAt"] = [DateTimeOffset]::UtcNow.ToString("o")
-$existing["ConfiguredBy"] = "ip-orchestrator-standalone/3.0.0"
+$existing["ConfiguredBy"] = "ip-orchestrator-standalone/3.1.0"
 
 New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
 $temporary = Join-Path $configDirectory ("orchestrator.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))
@@ -229,10 +302,38 @@ try {
     }
 }
 
+$inventoryResult = $null
+if ($EnabledRoutes -contains "local_llm" -and $LocalLlmProvider -eq "ollama") {
+    $pluginRoot = Split-Path -Parent $PSScriptRoot
+    $inventoryScript = Join-Path $pluginRoot "skills\ip-orchestrator\scripts\Sync-OllamaModelRegistry.ps1"
+    $bundledRegistry = Join-Path $pluginRoot "skills\ip-orchestrator\references\local_llm_model_registry.csv"
+    if (Test-Path -LiteralPath $inventoryScript -PathType Leaf) {
+        $inventoryJson = & $inventoryScript `
+            -SettingsPath $configPath `
+            -RegistryPath (Join-Path $configDirectory "local_llm_model_registry.csv") `
+            -BundledRegistryPath $bundledRegistry `
+            -OllamaEndpoint $LocalLlmEndpoint `
+            -AsJson
+        $inventoryResult = $inventoryJson | ConvertFrom-Json
+    }
+}
+
 Write-Host ""
 Write-Host "Integrated Orchestrator settings saved: $configPath" -ForegroundColor Cyan
+if ($readConfigPath -ne $configPath) {
+    Write-Host "Previous settings were preserved and migrated from: $readConfigPath" -ForegroundColor DarkCyan
+}
 Write-Host "Enabled routes: $($EnabledRoutes -join ', ')" -ForegroundColor Green
 Write-Host "Default route: $DefaultRoute" -ForegroundColor Green
+if ($null -ne $inventoryResult) {
+    Write-Host ("Ollama inventory: {0} installed, {1} newly registered, {2} registered but not installed." -f `
+        @($inventoryResult.InstalledModels).Count,
+        @($inventoryResult.NewlyRegistered).Count,
+        @($inventoryResult.RegistryModelsNotInstalled).Count) -ForegroundColor DarkCyan
+    if (-not [string]::IsNullOrWhiteSpace([string]$inventoryResult.AgentPrompt)) {
+        Write-Host ([string]$inventoryResult.AgentPrompt) -ForegroundColor DarkCyan
+    }
+}
 
 if ($PassThru) {
     Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json

@@ -25,7 +25,19 @@ param(
 
     [string]$SelectedBy = "manual",
 
-    [string]$SelectionReason = ""
+    [string]$SelectionReason = "",
+
+    [ValidateNotNullOrEmpty()]
+    [string]$KeepAlive = "30m",
+
+    [ValidateRange(1, 86400)]
+    [int]$TimeoutSeconds = 900,
+
+    [ValidateRange(1, 86400)]
+    [int]$ColdLoadTimeoutSeconds = 1800,
+
+    [ValidateRange(1, 300)]
+    [int]$ConnectTimeoutSeconds = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,7 +66,14 @@ if ([string]::IsNullOrWhiteSpace($Model)) {
     $configuredModel = if ($orchestratorSettings.LocalLlm -and $orchestratorSettings.LocalLlm.PSObject.Properties.Name -contains "Model") {
         [string]$orchestratorSettings.LocalLlm.Model
     } else { "" }
-    if (-not [string]::IsNullOrWhiteSpace($configuredModel)) {
+    $selectionMode = if (
+        $orchestratorSettings.LocalLlm -and
+        $orchestratorSettings.LocalLlm.HardwarePolicy -and
+        $orchestratorSettings.LocalLlm.HardwarePolicy.PSObject.Properties.Name -contains "Mode"
+    ) {
+        [string]$orchestratorSettings.LocalLlm.HardwarePolicy.Mode
+    } else { "auto" }
+    if (-not [string]::IsNullOrWhiteSpace($configuredModel) -and $selectionMode -eq "user_default") {
         $Model = $configuredModel
         if ($SelectedBy -eq "manual") { $SelectedBy = "user_default" }
     } else {
@@ -63,7 +82,17 @@ if ([string]::IsNullOrWhiteSpace($Model)) {
             throw "Automatic model selection was requested but the selector is missing: $selector"
         }
         $selection = (& $selector -TaskType $TaskType -TaskScale $TaskScale -InstalledOnly -AsJson) | ConvertFrom-Json
+        if (($selection.PSObject.Properties.Name -contains "NeedsUserConfirmation") -and [bool]$selection.NeedsUserConfirmation) {
+            $suggestedModels = @($selection.SuggestedInstalls | ForEach-Object {
+                if ($_.PSObject.Properties.Name -contains "Model") { [string]$_.Model } else { [string]$_ }
+            } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            $suggestionText = if ($suggestedModels.Count -gt 0) { $suggestedModels -join ", " } else { "none" }
+            throw "Automatic model selection requires user confirmation before installation. Suggested models: $suggestionText. Ask the user which exact model may be installed; do not run ollama pull before explicit approval."
+        }
         $Model = [string]$selection.SelectedModel
+        if ([string]::IsNullOrWhiteSpace($Model)) {
+            throw "Automatic model selection returned no installed model. $([string]$selection.AgentPrompt)"
+        }
         $SelectedBy = [string]$selection.SelectionBasis
         $SelectionReason = [string]$selection.Reason
     }
@@ -254,9 +283,9 @@ if (-not $serverRunning -or $ForceRestart) {
         $originalCuda = $env:CUDA_VISIBLE_DEVICES
         if ([string]::IsNullOrWhiteSpace($env:CUDA_VISIBLE_DEVICES)) {
             try {
-                $bestGpu = nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits 2>$null | 
-                    ConvertFrom-Csv -Header "index","free" | 
-                    Sort-Object { [int]$_.free } -Descending | 
+                $bestGpu = nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits 2>$null |
+                    ConvertFrom-Csv -Header "index","free" |
+                    Sort-Object { [int]$_.free } -Descending |
                     Select-Object -First 1
                 if ($bestGpu) {
                     $env:CUDA_VISIBLE_DEVICES = $bestGpu.index.ToString().Trim()
@@ -265,10 +294,10 @@ if (-not $serverRunning -or $ForceRestart) {
                 # Rely on default system GPU routing if nvidia-smi is unavailable
             }
         }
-        
+
         Start-Process -FilePath $ollamaExe -ArgumentList "serve" -WindowStyle Hidden
         Start-Sleep -Seconds 5
-        
+
         if ($null -ne $originalCuda) {
             $env:CUDA_VISIBLE_DEVICES = $originalCuda
         }
@@ -281,6 +310,51 @@ if (-not $serverRunning -or $ForceRestart) {
     }
 }
 
+function Test-OllamaModelLoaded {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Endpoint,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ModelName
+    )
+
+    try {
+        $processState = Invoke-RestMethod -Uri "$($Endpoint.TrimEnd('/'))/api/ps" -Method Get -TimeoutSec 3 -ErrorAction Stop
+        foreach ($loadedModel in @($processState.models)) {
+            $reportedNames = @()
+            if ($loadedModel.PSObject.Properties.Name -contains "name") {
+                $reportedNames += [string]$loadedModel.name
+            }
+            if ($loadedModel.PSObject.Properties.Name -contains "model") {
+                $reportedNames += [string]$loadedModel.model
+            }
+            if ($reportedNames -contains $ModelName) {
+                return $true
+            }
+        }
+        return $false
+    }
+    catch {
+        # Older or non-Ollama-compatible endpoints may not expose /api/ps.
+        # Unknown state is treated as a cold load so the request receives the
+        # safer, longer timeout instead of failing early.
+        return $null
+    }
+}
+
+$modelLoaded = Test-OllamaModelLoaded -Endpoint $ollamaUrl -ModelName $Model
+$effectiveTimeoutSeconds = $TimeoutSeconds
+if ($modelLoaded -ne $true) {
+    $effectiveTimeoutSeconds = [math]::Max($TimeoutSeconds, $ColdLoadTimeoutSeconds)
+    if ($modelLoaded -eq $false) {
+        Write-Host "Ollama model is not currently loaded; allowing up to $effectiveTimeoutSeconds seconds for cold load and generation."
+    }
+    else {
+        Write-Host "Ollama model load state is unavailable; using the cold-load timeout of $effectiveTimeoutSeconds seconds."
+    }
+}
+
 $startedAt = Get-Date
 $localMetricsFile = Join-Path $storagePath "reports\local_llm_metrics.csv"
 
@@ -290,6 +364,7 @@ $bodyObject = [pscustomobject]@{
     prompt  = [string]$prompt
     system  = [string]$SystemPrompt
     stream  = $false
+    keep_alive = [string]$KeepAlive
     options = [pscustomobject]@{
         num_ctx = [int]$NumCtx
     }
@@ -300,10 +375,34 @@ try {
     $tempJsonFile = [System.IO.Path]::GetTempFileName()
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tempJsonFile, $body, $utf8NoBom)
-    
+
     try {
-        $curlOutput = curl.exe -sS -X POST "$ollamaUrl/api/generate" -d "@$tempJsonFile" -H "Content-Type: application/json"
-        $response = $curlOutput | ConvertFrom-Json
+        $curlArguments = @(
+            "--silent",
+            "--show-error",
+            "--connect-timeout", [string]$ConnectTimeoutSeconds,
+            "--max-time", [string]$effectiveTimeoutSeconds,
+            "--request", "POST",
+            "$ollamaUrl/api/generate",
+            "--data-binary", "@$tempJsonFile",
+            "--header", "Content-Type: application/json"
+        )
+        $curlOutput = @(& curl.exe @curlArguments 2>&1)
+        $curlExitCode = $LASTEXITCODE
+        $responseText = ($curlOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+        if ($curlExitCode -ne 0) {
+            if ($curlExitCode -eq 28) {
+                throw "Ollama generation timed out after $effectiveTimeoutSeconds seconds. This limit already includes cold model loading; increase -ColdLoadTimeoutSeconds or -TimeoutSeconds for this model. $responseText"
+            }
+            throw "Ollama request failed with curl exit code $curlExitCode. $responseText"
+        }
+        if ([string]::IsNullOrWhiteSpace($responseText)) {
+            throw "Ollama returned an empty response."
+        }
+        $response = $responseText | ConvertFrom-Json
+        if (($response.PSObject.Properties.Name -contains "error") -and -not [string]::IsNullOrWhiteSpace([string]$response.error)) {
+            throw "Ollama returned an error: $($response.error)"
+        }
     }
     finally {
         Remove-Item $tempJsonFile -ErrorAction SilentlyContinue

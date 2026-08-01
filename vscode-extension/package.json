@@ -3,7 +3,7 @@
   "publisher": "EggR",
   "displayName": "Integrated Power",
   "description": "Antigravity IDE dashboard for AI usage, local compute, first-run setup, and Integrated Orchestrator management.",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "author": {
     "name": "EggR"
   },
@@ -156,7 +156,8 @@
     "vscode:prepublish": "node ./scripts/build-extension.js",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "pnpm run compile && node ./scripts/run-headless-tests.js",
+    "test": "pnpm run compile && node ./scripts/run-headless-tests.js && pnpm run test:powershell",
+    "test:powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-LocalLLMInventory.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-OnboardingMigration.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/scripts/tests/Invoke-LocalLLM.Tests.ps1",
     "test:extension": "pnpm run compile && node ./out/test/runTest.js",
     "package": "vsce package --no-dependencies"
   },

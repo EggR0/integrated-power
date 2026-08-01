@@ -18,6 +18,7 @@ import {
 
 const DASHBOARD_SETUP_KEY = "eggr.setup.dashboard.completed.v1";
 const FIRST_RUN_PROMPT_KEY = "eggr.setup.firstRunPromptShown.v1";
+const OLLAMA_INVENTORY_KEY = "integratedPower.orchestrator.ollamaInventory.v1";
 
 export type EggRRoute = "main_agent" | "codex" | "local_llm";
 export type LocalLlmProvider = "none" | "ollama" | "vllm";
@@ -71,6 +72,20 @@ export interface ExecutableDiagnostic {
   optional: boolean;
 }
 
+export interface OllamaInventorySnapshot {
+  status: string;
+  needsUserConfirmation: boolean;
+  agentPrompt: string;
+  registryPath: string;
+  inventorySource: string;
+  installedModels: string[];
+  registeredInstalled: string[];
+  newlyRegistered: string[];
+  registryModelsNotInstalled: string[];
+  suggestedInstalls: string[];
+  synchronizedAt: string;
+}
+
 export interface ConfigurationCenterSnapshot {
   dashboard: DashboardConfiguration;
   orchestrator: OrchestratorConfiguration;
@@ -84,6 +99,7 @@ export interface ConfigurationCenterSnapshot {
   status: FirstRunStatus;
   diagnostics: ExecutableDiagnostic[];
   gpuSummary: string;
+  ollamaInventory: OllamaInventorySnapshot | null;
   paths: {
     roots: string;
     orchestrator: string;
@@ -202,7 +218,7 @@ export function loadConfigurationCenterSnapshot(
     },
     orchestrator: {
       enableCodex: enabledRoutes.size === 0 || enabledRoutes.has("codex"),
-      enableLocalLlm: enabledRoutes.has("local_llm"),
+      enableLocalLlm: enabledRoutes.has("local_llm") || localLlm !== null,
       defaultRoute: configuredDefault,
       codexExe: codexExecutable ?? "",
       provider: localLlm?.Provider ?? "none",
@@ -247,6 +263,9 @@ export function loadConfigurationCenterSnapshot(
       diagnostic("nvidia", "NVIDIA", nvidiaExecutable, true),
     ],
     gpuSummary: summarizeDetectedHardware(detectNvidiaGpus()),
+    ollamaInventory: normalizeOllamaInventorySnapshot(
+      context.globalState.get(OLLAMA_INVENTORY_KEY),
+    ),
     paths: {
       roots: rootsConfigPath(),
       orchestrator: orchestratorSettingsPath(),
@@ -337,7 +356,15 @@ export function saveOrchestratorConfiguration(
       throw new Error("사용자 지정 모델 우선 모드에는 정확한 모델 ID가 필요합니다.");
     }
     enabledRoutes.push("local_llm");
+    const existingSettings = readOrchestratorSettings().value;
+    const existingLocalLlm = isRecord(existingSettings.LocalLlm)
+      ? existingSettings.LocalLlm
+      : {};
+    const existingHardwarePolicy = isRecord(existingLocalLlm.HardwarePolicy)
+      ? existingLocalLlm.HardwarePolicy
+      : {};
     localLlm = {
+      ...existingLocalLlm,
       Provider: input.provider,
       Endpoint: input.endpoint.trim().replace(/\/+$/, ""),
       Model: input.selectionMode === "user_default" ? input.model.trim() : null,
@@ -345,6 +372,7 @@ export function saveOrchestratorConfiguration(
         ? { ApiKeyEnvironmentVariable: "VLLM_API_KEY" }
         : {}),
       HardwarePolicy: {
+        ...existingHardwarePolicy,
         Mode: input.selectionMode === "user_default" ? "user_default" : "auto",
         ReserveVramGB: Number(input.reserveVramGB),
         AllowCpuOffload: input.allowCpuOffload === true,
@@ -370,6 +398,85 @@ export function saveOrchestratorConfiguration(
   };
   writeJsonObjectAtomic(orchestratorSettingsPath(), { ...existing, ...settings });
   return orchestratorSettingsPath();
+}
+
+export async function synchronizeOllamaModelInventory(
+  context: vscode.ExtensionContext,
+  endpoint: string,
+): Promise<OllamaInventorySnapshot> {
+  const script = path.join(
+    context.extensionPath,
+    "assets",
+    "ip-orchestrator-plugin",
+    "skills",
+    "ip-orchestrator",
+    "scripts",
+    "Sync-OllamaModelRegistry.ps1",
+  );
+  const bundledRegistry = path.join(
+    context.extensionPath,
+    "assets",
+    "ip-orchestrator-plugin",
+    "skills",
+    "ip-orchestrator",
+    "references",
+    "local_llm_model_registry.csv",
+  );
+  if (!fs.existsSync(script)) {
+    throw new Error(`Ollama 모델 인벤토리 동기화 도구가 없습니다: ${script}`);
+  }
+  if (!fs.existsSync(bundledRegistry)) {
+    throw new Error(`기본 로컬 LLM 레지스트리가 없습니다: ${bundledRegistry}`);
+  }
+  const args = [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    script,
+    "-SettingsPath",
+    orchestratorSettingsPath(),
+    "-RegistryPath",
+    ollamaModelRegistryPath(),
+    "-BundledRegistryPath",
+    bundledRegistry,
+    "-OllamaEndpoint",
+    endpoint.trim().replace(/\/+$/, ""),
+    "-AsJson",
+  ];
+  const output = await executeFileUtf8(
+    process.platform === "win32" ? "powershell.exe" : "pwsh",
+    args,
+    30_000,
+  );
+  const parsed = JSON.parse(output.replace(/^\uFEFF/, "").trim()) as unknown;
+  const result = normalizeOllamaInventorySnapshot(parsed);
+  if (!result) {
+    throw new Error("Ollama 모델 인벤토리 도구가 올바른 JSON 결과를 반환하지 않았습니다.");
+  }
+  result.synchronizedAt = new Date().toISOString();
+  await context.globalState.update(OLLAMA_INVENTORY_KEY, result);
+  return result;
+}
+
+export function formatOllamaInventorySummary(
+  result: OllamaInventorySnapshot,
+): string {
+  if (result.status !== "ready") {
+    return `Ollama 모델 인벤토리를 확인하지 못했습니다(${result.status}).${
+      result.agentPrompt ? ` ${result.agentPrompt}` : ""
+    }`;
+  }
+  const parts = [
+    `설치 ${result.installedModels.length}개`,
+    `등록·설치됨 ${result.registeredInstalled.length}개`,
+    `새 등록 ${result.newlyRegistered.length}개`,
+    `등록됐지만 미설치 ${result.registryModelsNotInstalled.length}개`,
+  ];
+  if (result.suggestedInstalls.length > 0) {
+    parts.push(`설치 제안 ${result.suggestedInstalls.length}개(사용자 확인 필요)`);
+  }
+  return `Ollama 모델 인벤토리 동기화 완료: ${parts.join(" · ")}`;
 }
 
 export async function runPrivateKnowledgeConfiguration(
@@ -538,13 +645,15 @@ export function getFirstRunStatus(context: vscode.ExtensionContext): FirstRunSta
     typeof roots.knowledge_remote === "string" ? roots.knowledge_remote : "";
   const knowledgeMode =
     typeof roots.knowledge_mode === "string" ? roots.knowledge_mode : "";
-  const orchestrator = readOrchestratorSettings().value;
+  const orchestratorSettings = readOrchestratorSettings();
+  const orchestrator = orchestratorSettings.value;
   const knowledgeConfigured =
     knowledgeMode === "local_only" ||
     (knowledgeMode === "private_remote" && Boolean(knowledgeRemote.trim()));
   return {
     dashboard: Boolean(context.globalState.get(DASHBOARD_SETUP_KEY)),
     orchestrator:
+      orchestratorSettings.source === "integrated-power" &&
       typeof orchestrator.FirstRunCompletedAt === "string" &&
       (fs.existsSync(pluginPath()) ||
         fs.existsSync(previousPluginPath()) ||
@@ -635,9 +744,7 @@ function readGitTaskBranchCount(repository: string): number {
 }
 
 export function orchestratorSettingsPath(): string {
-  const configured =
-    process.env.INTEGRATED_POWER_ORCHESTRATOR_SETTINGS ??
-    process.env.EGGR_ORCHESTRATOR_SETTINGS;
+  const configured = process.env.INTEGRATED_POWER_ORCHESTRATOR_SETTINGS;
   if (configured) {
     return path.resolve(
       expandEnvironmentVariables(configured),
@@ -652,7 +759,20 @@ export function orchestratorSettingsPath(): string {
 }
 
 export function previousOrchestratorSettingsPath(): string {
+  const configured = process.env.EGGR_ORCHESTRATOR_SETTINGS;
+  if (configured) {
+    return path.resolve(expandEnvironmentVariables(configured));
+  }
   return path.join(os.homedir(), ".config", "eggr", "orchestrator.json");
+}
+
+export function ollamaModelRegistryPath(): string {
+  return path.join(
+    os.homedir(),
+    ".config",
+    "integrated-power",
+    "local_llm_model_registry.csv",
+  );
 }
 
 export function legacyOrchestratorSettingsPath(): string {
@@ -693,24 +813,34 @@ function normalizeExistingLocalLlm(
   value: unknown,
 ): OrchestratorLocalLlmSettings | null {
   if (!isRecord(value)) return null;
+  const endpoint = typeof value.Endpoint === "string" ? value.Endpoint : "";
+  const model =
+    typeof value.Model === "string" && value.Model.trim() ? value.Model : null;
   const provider =
     value.Provider === "vllm"
       ? "vllm"
       : value.Provider === "ollama"
         ? "ollama"
-        : null;
-  if (!provider || typeof value.Endpoint !== "string") return null;
+        : /:11434(?:\/|$)/.test(endpoint) || model
+          ? "ollama"
+          : endpoint
+            ? "vllm"
+            : null;
+  if (!provider || !endpoint) return null;
   const policy = isRecord(value.HardwarePolicy) ? value.HardwarePolicy : {};
   return {
     Provider: provider,
-    Endpoint: value.Endpoint,
-    Model:
-      typeof value.Model === "string" && value.Model.trim() ? value.Model : null,
+    Endpoint: endpoint,
+    Model: model,
     ...(typeof value.ApiKeyEnvironmentVariable === "string"
       ? { ApiKeyEnvironmentVariable: value.ApiKeyEnvironmentVariable }
       : {}),
     HardwarePolicy: {
-      Mode: policy.Mode === "user_default" ? "user_default" : "auto",
+      Mode:
+        policy.Mode === "user_default" ||
+        (policy.Mode !== "auto" && model !== null)
+          ? "user_default"
+          : "auto",
       ReserveVramGB:
         typeof policy.ReserveVramGB === "number" &&
         Number.isFinite(policy.ReserveVramGB)
@@ -718,6 +848,51 @@ function normalizeExistingLocalLlm(
           : 2,
       AllowCpuOffload: policy.AllowCpuOffload === true,
     },
+  };
+}
+
+function normalizeOllamaInventorySnapshot(
+  value: unknown,
+): OllamaInventorySnapshot | null {
+  if (!isRecord(value)) return null;
+  const array = (name: string): string[] => {
+    const source = value[name];
+    if (!Array.isArray(source)) return [];
+    return source
+      .map((entry) => {
+        if (typeof entry === "string") return entry.trim();
+        if (!isRecord(entry)) return "";
+        const model = entry.Model ?? entry.model ?? entry.Name ?? entry.name;
+        return typeof model === "string" ? model.trim() : "";
+      })
+      .filter(Boolean);
+  };
+  const string = (name: string): string =>
+    typeof value[name] === "string" ? value[name].trim() : "";
+  return {
+    status: string("Status") || string("status") || "unknown",
+    needsUserConfirmation:
+      value.NeedsUserConfirmation === true ||
+      value.needsUserConfirmation === true,
+    agentPrompt: string("AgentPrompt") || string("agentPrompt"),
+    registryPath: string("RegistryPath") || string("registryPath"),
+    inventorySource: string("InventorySource") || string("inventorySource"),
+    installedModels: array("InstalledModels").length
+      ? array("InstalledModels")
+      : array("installedModels"),
+    registeredInstalled: array("RegisteredInstalled").length
+      ? array("RegisteredInstalled")
+      : array("registeredInstalled"),
+    newlyRegistered: array("NewlyRegistered").length
+      ? array("NewlyRegistered")
+      : array("newlyRegistered"),
+    registryModelsNotInstalled: array("RegistryModelsNotInstalled").length
+      ? array("RegistryModelsNotInstalled")
+      : array("registryModelsNotInstalled"),
+    suggestedInstalls: array("SuggestedInstalls").length
+      ? array("SuggestedInstalls")
+      : array("suggestedInstalls"),
+    synchronizedAt: string("synchronizedAt") || string("SynchronizedAt"),
   };
 }
 

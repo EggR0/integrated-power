@@ -5,12 +5,14 @@ import {
   KnowledgeConfiguration,
   OrchestratorConfiguration,
   detectKnowledgeRemote,
+  formatOllamaInventorySummary,
   installBundledKnowledgeTools,
   loadConfigurationCenterSnapshot,
   reconfigureKnowledgeRemote,
   runPrivateKnowledgeConfiguration,
   saveDashboardConfiguration,
   saveOrchestratorConfiguration,
+  synchronizeOllamaModelInventory,
 } from "./configurationModel";
 
 export type ConfigurationSection =
@@ -102,25 +104,62 @@ export class ConfigurationCenter implements vscode.Disposable {
         }
         case "saveOrchestrator": {
           this.postBusy(true);
+          const configuration = parseOrchestratorConfiguration(message.value);
           const savedPath = saveOrchestratorConfiguration(
             this.context,
-            parseOrchestratorConfiguration(message.value),
+            configuration,
           );
+          const inventory =
+            configuration.enableLocalLlm && configuration.provider === "ollama"
+              ? await synchronizeOllamaModelInventory(
+                  this.context,
+                  configuration.endpoint,
+                )
+              : null;
           this.postResult(
             "success",
-            `Integrated Orchestrator 설정 저장 완료: ${savedPath}`,
+            inventory
+              ? `Integrated Orchestrator 설정 저장 완료: ${savedPath}\n${formatOllamaInventorySummary(inventory)}`
+              : `Integrated Orchestrator 설정 저장 완료: ${savedPath}`,
           );
           this.postSnapshot("orchestrator");
           return;
         }
         case "saveAndInstallOrchestrator": {
           this.postBusy(true);
+          const configuration = parseOrchestratorConfiguration(message.value);
           saveOrchestratorConfiguration(
             this.context,
-            parseOrchestratorConfiguration(message.value),
+            configuration,
           );
           const result = await this.installOrchestrator();
-          this.postResult("success", result);
+          const inventory =
+            configuration.enableLocalLlm && configuration.provider === "ollama"
+              ? await synchronizeOllamaModelInventory(
+                  this.context,
+                  configuration.endpoint,
+                )
+              : null;
+          this.postResult(
+            "success",
+            inventory
+              ? `${result}\n${formatOllamaInventorySummary(inventory)}`
+              : result,
+          );
+          this.postSnapshot("orchestrator");
+          return;
+        }
+        case "syncOllamaInventory": {
+          this.postBusy(true);
+          const configuration = parseOrchestratorConfiguration(message.value);
+          if (!configuration.enableLocalLlm || configuration.provider !== "ollama") {
+            throw new Error("Ollama 공급자를 사용하도록 로컬 LLM 경로를 먼저 켜주세요.");
+          }
+          const inventory = await synchronizeOllamaModelInventory(
+            this.context,
+            configuration.endpoint,
+          );
+          this.postResult("success", formatOllamaInventorySummary(inventory));
           this.postSnapshot("orchestrator");
           return;
         }
@@ -503,6 +542,15 @@ export class ConfigurationCenter implements vscode.Disposable {
           <div id="model-field" class="field"><label for="local-model">사용자 기본 모델 ID</label><input id="local-model" type="text"></div>
           <div class="field"><label for="reserve-vram">남겨 둘 VRAM(GB)</label><input id="reserve-vram" type="number" min="0" max="256" step="0.5"></div>
           <label class="check"><input id="allow-cpu-offload" type="checkbox"><span>VRAM 부족 시 CPU offload 허용</span></label>
+          <div class="subform">
+            <h3>Ollama 모델 인벤토리</h3>
+            <p class="hint"><code>ollama list</code>에 해당하는 설치 모델 목록을 사용자 전용 레지스트리와 비교합니다. 설치된 미등록 모델은 추가하지만, 등록됐으나 설치되지 않은 모델은 사용자 확인 없이 내려받지 않습니다.</p>
+            <div id="ollama-inventory-status" class="status">아직 동기화하지 않았습니다.</div>
+            <code id="ollama-registry-path" class="path"></code>
+            <div id="ollama-inventory-details" class="hint"></div>
+            <ul id="ollama-inventory-models" class="diag-list"></ul>
+            <div class="actions"><button type="button" class="secondary" data-action="syncOllamaInventory">설치 모델 다시 확인·레지스트리 동기화</button></div>
+          </div>
         </div>
 
         <div class="field"><label for="default-route">기본 실행 경로</label><select id="default-route"><option value="main_agent">현재 에이전트 직접 처리</option><option value="codex">Codex 위임</option><option value="local_llm">로컬 LLM 위임</option></select></div>
@@ -616,6 +664,39 @@ export class ConfigurationCenter implements vscode.Disposable {
         (snapshot.installation.settingsSource !== "integrated-power" && snapshot.installation.settingsSource !== "none"
           ? " (이전 설정을 읽음; 저장 시 Integrated Power 경로로 전환)"
           : "");
+      const inventory = snapshot.ollamaInventory;
+      byId("ollama-inventory-status").textContent = inventory
+        ? (inventory.status === "ready" ? "✓ 모델 인벤토리 동기화됨" : "△ " + inventory.status)
+        : "– 아직 동기화하지 않았습니다.";
+      byId("ollama-inventory-status").className = "status " + (inventory?.status === "ready" ? "ok" : "warn");
+      byId("ollama-registry-path").textContent = inventory?.registryPath
+        ? "사용자 레지스트리: " + inventory.registryPath
+        : "";
+      byId("ollama-inventory-details").textContent = inventory
+        ? "설치 " + inventory.installedModels.length + "개 · 등록·설치됨 " + inventory.registeredInstalled.length +
+          "개 · 새 등록 " + inventory.newlyRegistered.length + "개 · 등록됐지만 미설치 " +
+          inventory.registryModelsNotInstalled.length + "개" +
+          (inventory.inventorySource ? " · 탐지: " + inventory.inventorySource : "")
+        : "최초 설정 저장 또는 수동 동기화 때 확인합니다.";
+      const inventoryModels = byId("ollama-inventory-models");
+      inventoryModels.replaceChildren();
+      const inventoryRows = inventory ? [
+        ["설치됨", inventory.installedModels],
+        ["이번에 등록", inventory.newlyRegistered],
+        ["등록됐지만 미설치", inventory.registryModelsNotInstalled],
+        ["설치 제안(확인 필요)", inventory.suggestedInstalls]
+      ] : [];
+      inventoryRows.forEach(([label, models]) => {
+        if (!models.length) return;
+        const li = document.createElement("li");
+        li.textContent = label + ": " + models.join(", ");
+        inventoryModels.appendChild(li);
+      });
+      if (inventory?.agentPrompt) {
+        const li = document.createElement("li");
+        li.textContent = inventory.agentPrompt;
+        inventoryModels.appendChild(li);
+      }
       const plan = snapshot.installation.pluginPlan;
       byId("plugin-plan-status").textContent = plan.blocked
         ? "설치 중단: " + plan.blockingReason
@@ -711,7 +792,7 @@ export class ConfigurationCenter implements vscode.Disposable {
       if (busy) return;
       const action = button.dataset.action;
       if (action === "saveDashboard") vscode.postMessage({ type: action, value: dashboardConfiguration() });
-      else if (action === "saveOrchestrator" || action === "saveAndInstallOrchestrator") vscode.postMessage({ type: action, value: orchestratorConfiguration() });
+      else if (action === "saveOrchestrator" || action === "saveAndInstallOrchestrator" || action === "syncOllamaInventory") vscode.postMessage({ type: action, value: orchestratorConfiguration() });
       else if (action === "configureKnowledge") vscode.postMessage({ type: action, value: knowledgeConfiguration() });
       else if (action === "installKnowledgeTools") vscode.postMessage({ type: action });
       else if (action === "detectKnowledgeRemote" || action === "reconfigureKnowledgeRemote") {

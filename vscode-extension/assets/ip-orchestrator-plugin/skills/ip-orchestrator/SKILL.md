@@ -52,6 +52,7 @@ Always read the detailed contract in the `references/` directory before executin
 4. **Local LLM Mode (`scripts/Select-LocalLLMModel.ps1`, then `scripts/Invoke-LocalLLM.ps1` or `scripts/Invoke-vLLMJob.ps1`)**:
    - **Trigger**: Summarization, preprocessing, extraction, local draft generation, broad context compression, or explicit local LLM/vLLM requests.
    - **Action**: Selects the best local model using the user's policy, installed-model size, current free VRAM, GPU compute capability, backend support, registry priors, and measured success/time metrics; then sends the prompt to Ollama or an OpenAI-compatible local endpoint.
+   - **Consent boundary**: Treat selection and installation as separate operations. If the selector returns `NeedsUserConfirmation=true`, explain its `SuggestedInstalls` to the user and ask whether to install one. Never run `ollama pull` until the user explicitly approves the named model.
    - **Contract**: Read `references/local-llm.md`.
 
 5. **Durable Knowledge Routing**:
@@ -82,6 +83,8 @@ Follow these explicit rules:
 - Ensure you select the appropriate `-Sandbox` permissions (`read-only`, `workspace-write`, `danger-full-access`).
 - Prefer local LLM preprocessing before sending broad noisy context to Codex.
 - Never call a local LLM model arbitrarily; use the selector first unless the user explicitly names an exact model and accepts bypassing measured routing.
+- Do not describe a successful direct `Invoke-LocalLLM.ps1 -Model ...` call as successful automatic model selection. The selector only makes and explains a routing decision; the invoke script performs inference with the selected or explicitly named model.
+- Do not use a short standalone warm-up request as a readiness gate. The Ollama invoke script detects loaded models and gives the real generation request a longer cold-load timeout while setting `keep_alive` on that request.
 - Do not confuse a weight format such as Q4/MXFP4 with native FP4 tensor
   arithmetic. Use quantization to estimate model memory. Treat FP8/FP4 compute
   capability as a hard filter only when the selected backend/model actually

@@ -51,8 +51,9 @@ function ConvertTo-Number {
 
 function Get-PropertyValue {
     param([object]$Object, [string]$Name, [object]$Fallback = $null)
-    if ($null -ne $Object -and $Object.PSObject.Properties.Name -contains $Name) {
-        return $Object.$Name
+    if ($null -ne $Object) {
+        $property = $Object.PSObject.Properties[$Name]
+        if ($null -ne $property) { return $property.Value }
     }
     return $Fallback
 }
@@ -60,12 +61,24 @@ function Get-PropertyValue {
 function Get-Settings {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path)) {
-        $Path = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS)) {
-            $env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS
+        $settingsModule = Join-Path $PSScriptRoot "lib\EggR.Settings.psm1"
+        if (Test-Path -LiteralPath $settingsModule -PathType Leaf) {
+            Import-Module $settingsModule -Force -DisableNameChecking
+            $Path = Get-EggROrchestratorSettingsPath
         } else {
-            $preferredSettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".config\integrated-power\orchestrator.json"
-            $legacySettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".gemini\config\codex_plugin_settings.json"
-            if (Test-Path -LiteralPath $preferredSettings -PathType Leaf) { $preferredSettings } else { $legacySettings }
+            $userProfile = [Environment]::GetFolderPath("UserProfile")
+            $preferredSettings = Join-Path $userProfile ".config\integrated-power\orchestrator.json"
+            $previousSettings = Join-Path $userProfile ".config\eggr\orchestrator.json"
+            $legacySettings = Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
+            $Path = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS)) {
+                $env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS
+            } elseif (Test-Path -LiteralPath $preferredSettings -PathType Leaf) {
+                $preferredSettings
+            } elseif (Test-Path -LiteralPath $previousSettings -PathType Leaf) {
+                $previousSettings
+            } else {
+                $legacySettings
+            }
         }
     }
     $Path = [Environment]::ExpandEnvironmentVariables($Path)
@@ -220,7 +233,11 @@ if ([string]::IsNullOrWhiteSpace($Provider)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($HardwareMode)) {
-    $HardwareMode = [string](Get-PropertyValue $policy "Mode" "auto")
+    $HardwareMode = [string](Get-PropertyValue $policy "Mode" "")
+    if ([string]::IsNullOrWhiteSpace($HardwareMode)) {
+        $configuredModel = [string](Get-PropertyValue $localSettings "Model" "")
+        $HardwareMode = if ([string]::IsNullOrWhiteSpace($configuredModel)) { "auto" } else { "user_default" }
+    }
 }
 if ($HardwareMode -notin @("auto", "user_default")) { $HardwareMode = "auto" }
 if ([string]::IsNullOrWhiteSpace($PreferredModel)) {
@@ -251,9 +268,22 @@ if ([string]::IsNullOrWhiteSpace($ComputeCapability) -and $null -ne $selectedGpu
 }
 
 if ([string]::IsNullOrWhiteSpace($RegistryFile)) {
+    $userProfile = [Environment]::GetFolderPath("UserProfile")
+    $preferredUserRegistry = Join-Path $userProfile ".config\integrated-power\local_llm_model_registry.csv"
+    $previousUserRegistry = Join-Path $userProfile ".config\eggr\local_llm_model_registry.csv"
     $workspaceRegistry = Join-Path $repoRoot "config\local_llm_model_registry.csv"
     $bundledRegistry = Join-Path (Split-Path $PSScriptRoot -Parent) "references\local_llm_model_registry.csv"
-    $RegistryFile = if (Test-Path -LiteralPath $workspaceRegistry) { $workspaceRegistry } else { $bundledRegistry }
+    $RegistryFile = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_LOCAL_LLM_REGISTRY)) {
+        [Environment]::ExpandEnvironmentVariables($env:INTEGRATED_POWER_LOCAL_LLM_REGISTRY)
+    } elseif (Test-Path -LiteralPath $preferredUserRegistry -PathType Leaf) {
+        $preferredUserRegistry
+    } elseif (Test-Path -LiteralPath $previousUserRegistry -PathType Leaf) {
+        $previousUserRegistry
+    } elseif (Test-Path -LiteralPath $workspaceRegistry -PathType Leaf) {
+        $workspaceRegistry
+    } else {
+        $bundledRegistry
+    }
 }
 if ([string]::IsNullOrWhiteSpace($MetricsFile)) {
     $MetricsFile = Join-Path $storagePath "reports\local_llm_metrics.csv"
@@ -298,7 +328,6 @@ $candidates = foreach ($row in $registry) {
     $model = [string]$row.Model
     if (-not [string]::IsNullOrWhiteSpace($Provider) -and [string]$row.Provider -ne $Provider) { continue }
     $installed = $installedSet.ContainsKey($model)
-    if ($InstalledOnly -and -not $installed) { continue }
 
     $minimumCc = Get-MinimumComputeCapability -Row $row
     $computeFit = Test-ComputeCapability -Detected $ComputeCapability -Required $minimumCc
@@ -319,8 +348,13 @@ $candidates = foreach ($row in $registry) {
     $taskScore = Normalize-Score (Get-TaskScore -Row $row -Type $TaskType)
     $speedScore = Normalize-Score (ConvertTo-Number (Get-PropertyValue $row "SpeedScore" 5) 5)
     $reliabilityPrior = ConvertTo-Number (Get-PropertyValue $row "ReliabilityPrior" 0.6) 0.6
-    $history = if ($historyByModel.ContainsKey($model)) { $historyByModel[$model] } else { $null }
-    $historyCount = if ($null -ne $history) { [int]$history.Count } else { 0 }
+    # Windows PowerShell 5.1 throws "Argument types do not match" when a one-item
+    # Generic.List[object] is wrapped directly in @(...). Pipeline enumeration
+    # keeps the result an object array for the 0/1/N metric cases.
+    $history = if ($historyByModel.ContainsKey($model)) {
+        @($historyByModel[$model] | ForEach-Object { $_ })
+    } else { @() }
+    $historyCount = @($history).Count
     $successRate = $reliabilityPrior
     $avgElapsed = $null
     $tokensPerSecond = 0.0
@@ -396,9 +430,6 @@ if ($HardwareMode -eq "user_default" -and -not [string]::IsNullOrWhiteSpace($Pre
         throw "Preferred model '$PreferredModel' violates the configured $($rejectedMatch[0].Reason) constraint."
     }
     $customInstalled = $installedSet.ContainsKey($PreferredModel)
-    if ($InstalledOnly -and -not $customInstalled) {
-        throw "Preferred model '$PreferredModel' is not reported as installed."
-    }
     $customWeights = if ($installedSizeByModel.ContainsKey($PreferredModel) -and $null -ne $installedSizeByModel[$PreferredModel]) {
         [math]::Round(([double]$installedSizeByModel[$PreferredModel]) * 1.10, 3)
     } else { $null }
@@ -433,7 +464,58 @@ if ($HardwareMode -eq "user_default" -and -not [string]::IsNullOrWhiteSpace($Pre
     }
 }
 
-$ranked = @($candidates | Sort-Object -Property Score -Descending)
+$registryModelsNotInstalled = @($registry | Where-Object {
+    -not $installedSet.ContainsKey([string]$_.Model)
+} | ForEach-Object { [string]$_.Model } | Sort-Object -Unique)
+$eligibleCandidates = if ($InstalledOnly) {
+    @($candidates | Where-Object { $_.Installed })
+} else {
+    @($candidates)
+}
+$ranked = @($eligibleCandidates | Sort-Object -Property Score -Descending)
+$preferredUnavailable = $InstalledOnly -and $HardwareMode -eq "user_default" -and
+    -not [string]::IsNullOrWhiteSpace($PreferredModel) -and
+    @($ranked | Where-Object { $_.Model -eq $PreferredModel }).Count -eq 0
+if ($InstalledOnly -and ($ranked.Count -eq 0 -or $preferredUnavailable)) {
+    $suggestionPool = if ($preferredUnavailable) {
+        @($candidates | Where-Object { -not $_.Installed -and $_.Model -eq $PreferredModel })
+    } else {
+        @($candidates | Where-Object { -not $_.Installed } | Sort-Object -Property Score -Descending | Select-Object -First 3)
+    }
+    $suggestedInstalls = @($suggestionPool | ForEach-Object {
+        [pscustomobject]@{
+            Model = $_.Model
+            Provider = $_.Provider
+            Score = $_.Score
+            EstimatedVramRequiredGB = $_.EstimatedVramRequiredGB
+            VramFit = $_.VramFit
+            PrimaryUse = $_.PrimaryUse
+            ProposedAction = "ollama pull $($_.Model)"
+        }
+    })
+    $confirmationResult = [pscustomobject]@{
+        Status = if ($suggestedInstalls.Count -gt 0) { "needs_user_confirmation" } else { "no_compatible_installed_model" }
+        SelectedModel = $null
+        Provider = if ([string]::IsNullOrWhiteSpace($Provider)) { "ollama" } else { $Provider }
+        TaskType = $TaskType
+        TaskScale = $TaskScale
+        NeedsUserConfirmation = $suggestedInstalls.Count -gt 0
+        AgentPrompt = if ($suggestedInstalls.Count -gt 0) {
+            "No eligible installed model is available. Ask the user which SuggestedInstalls model may be downloaded. Do not run ollama pull before explicit confirmation."
+        } else {
+            "No installed or registry model satisfies the current filters. Report the hardware or policy constraint and ask the user how to proceed."
+        }
+        SuggestedInstalls = $suggestedInstalls
+        RegistryModelsNotInstalled = $registryModelsNotInstalled
+        RejectedCandidates = $rejected
+    }
+    if ($AsJson) {
+        $confirmationResult | ConvertTo-Json -Depth 10
+    } else {
+        $confirmationResult
+    }
+    return
+}
 if ($ranked.Count -eq 0) {
     throw "No local LLM candidate matched the filters. TaskType=$TaskType Provider=$Provider InstalledOnly=$InstalledOnly rejected=$($rejected.Count)"
 }
@@ -454,6 +536,7 @@ $reason = if ($selectionBasis -eq "user_default") {
 }
 
 $result = [pscustomobject]@{
+    Status = "ready"
     SelectedModel = $selected.Model
     Provider = $selected.Provider
     TaskType = $TaskType
@@ -469,6 +552,10 @@ $result = [pscustomobject]@{
         AllowCpuOffload = $AllowCpuOffload
     }
     PrecisionRule = "Quantization describes stored weights and is used for memory estimation. Native FP8/FP4 is a hard constraint only when RequiredRuntimePrecision/PrecisionBackend or MinimumComputeCapability explicitly declares it."
+    NeedsUserConfirmation = $false
+    AgentPrompt = "Use SelectedModel for this local task. No model installation is required."
+    SuggestedInstalls = @()
+    RegistryModelsNotInstalled = $registryModelsNotInstalled
     Candidates = $ranked
     RejectedCandidates = $rejected
 }

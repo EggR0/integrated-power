@@ -13,8 +13,16 @@ Antigravity IDE에서 현재 에이전트 직접 처리, Codex 위임, 하드웨
 
 설정은 기본적으로 `~/.config/integrated-power/orchestrator.json`에 저장됩니다.
 `INTEGRATED_POWER_ORCHESTRATOR_SETTINGS` 환경변수로 다른 절대 경로를 지정할 수 있습니다.
-이전 `~/.gemini/config/codex_plugin_settings.json`은 새 설정이 없을 때만
-마이그레이션 입력으로 읽습니다.
+이전 `~/.config/eggr/orchestrator.json`과
+`~/.gemini/config/codex_plugin_settings.json`은 새 설정이 없을 때만 마이그레이션
+입력으로 읽으며 원본을 삭제하지 않습니다.
+
+Ollama 경로를 설정하면 `scripts/Sync-OllamaModelRegistry.ps1`이 `/api/tags` 또는
+`ollama ls`로 설치 모델을 확인하고
+`~/.config/integrated-power/local_llm_model_registry.csv`를 갱신합니다. 설치된 미등록
+모델에는 중립 점수를 적용하고, 레지스트리에만 있는 모델은 자동 설치하지 않습니다.
+선택기가 `NeedsUserConfirmation=true`를 반환한 경우에만 에이전트가 후보를 설명하고
+사용자에게 물어야 하며, 승인 전 `ollama pull`은 금지됩니다.
 
 ## 전역 규칙 경계
 

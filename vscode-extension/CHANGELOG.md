@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.7.5] - 2026-08-01
+
+### Fixed
+
+- Unified orchestrator settings discovery across the canonical
+  `integrated-power`, previous `eggr`, and legacy Antigravity IDE paths.
+- Fixed the Windows PowerShell 5.1 single-history metric failure in local model
+  selection.
+- Added explicit Ollama cold-load timeouts and `keep_alive` to the real
+  generation request instead of treating a short warm-up as a readiness gate.
+
+### Added
+
+- Added first-run Ollama inventory synchronization using `/api/tags` with an
+  `ollama ls` compatibility fallback.
+- Added a user-owned local model registry under
+  `~/.config/integrated-power/local_llm_model_registry.csv`; installed unknown
+  models receive neutral priors and measured results can refine later routing.
+- Added structured install suggestions when no compatible installed model is
+  available. Models are never downloaded before the user approves an exact
+  suggestion.
+- Added Configuration Center controls and diagnostics for installed,
+  registered, newly discovered, and registry-only models.
+
 ## [0.7.4] - 2026-07-28
 
 ### Changed

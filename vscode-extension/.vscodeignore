@@ -17,3 +17,5 @@ list-vsix.ps1
 tsconfig.json
 vsc-extension-quickstart.md
 **/*.vsix
+assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/**
+assets/ip-orchestrator-plugin/skills/ip-orchestrator/scripts/tests/**

@@ -35,6 +35,19 @@ Use the selected model and pass the selector reason into the invocation with `-S
 - `reports/local_llm_metrics.csv` for local measured success rate, elapsed time, and tokens/second.
 - Ollama `/api/tags` to prefer models that are actually installed when `-InstalledOnly` is used.
 
+Model selection does not download or run a model. Inspect the complete JSON result
+before invoking anything:
+
+- When `NeedsUserConfirmation=false`, invoke `SelectedModel` and preserve its
+  `SelectionBasis` and `Reason` in the metrics arguments.
+- When `NeedsUserConfirmation=true`, show the user the models and reasons in
+  `SuggestedInstalls` and ask which, if any, may be installed. Do not run
+  `ollama pull` before the user explicitly approves the exact model name.
+- If the user declines installation, rerun selection using installed models or
+  choose Main Agent Direct/Codex. Do not silently download a registry model.
+- A direct `Invoke-LocalLLM.ps1 -Model <name>` call performs inference only. It
+  is not evidence that automatic selection or registry synchronization worked.
+
 It also reads `LocalLlm.HardwarePolicy` from Integrated Power settings and detects NVIDIA
 VRAM/compute capability with `nvidia-smi`. `Quantization` describes stored
 weights and is only a memory-estimation input. GGUF Q4 and MXFP4 do not by
@@ -65,7 +78,29 @@ Valid `-TaskType` values are `summarization`, `extraction`, `coding`, `reasoning
 - For OpenAI-compatible vLLM, use workspace `scripts/dispatch/Invoke-vLLMJob.ps1` when present; otherwise use bundled `scripts/Invoke-vLLMJob.ps1`.
 - Always provide the instruction via `-PromptFile`.
 - Pass `-TaskType`, `-SuccessRegex`, and `-MinOutputChars` when the output has a verifiable shape.
+- For Ollama, `-KeepAlive` defaults to `30m` and is sent in the actual
+  `/api/generate` request. `-TimeoutSeconds` defaults to 900 seconds for an
+  already-loaded model; `-ColdLoadTimeoutSeconds` defaults to 1800 seconds when
+  `/api/ps` reports that the model is not loaded or its state cannot be checked.
+  `-ConnectTimeoutSeconds` defaults to 10 seconds. Override these values for the
+  model and storage speed when needed.
+- Do not require a separate 30-second warm-up to succeed. Cold loading and
+  generation occur in the same real request under the cold-load timeout. A
+  failed optional warm-up is a warning, not proof that inference cannot work.
 - For vLLM, optionally pass `-Endpoint`; bare URLs are normalized to `/v1`. Use `VLLM_BASE_URL` and `VLLM_API_KEY` when needed.
+
+Example after an approved selector result:
+
+```powershell
+.\scripts\dispatch\Invoke-LocalLLM.ps1 `
+  -PromptFile .\prompt.md `
+  -Model gemma4:26b `
+  -SelectedBy selector `
+  -SelectionReason "<selector Reason>" `
+  -KeepAlive "30m" `
+  -TimeoutSeconds 900 `
+  -ColdLoadTimeoutSeconds 1800
+```
 
 ## Output
 

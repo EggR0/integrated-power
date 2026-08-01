@@ -63,6 +63,8 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
 - provider 실측값, 계산값, 추정값과 미확인 값을 구분하는 사용량 표시
 - `auto` 또는 `user_default` 방식의 로컬 LLM 선택 정책
 - VRAM, Compute Capability, backend 요구 조건과 설치 모델 크기를 고려한 후보 평가
+- Ollama 설치 모델 자동 조사와 사용자 전용 로컬 모델 레지스트리 동기화
+- 필요한 모델이 없을 때 사용자 동의 후에만 설치하도록 하는 구조화된 제안
 - Dashboard, Integrated Orchestrator, Private Git Knowledge의 독립 설정 센터
 - Orchestrator 설치 전 계획 표시, 소유권 충돌 차단, backup, rollback과 재실행 안전성
 - 개발자 절대 경로를 내장하지 않는 WorkRoot와 상태 경로 해석
@@ -168,6 +170,20 @@ Integrated Orchestrator는 다음 두 정책을 제공한다.
 로드된 모델과의 적합성을 확인한다. 자동 선택 결과는 추정 근거와 사용자 override를
 구분해 기록한다.
 
+Ollama를 선택하고 설정을 저장하거나 **설치 모델 다시 확인·레지스트리 동기화**를
+누르면 `/api/tags`를 우선 사용하고 `ollama ls`를 호환 fallback으로 사용해 현재 PC의
+모델을 조사한다. 설치됐지만 번들 목록에 없는 모델은
+`%USERPROFILE%\.config\integrated-power\local_llm_model_registry.csv`에 중립 점수로
+등록한다. Ollama가 제공하는 family, parameter size, quantization, 실제 파일 크기를
+함께 기록하므로 다른 PC의 고정 목록을 그대로 재사용하지 않는다.
+
+레지스트리에만 있고 설치되지 않은 모델은 정보로 표시할 뿐 자동으로 내려받지
+않는다. 실제 작업에 맞는 설치 모델이 하나도 없을 때만 선택기가 VRAM 조건을 통과한
+상위 후보를 반환하고, 에이전트는 정확한 모델 이름을 설명한 뒤 사용자에게 설치
+여부를 물어야 한다. 승인 전에는 `ollama pull`을 실행하지 않는다. 실제 추론 요청은
+`keep_alive`를 포함하며, `/api/ps`에서 모델이 내려가 있는 경우 cold-load용 긴 제한
+시간을 적용한다.
+
 ## Private Git Knowledge
 
 Integrated Power는 개발자의 Knowledge 저장소 내용을 배포하지 않는다. 각 사용자는
@@ -218,6 +234,7 @@ GitHub 사용자명을 바꾼 경우 Configuration Center의 Knowledge 탭에서
 | 공통 root 설정 | `%USERPROFILE%\.config\integrated-power\roots.json` |
 | 기본 runtime state | `%LOCALAPPDATA%\IntegratedPower\state` |
 | Integrated Orchestrator 설정 | `%USERPROFILE%\.config\integrated-power\orchestrator.json` |
+| 사용자 로컬 LLM 레지스트리 | `%USERPROFILE%\.config\integrated-power\local_llm_model_registry.csv` |
 | Antigravity IDE plugin | `%USERPROFILE%\.gemini\config\plugins\ip-orchestrator-plugin` |
 | Win11 Knowledge 명령 | `%LOCALAPPDATA%\IntegratedPower\bin` |
 | Private Git Knowledge | 사용자가 최초 설정에서 선택 |
