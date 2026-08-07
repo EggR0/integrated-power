@@ -156,6 +156,7 @@ export interface DashboardState {
   updatedAt: string;
   tokenStatus?: TokenStatus;
   localLlmMetrics?: LocalLlmMetric[];
+  architectureDiagram?: string;
 }
 
 export type WebviewToExtensionMessage =

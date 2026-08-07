@@ -120,10 +120,13 @@ function Parse-HealthLog {
 }
 
 $repoRootFull = Resolve-RepoRoot -Path $RepoRoot
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Import-Module (Join-Path $scriptDir "..\util\GlobalStorage.psm1") -DisableNameChecking
+$globalStorage = Get-GlobalStorage -RepoRoot $repoRootFull
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $OutputPath = Join-Path $repoRootFull "reports\serena-background\capability.json"
+    $OutputPath = Join-Path $globalStorage "reports\serena-background\capability.json"
 } elseif (![System.IO.Path]::IsPathRooted($OutputPath)) {
-    $OutputPath = Join-Path $repoRootFull $OutputPath
+    $OutputPath = Join-Path $globalStorage $OutputPath
 }
 
 $cliPath = $null

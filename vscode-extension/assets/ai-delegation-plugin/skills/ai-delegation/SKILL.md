@@ -60,8 +60,8 @@ Follow these explicit rules:
 3. **Wait for Completion**: Use the `schedule` tool to set a long wait timer. You do NOT need to poll. The script's watchdog will automatically kill Codex if it gets stuck *after* outputting the sentinel (`completed_stuck`), or if it completely idles for 10 minutes (`idle_timeout`).
 4. **Execution Time Feedback Loop (Metrics)**: 
    - When the background script completes, observe the actual elapsed time.
-   - You MUST also retrieve the total tokens used by Codex for this job. You can find this by checking the last entry in the file defined by `dashboard_global_storage.txt`, appended with `/reports/codex_usage.csv` (the script automatically parses usage if `-JsonLog` is used, so always pass `-JsonLog $true` if you need token counts).
-   - Record the mapping of `[Timestamp, Mode, Task Scale, Estimated Wait, Actual Elapsed Time, Total Tokens]` into a persistent metrics log located at the path defined by `dashboard_global_storage.txt`, appended with `/reports/codex_timer_metrics.csv` (create it if it doesn't exist).
+   - You MUST also retrieve the total tokens used by Codex for this job. You can find this by checking the last entry in the file `~\.gemini\antigravity-ide\persistent_workspaces\<repoName>\reports\codex_usage.csv` (the script automatically parses usage if `-JsonLog` is used, so always pass `-JsonLog $true` if you need token counts).
+   - Record the mapping of `[Timestamp, Mode, Task Scale, Estimated Wait, Actual Elapsed Time, Total Tokens]` into a persistent metrics log located at `~\.gemini\antigravity-ide\persistent_workspaces\<repoName>\reports\codex_timer_metrics.csv` (create it if it doesn't exist).
    - Use this historical data CSV to continually improve your timer estimates and to compare token usage against task scale in future invocations.
 
 ## General Rules

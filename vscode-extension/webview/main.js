@@ -49,6 +49,10 @@ document.addEventListener("DOMContentLoaded", () => {
     dashboardState.isTokenLoading = true;
   }
 
+  if (window.mermaid) {
+    window.mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+  }
+
   render();
   postCommand("ready");
 });
@@ -86,6 +90,7 @@ function emptyState() {
     sectionStates: { antigravity: true, codex: true, localLlm: true },
     updatedAt: new Date().toISOString(),
     tokenStatus: emptyTokenStatus(),
+    architectureDiagram: undefined,
   };
 }
 
@@ -112,6 +117,7 @@ function normalizeState(state) {
     isTokenLoading: Boolean(safeState.isTokenLoading),
     isStale: Boolean(safeState.isStale),
     sectionStates,
+    architectureDiagram: stringValue(safeState.architectureDiagram),
     updatedAt: stringValue(safeState.updatedAt) || new Date().toISOString(),
   };
 }
@@ -225,6 +231,7 @@ function render() {
       </section>
 
       <section class="content-grid">
+        ${dashboardState.architectureDiagram ? renderArchitecturePanel(dashboardState.architectureDiagram) : ""}
         ${dashboardState.localLlmMetrics?.length ? renderLocalLlmMetricsPanel(dashboardState.localLlmMetrics) : ""}
         ${dashboardState.queueContent ? renderQueuePanel(dashboardState.queueContent) : ""}
         ${dashboardState.metricsCsv ? renderMetricsPanel(dashboardState.metricsCsv) : ""}
@@ -268,6 +275,14 @@ function render() {
       persistState();
     });
   });
+
+  if (window.mermaid && dashboardState.architectureDiagram) {
+    try {
+      window.mermaid.run();
+    } catch (e) {
+      console.error("Mermaid rendering failed:", e);
+    }
+  }
 }
 
 function renderLoadingStrip() {
@@ -602,6 +617,23 @@ function renderQueuePanel(content) {
       </div>
       <div class="markdown-body">
         <pre>${escapeHtml(content)}</pre>
+      </div>
+    </article>
+  `;
+}
+
+function renderArchitecturePanel(content) {
+  // Extract the mermaid code block content
+  const match = content.match(/```mermaid\s*([\s\S]*?)```/);
+  const diagramCode = match ? match[1].trim() : "graph TD\\n  Err[Failed to extract diagram]";
+
+  return `
+    <article class="panel content-panel">
+      <div class="panel-heading">
+        <h2>Architecture (Active Context)</h2>
+      </div>
+      <div class="mermaid">
+        ${escapeHtml(diagramCode)}
       </div>
     </article>
   `;

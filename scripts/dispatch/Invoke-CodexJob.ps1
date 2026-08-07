@@ -59,7 +59,7 @@ if ([string]::IsNullOrWhiteSpace($OutputFile)) {
 $outputPath = if ([System.IO.Path]::IsPathRooted($OutputFile)) {
     $OutputFile
 } else {
-    Join-Path $repoRoot $OutputFile
+    Join-Path $storagePath $OutputFile
 }
 
 $outputDir = Split-Path -Parent $outputPath

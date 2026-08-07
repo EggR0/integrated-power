@@ -69,6 +69,9 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "webview", "styles.css"),
     );
+    const mermaidUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "webview", "mermaid.min.js"),
+    );
 
     const csp = [
       "default-src 'none'",
@@ -89,6 +92,7 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
 </head>
 <body>
   <main id="app"></main>
+  <script nonce="${nonce}" src="${mermaidUri}"></script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

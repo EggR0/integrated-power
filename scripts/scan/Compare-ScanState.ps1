@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $false)]
     [switch]$SelfTest
 )
@@ -12,12 +12,13 @@ if ([string]::IsNullOrWhiteSpace($repoRoot)) {
 }
 Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
-$stateFile = Join-Path $repoRoot "config\last_scan_state.json"
+$stateFile = Join-Path $storagePath "reports\last_scan_state.json"
 $todosFile = Join-Path $storagePath "reports\current_todos.md"
 $contextFile = Join-Path $storagePath "reports\current_context.md"
 
-# ── Helper: Compute a simple hash of a string ──
+# ?? Helper: Compute a simple hash of a string ??
 function Get-StringHash($inputString) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($inputString)
@@ -25,7 +26,7 @@ function Get-StringHash($inputString) {
     return [BitConverter]::ToString($hash).Replace("-", "").Substring(0, 16).ToLower()
 }
 
-# ── Helper: Read current scan snapshot ──
+# ?? Helper: Read current scan snapshot ??
 function Get-CurrentSnapshot {
     $snapshot = @{
         timestamp        = (Get-Date -Format "yyyy-MM-ddTHH:mm:sszzz")
@@ -62,7 +63,7 @@ function Get-CurrentSnapshot {
     return $snapshot
 }
 
-# ── Helper: Compare two snapshots, return delta object ──
+# ?? Helper: Compare two snapshots, return delta object ??
 function Compare-Snapshots($previous, $current) {
     $delta = @{
         has_changes       = $false
@@ -90,10 +91,10 @@ function Compare-Snapshots($previous, $current) {
     return $delta
 }
 
-# ── SelfTest Mode ──
+# ?? SelfTest Mode ??
 if ($SelfTest) {
-    Write-Host "[Self-Test] Starting Compare-ScanState.ps1 self-test..."
-    $tempStateFile = Join-Path $repoRoot "config\__temp_test_scan_state.json"
+    $tempDir = [System.IO.Path]::GetTempPath()
+    $tempStateFile = Join-Path $tempDir "antigravity_test_scan_state.json"
 
     try {
         # 1. Create a fake previous state
@@ -105,7 +106,7 @@ if ($SelfTest) {
             uncommitted_count = 5
         }
         $fakeOldJson = $fakeOld | ConvertTo-Json -Depth 5
-        [System.IO.File]::WriteAllText($tempStateFile, $fakeOldJson, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($tempStateFile, $fakeOldJson, $utf8NoBom)
 
         # 2. Read it back
         $loaded = [System.IO.File]::ReadAllText($tempStateFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
@@ -152,7 +153,7 @@ if ($SelfTest) {
     }
 }
 
-# ── Main execution ──
+# ?? Main execution ??
 
 # 1. Load previous state
 $previousState = @{
@@ -190,10 +191,10 @@ try {
     if (!(Test-Path $stateDir)) {
         New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
     }
-    [System.IO.File]::WriteAllText($stateFile, $stateJson, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($stateFile, $stateJson, $utf8NoBom)
 }
 catch {
-    Write-Warning "Failed to save scan state: $_"
+    throw "Failed to save scan state: $_"
 }
 
 # 5. Output result

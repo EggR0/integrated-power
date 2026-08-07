@@ -39,12 +39,18 @@ function Get-RepoRoot {
 
 function Get-InstalledOllamaModels {
     try {
-        $tags = curl.exe -sS --max-time 3 "http://localhost:11434/api/tags" | ConvertFrom-Json
+        $curlOutput = curl.exe -sS --max-time 3 "http://localhost:11434/api/tags" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Ollama tags curl failed: $curlOutput"
+            return @()
+        }
+        $tags = $curlOutput | ConvertFrom-Json
         if ($tags.models) {
             return @($tags.models | ForEach-Object { [string]$_.name })
         }
     }
     catch {
+        Write-Warning "Failed to parse Ollama tags: $($_.Exception.Message)"
         return @()
     }
 

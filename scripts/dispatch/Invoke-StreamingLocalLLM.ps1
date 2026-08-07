@@ -1,15 +1,16 @@
 [CmdletBinding()]
 param(
     [string]$Prompt = "Please write a short haiku about debugging code.",
-    [string]$Model = "qwen2.5-coder:32b",
+    [string]$Model = "qwen3.6:latest",
     [string]$LogFile = ""
 )
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $startMsg = "Connecting to Ollama ($Model) using .NET Stream...`n"
-if ($LogFile) { [System.IO.File]::AppendAllText($LogFile, $startMsg) }
+if ($LogFile) { [System.IO.File]::AppendAllText($LogFile, $startMsg, $utf8NoBom) }
 Write-Host $startMsg -ForegroundColor Cyan
 
 $body = @{
@@ -41,15 +42,17 @@ try {
             try {
                 $chunk = $line | ConvertFrom-Json
                 if ($chunk.response) {
-                    if ($LogFile) { [System.IO.File]::AppendAllText($LogFile, $chunk.response) }
+                    if ($LogFile) { [System.IO.File]::AppendAllText($LogFile, $chunk.response, $utf8NoBom) }
                     [Console]::Write($chunk.response)
                 }
-            } catch {}
+            } catch {
+                Write-Warning "Failed to parse Ollama chunk: $line"
+            }
         }
     }
     [Console]::WriteLine()
     $endMsg = "`n`n[Streaming Completed]`n[__EOF__]"
-    if ($LogFile) { [System.IO.File]::AppendAllText($LogFile, $endMsg) }
+    if ($LogFile) { [System.IO.File]::AppendAllText($LogFile, $endMsg, $utf8NoBom) }
     Write-Host "`n[Streaming Completed]" -ForegroundColor Green
 } finally {
     if ($reader) { $reader.Close() }

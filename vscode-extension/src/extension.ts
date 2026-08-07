@@ -35,29 +35,8 @@ function initializeGlobalProtocol(context: vscode.ExtensionContext) {
   }
 }
 
-function exportGlobalStoragePath(context: vscode.ExtensionContext) {
-  const primaryFolder = vscode.workspace.workspaceFolders?.[0];
-  if (!primaryFolder) {
-    return;
-  }
-
-  const workspaceStoragePath = workspaceStoragePathForFolder(context.globalStorageUri.fsPath, primaryFolder.uri.fsPath);
-
-  if (!fs.existsSync(workspaceStoragePath)) {
-    fs.mkdirSync(workspaceStoragePath, { recursive: true });
-  }
-
-  const agentsDir = path.join(primaryFolder.uri.fsPath, ".agents");
-  if (!fs.existsSync(agentsDir)) {
-    fs.mkdirSync(agentsDir, { recursive: true });
-  }
-  const storagePathFile = path.join(agentsDir, "dashboard_global_storage.txt");
-  fs.writeFileSync(storagePathFile, workspaceStoragePath, "utf8");
-}
-
 export function activate(context: vscode.ExtensionContext): void {
   initializeGlobalProtocol(context);
-  exportGlobalStoragePath(context);
 
   const provider = new DashboardProvider(context);
 

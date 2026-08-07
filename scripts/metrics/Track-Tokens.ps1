@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $false)]
     [string]$FilePath,
 
@@ -27,25 +27,20 @@ if ([string]::IsNullOrWhiteSpace($repoRoot)) {
 }
 Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
-# [SelfTest Mode]
 if ($SelfTest) {
-    Write-Host "[Self-Test] Starting Track-Tokens.ps1 self-test..."
-    $tempTextFile = Join-Path $repoRoot "scripts\__temp_test_track_tokens.txt"
-    $tempCsvFile = Join-Path $repoRoot "scripts\__temp_test_track_tokens.csv"
-    
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("track-tokens-selftest-" + [Guid]::NewGuid().ToString("N"))
+    $tempTextFile = Join-Path $tempRoot "input.txt"
+    $tempCsvFile = Join-Path $tempRoot "token_usage.csv"
+
     try {
-        # 1. Clean up stale test files if any
-        if (Test-Path $tempTextFile) { Remove-Item $tempTextFile -Force }
-        if (Test-Path $tempCsvFile) { Remove-Item $tempCsvFile -Force }
+        New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 
-        # 2. Write test file with UTF-8 & Emoji
-        [System.IO.File]::WriteAllText($tempTextFile, "?덈뀞?섏꽭?? ?대え吏 ?뱚 ?슚 ?뚯뒪??Text.", [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($tempTextFile, "UTF-8 token tracking self-test text.", $utf8NoBom)
 
-        # 3. Execute self call
         & $MyInvocation.MyCommand.Path -FilePath $tempTextFile -LogFile $tempCsvFile -OperationName "Test-Operation" -Model "test-model"
 
-        # 4. Asserts
         if (!(Test-Path $tempCsvFile)) {
             throw "Self-Test Failed: CSV file was not created."
         }
@@ -68,8 +63,7 @@ if ($SelfTest) {
         exit 1
     }
     finally {
-        if (Test-Path $tempTextFile) { Remove-Item $tempTextFile -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $tempCsvFile) { Remove-Item $tempCsvFile -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $tempRoot) { Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -132,26 +126,27 @@ if (![string]::IsNullOrWhiteSpace($logDir)) {
         New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     }
     catch {
-        Write-Warning "Failed to create directory ${logDir}: $_"
-        exit 1
+        throw "Failed to create directory ${logDir}: $_"
     }
 }
 
 # Safe write to CSV with retry (in case file is locked)
 $success = $false
+$lastWriteError = $null
 $retries = 3
 $delay = 1000 # ms
 for ($i = 0; $i -lt $retries; $i++) {
     try {
         if (Test-Path -LiteralPath $LogFile) {
-            $row | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $LogFile
+            $row | Export-CsvUtf8NoBom -Append -LiteralPath $LogFile
         } else {
-            $row | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $LogFile
+            $row | Export-CsvUtf8NoBom -LiteralPath $LogFile
         }
         $success = $true
         break
     }
     catch {
+        $lastWriteError = $_
         Write-Warning "Failed to write to $LogFile (attempt $($i+1)/$retries): $_"
         Start-Sleep -Milliseconds $delay
     }
@@ -162,14 +157,14 @@ if (!$success) {
     $fallbackLog = $LogFile.Replace(".csv", "_fallback.csv")
     try {
         if (Test-Path -LiteralPath $fallbackLog) {
-            $row | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $fallbackLog
+            $row | Export-CsvUtf8NoBom -Append -LiteralPath $fallbackLog
         } else {
-            $row | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $fallbackLog
+            $row | Export-CsvUtf8NoBom -LiteralPath $fallbackLog
         }
         Write-Warning "Saved output to fallback log file: $fallbackLog"
     }
     catch {
-        Write-Warning "All log write attempts failed, including fallback."
+        throw "All log write attempts failed, including fallback. Original error: $($lastWriteError.Exception.Message); fallback error: $($_.Exception.Message)"
     }
 }
 

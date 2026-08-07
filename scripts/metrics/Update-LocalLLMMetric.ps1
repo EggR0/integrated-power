@@ -66,5 +66,5 @@ if (![string]::IsNullOrWhiteSpace($Note)) {
     $target.ErrorMessage = $Note
 }
 
-$rows | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $MetricsFile
+$rows | Export-CsvUtf8NoBom -LiteralPath $MetricsFile
 Write-Host "Updated local LLM metric: $($target.Timestamp) $($target.TaskTitle) $($target.Model) Success=$($target.Success)"

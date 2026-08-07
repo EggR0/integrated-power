@@ -175,17 +175,9 @@ suite('Parser and Store Test Suite', () => {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     assert.ok(workspaceRoot, 'Test host should open the extension folder as a workspace.');
 
-    const storageMarkerPath = path.join(workspaceRoot, '.agents', 'dashboard_global_storage.txt');
-    await waitFor(() => fs.existsSync(storageMarkerPath));
-
-    const storagePath = fs.readFileSync(storageMarkerPath, 'utf8').trim();
-    assert.ok(storagePath.includes('globalStorage'));
-    assert.ok(storagePath.includes(path.join('workspaces')));
-    assert.ok(!storagePath.includes('operational-data'));
-    assert.strictEqual(
-      storagePath,
-      workspaceStoragePathForFolder(path.resolve(storagePath, '..', '..'), workspaceRoot),
-    );
+    const folderName = path.basename(workspaceRoot);
+    const os = require("os");
+    const storagePath = path.join(os.homedir(), ".gemini", "antigravity-ide", "persistent_workspaces", folderName);
 
     const runsPath = path.join(storagePath, '.agent-runs', 'runs.jsonl');
     fs.mkdirSync(path.dirname(runsPath), { recursive: true });
@@ -194,10 +186,6 @@ suite('Parser and Store Test Suite', () => {
     await vscode.commands.executeCommand('integratedPower.agentRuns.openRunsFile');
     await waitFor(() => vscode.window.activeTextEditor?.document.uri.fsPath === runsPath);
     assert.strictEqual(vscode.window.activeTextEditor?.document.uri.fsPath, runsPath);
-
-    if (workspaceRoot.endsWith('vscode-extension')) {
-      fs.rmSync(path.join(workspaceRoot, '.agents'), { recursive: true, force: true });
-    }
   });
 });
 

@@ -25,7 +25,7 @@ Write-Host "--- AI Background Task Live Stream ---" -ForegroundColor Cyan
 
 # Use FileStream and StreamReader to avoid PowerShell Get-Content pipeline buffering
 $fileStream = [System.IO.File]::Open($LogFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-$streamReader = New-Object System.IO.StreamReader($fileStream)
+$streamReader = New-Object System.IO.StreamReader($fileStream, [System.Text.Encoding]::UTF8)
 
 try {
     while ($true) {

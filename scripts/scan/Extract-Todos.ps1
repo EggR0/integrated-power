@@ -1,6 +1,9 @@
-﻿param(
+param(
     [Parameter(Mandatory = $false)]
-    [switch]$SelfTest
+    [switch]$SelfTest,
+
+    [Parameter(Mandatory = $false)]
+    [string]$ProjectsFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,59 +15,36 @@ if ([string]::IsNullOrWhiteSpace($repoRoot)) {
 }
 Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
-# [SelfTest Mode]
 if ($SelfTest) {
-    Write-Host "[Self-Test] Starting Extract-Todos.ps1 self-test..."
-    $tempProjDir = Join-Path $repoRoot "scripts\__temp_test_todo_proj"
-    $tempProjTxt = Join-Path $repoRoot "scripts\__temp_test_projects.txt"
-    $tempReport = Join-Path $storagePath "reports\__temp_test_todos.md"
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("extract-todos-selftest-" + [Guid]::NewGuid().ToString("N"))
+    $tempProjDir = Join-Path $tempRoot "project"
+    $tempProjTxt = Join-Path $tempRoot "projects.txt"
 
     try {
-        # 1. Clean up stale test files if any
-        if (Test-Path $tempProjDir) { Remove-Item $tempProjDir -Recurse -Force }
-        if (Test-Path $tempProjTxt) { Remove-Item $tempProjTxt -Force }
-        if (Test-Path $tempReport) { Remove-Item $tempReport -Force }
-
-        # 2. Setup mock project with dummy TODO file
-        New-Item -ItemType Directory -Path $tempProjDir | Out-Null
+        New-Item -ItemType Directory -Force -Path $tempProjDir | Out-Null
         $mockCodeContent = @"
 // TODO: Fix this function later
 // FIXME: Critical bug here
 "@
-        [System.IO.File]::WriteAllText((Join-Path $tempProjDir "app.js"), $mockCodeContent, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText((Join-Path $tempProjDir "app.js"), $mockCodeContent, $utf8NoBom)
+        [System.IO.File]::WriteAllText($tempProjTxt, $tempProjDir, $utf8NoBom)
 
-        # 3. Create mock projects.txt referencing mock project
-        [System.IO.File]::WriteAllText($tempProjTxt, $tempProjDir, [System.Text.Encoding]::UTF8)
-
-        # 4. Swap config for executing
-        $realProjectsFile = Join-Path $repoRoot "config\projects.txt"
         $realReportFile = Join-Path $storagePath "reports\current_todos.md"
-        $projectsBackup = $null
-        
-        if (Test-Path $realProjectsFile) {
-            $projectsBackup = [System.IO.File]::ReadAllText($realProjectsFile, [System.Text.Encoding]::UTF8)
+        if (Test-Path -LiteralPath $realReportFile) {
+            Remove-Item -LiteralPath $realReportFile -Force
         }
-        [System.IO.File]::WriteAllText($realProjectsFile, $tempProjDir, [System.Text.Encoding]::UTF8)
 
-        # Execute
-        & $MyInvocation.MyCommand.Path
-        
-        # Asserts on current_todos.md
+        & $MyInvocation.MyCommand.Path -ProjectsFile $tempProjTxt
+
         if (!(Test-Path $realReportFile)) {
             throw "Self-Test Failed: Output report file not created."
         }
-        
+
         $outputReport = [System.IO.File]::ReadAllText($realReportFile, [System.Text.Encoding]::UTF8)
         if ($outputReport -notmatch "TODO: Fix this function later" -or $outputReport -notmatch "FIXME: Critical bug here") {
             throw "Self-Test Failed: Output report does not contain expected TODO/FIXME items."
-        }
-        
-        # Restore projects.txt
-        if ($projectsBackup -ne $null) {
-            [System.IO.File]::WriteAllText($realProjectsFile, $projectsBackup, [System.Text.Encoding]::UTF8)
-        } else {
-            if (Test-Path $realProjectsFile) { Remove-Item $realProjectsFile -Force }
         }
 
         Write-Host "[Self-Test] Extract-Todos.ps1 passed successfully!"
@@ -75,13 +55,14 @@ if ($SelfTest) {
         exit 1
     }
     finally {
-        if (Test-Path $tempProjDir) { Remove-Item $tempProjDir -Recurse -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $tempProjTxt) { Remove-Item $tempProjTxt -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $tempReport) { Remove-Item $tempReport -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $tempRoot) { Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
-$projectsFile = Join-Path $repoRoot "config\projects.txt"
+if ([string]::IsNullOrWhiteSpace($ProjectsFile)) {
+    $ProjectsFile = Join-Path $repoRoot "config\projects.txt"
+}
+$projectsFile = $ProjectsFile
 $reportFile = Join-Path $storagePath "reports\current_todos.md"
 
 if (!(Test-Path $projectsFile)) {
@@ -104,7 +85,7 @@ foreach ($proj in $projects) {
         continue
     }
 
-    $reportContent += "## ?뱚 Project: $proj`n`n"
+    $reportContent += "## ?獄?Project: $proj`n`n"
     $excludeDirs = @('.git', 'node_modules', 'vendor', 'dist', 'build', '.vs', 'out', 'bin', 'obj', 'reports')
     $includeExts = @('.ps1', '.py', '.js', '.ts', '.html', '.css', '.md', '.java', '.cs', '.go', '.rs', '.c', '.cpp', '.h')
 
@@ -155,18 +136,18 @@ if (!(Test-Path (Split-Path $reportFile))) {
         New-Item -ItemType Directory -Force -Path (Split-Path $reportFile) | Out-Null
     }
     catch {
-        Write-Warning "Failed to create directory for report file: $_"
+        throw "Failed to create directory for report file: $_"
     }
 }
 
 try {
-    [System.IO.File]::WriteAllText($reportFile, $reportContent, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($reportFile, $reportContent, $utf8NoBom)
 }
 catch {
-    Write-Warning "Failed to write report file to ${reportFile}: $_"
+    throw "Failed to write report file to ${reportFile}: $_"
 }
 
-# [?좏겙 ?뚮え??痢≪젙]
+# Token tracking trigger
 $trackScript = Join-Path $repoRoot "scripts\metrics\Track-Tokens.ps1"
 if (Test-Path $trackScript) {
     try {
@@ -178,5 +159,3 @@ if (Test-Path $trackScript) {
 }
 
 Write-Host "TODOs extracted to $reportFile"
-
-

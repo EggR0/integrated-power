@@ -91,10 +91,10 @@ function Write-CsvRowWithRetry {
     for ($i = 0; $i -lt 3; $i++) {
         try {
             if (Test-Path -LiteralPath $Path) {
-                $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $Path
+                $Row | Export-CsvUtf8NoBom -Append -LiteralPath $Path
             }
             else {
-                $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $Path
+                $Row | Export-CsvUtf8NoBom -LiteralPath $Path
             }
             return
         }
@@ -148,7 +148,7 @@ function Ensure-LocalMetricsSchema {
     Copy-Item -LiteralPath $Path -Destination $backup -Force
     $rows = @(Import-Csv -LiteralPath $Path | ForEach-Object { ConvertTo-LocalMetricRow -Source $_ })
     if ($rows.Count -gt 0) {
-        $rows | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $Path
+        $rows | Export-CsvUtf8NoBom -LiteralPath $Path
     }
 }
 
@@ -307,7 +307,7 @@ $outputPath = if ([System.IO.Path]::IsPathRooted($OutputFile)) {
     $OutputFile
 }
 else {
-    Join-Path $repoRoot $OutputFile
+    Join-Path $storagePath $OutputFile
 }
 
 $bodyObject = [pscustomobject]@{
@@ -391,7 +391,7 @@ if (![string]::IsNullOrWhiteSpace($requestError)) {
             TaskTitle    = [string]$TaskTitle
             Success      = $false
             ErrorMessage = [string]$requestError
-        } | Export-Csv -LiteralPath $loopLedger -NoTypeInformation -Append
+        } | Export-CsvUtf8NoBom -LiteralPath $loopLedger -Append
     }
     catch {
         Write-Warning "Failed to append loop ledger failure entry: $($_.Exception.Message)"
@@ -437,7 +437,7 @@ try {
         try {
             $remainingLedgerRows = @(Import-Csv -LiteralPath $loopLedger | Where-Object { $_.TaskTitle -ne $TaskTitle })
             if ($remainingLedgerRows.Count -gt 0) {
-                $remainingLedgerRows | Export-Csv -LiteralPath $loopLedger -NoTypeInformation
+                $remainingLedgerRows | Export-CsvUtf8NoBom -LiteralPath $loopLedger
             }
             else {
                 Remove-Item -LiteralPath $loopLedger -ErrorAction SilentlyContinue

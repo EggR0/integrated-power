@@ -32,15 +32,58 @@ function Get-GlobalStorage {
     }
 
     $repoRootFull = [System.IO.Path]::GetFullPath($RepoRoot)
-    $storageFile = Join-Path $repoRootFull ".agents\dashboard_global_storage.txt"
-    if (Test-Path -LiteralPath $storageFile) {
-        $storagePath = (Get-Content -LiteralPath $storageFile -TotalCount 1).Trim()
-        if (![string]::IsNullOrWhiteSpace($storagePath)) {
-            return $storagePath
+    $repoName = Split-Path $repoRootFull -Leaf
+    
+    return Join-Path $env:USERPROFILE ".gemini\antigravity-ide\persistent_workspaces\$repoName"
+}
+function Export-CsvUtf8NoBom {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline = $true)]
+        $InputObject,
+
+        [Parameter(Mandatory = $true)]
+        [string]$LiteralPath,
+
+        [switch]$Append
+    )
+
+    begin {
+        $rows = New-Object System.Collections.Generic.List[object]
+    }
+
+    process {
+        if ($null -ne $InputObject) {
+            [void]$rows.Add($InputObject)
         }
     }
 
-    $hash = Get-WorkspaceStorageHash -RepoRoot $repoRootFull
-    return Join-Path (Get-DashboardGlobalStorageRoot) "workspaces\$hash"
+    end {
+        if ($rows.Count -eq 0) {
+            return
+        }
+
+        $dir = Split-Path -Parent $LiteralPath
+        if (![string]::IsNullOrWhiteSpace($dir)) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        }
+
+        $csvLines = @($rows | ConvertTo-Csv -NoTypeInformation)
+        if ($Append -and (Test-Path -LiteralPath $LiteralPath)) {
+            $csvLines = @($csvLines | Select-Object -Skip 1)
+        }
+        if ($csvLines.Count -eq 0) {
+            return
+        }
+
+        $text = ($csvLines -join [Environment]::NewLine) + [Environment]::NewLine
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        if ($Append -and (Test-Path -LiteralPath $LiteralPath)) {
+            [System.IO.File]::AppendAllText($LiteralPath, $text, $utf8NoBom)
+        } else {
+            [System.IO.File]::WriteAllText($LiteralPath, $text, $utf8NoBom)
+        }
+    }
 }
-Export-ModuleMember -Function Get-GlobalStorage
+
+Export-ModuleMember -Function Get-GlobalStorage, Export-CsvUtf8NoBom

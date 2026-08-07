@@ -152,10 +152,10 @@ export class DashboardController implements vscode.Disposable {
 
     const terminalQueueUri = this.paths.terminalQueueUri();
     if (terminalQueueUri) {
-      const folder = this.paths.primaryFolder;
-      if (folder) {
+      const globalStoragePath = normalizeWorkspacePathForStorage(this.context);
+      if (globalStoragePath) {
         const terminalWatcher = vscode.workspace.createFileSystemWatcher(
-          new vscode.RelativePattern(folder.uri.fsPath, ".agents/terminal-queue.json")
+          new vscode.RelativePattern(globalStoragePath, "reports/terminal-queue.json")
         );
         this.watchers.push(
           terminalWatcher,
@@ -243,8 +243,9 @@ export class DashboardController implements vscode.Disposable {
     if (metricsUri) {
       localLlmMetricsUri = metricsUri.with({ path: metricsUri.path.replace("token_usage.csv", "local_llm_metrics.csv") });
     }
+    const architectureUri = this.paths.primaryFolder ? vscode.Uri.joinPath(this.paths.primaryFolder.uri, ".agents", "dashboard_architecture.md") : undefined;
 
-    const [runsData, tokenStatus, queueContent, metricsCsv, localLlmMetricsCsv] = await Promise.all([
+    const [runsData, tokenStatus, queueContent, metricsCsv, localLlmMetricsCsv, architectureDiagram] = await Promise.all([
       this.runStore.readRuns(runsFileUri, {
         normalizeArtifactPath: (value) => this.paths.toWorkspaceRelativePath(value),
       }),
@@ -252,6 +253,7 @@ export class DashboardController implements vscode.Disposable {
       this.readTextFileSilently(queueUri),
       this.readTextFileSilently(metricsUri),
       this.readTextFileSilently(localLlmMetricsUri),
+      this.readTextFileSilently(architectureUri),
     ]);
 
     const runs = runsData.runs.map((run) => this.sanitizeRunForWebview(run));
@@ -330,6 +332,7 @@ export class DashboardController implements vscode.Disposable {
       systemErrors: combinedSystemErrors,
       tokenStatus: resolvedTokenStatus,
       localLlmMetrics,
+      architectureDiagram,
       queueContent,
       metricsCsv,
       isLoading: false,
@@ -586,6 +589,7 @@ export class DashboardController implements vscode.Disposable {
           recommendedTaskWeight: "unknown",
           activity: []
       },
+      architectureDiagram: undefined,
       updatedAt: new Date().toISOString(),
     };
   }

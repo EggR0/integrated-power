@@ -19,12 +19,16 @@ try {
     $repoRoot = (Get-Location).Path
 }
 
-$agentsDir = Join-Path $repoRoot ".agents"
-if (-not (Test-Path $agentsDir)) {
-    New-Item -ItemType Directory -Force -Path $agentsDir | Out-Null
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Import-Module (Join-Path $scriptDir "..\util\GlobalStorage.psm1") -DisableNameChecking
+$globalStorage = Get-GlobalStorage -RepoRoot $repoRoot
+
+$reportsDir = Join-Path $globalStorage "reports"
+if (-not (Test-Path $reportsDir)) {
+    New-Item -ItemType Directory -Force -Path $reportsDir | Out-Null
 }
 
-$queueFile = Join-Path $agentsDir "terminal-queue.json"
+$queueFile = Join-Path $reportsDir "terminal-queue.json"
 
 # Read existing commands or start new array
 $commands = @()
@@ -40,7 +44,7 @@ if (Test-Path $queueFile) {
             }
         }
     } catch {
-        # ignore parse errors, start fresh
+        throw "Failed to parse existing queue file ($queueFile). The file may be corrupted. Error: $($_.Exception.Message)"
     }
 }
 
@@ -53,6 +57,7 @@ $commands += $newCmd
 
 # Write back
 $json = $commands | ConvertTo-Json -Compress
-[IO.File]::WriteAllText($queueFile, $json)
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($queueFile, $json, $utf8NoBom)
 
 Write-Host "Queued visible task for IDE terminal: $Name"

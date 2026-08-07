@@ -3,7 +3,7 @@ param(
     [int]$MaxFiles = 250,
     [switch]$SkipLocalLlm,
     [switch]$SkipSerenaIndex,
-    [string]$Model = "qwen2.5-coder:32b",
+    [string]$Model = "qwen3.6:latest",
     [int]$NumCtx = 32768
 )
 
@@ -101,9 +101,11 @@ function Get-RepositoryFiles {
     try {
         $rawFiles = @(& rg --files 2>$null)
     } catch {
+        $rootLen = $RepoRoot.Length
+        if (-not $RepoRoot.EndsWith('\') -and -not $RepoRoot.EndsWith('/')) { $rootLen++ }
         $rawFiles = @(
             Get-ChildItem -LiteralPath $RepoRoot -Recurse -File -Force |
-                ForEach-Object { [System.IO.Path]::GetRelativePath($RepoRoot, $_.FullName) }
+                ForEach-Object { $_.FullName.Substring($rootLen) }
         )
     }
 
@@ -134,6 +136,20 @@ function Get-RepositoryFiles {
         files = $included
         omittedFiles = @($omitted | Select-Object -ExpandProperty path)
     }
+}
+
+function Get-ChangedFiles {
+    param([string]$RepoRoot)
+    
+    $changed = @()
+    Push-Location $RepoRoot
+    try {
+        $changed += (& git diff --name-only HEAD 2>$null)
+        $changed += (& git ls-files --others --exclude-standard 2>$null)
+    } catch {}
+    Pop-Location
+    
+    return @($changed | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
 }
 
 function Get-AreaName {
@@ -363,28 +379,30 @@ function Append-LedgerRow {
     $parent = Split-Path -Parent $Path
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
     if (Test-Path -LiteralPath $Path) {
-        $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $Path
+        $Row | Export-CsvUtf8NoBom -Append -LiteralPath $Path
     } else {
-        $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $Path
+        $Row | Export-CsvUtf8NoBom -LiteralPath $Path
     }
 }
 
 $repoRoot = Resolve-RepoRoot
 $scriptDir = Split-Path $MyInvocation.MyCommand.Path
+Import-Module (Join-Path $scriptDir "..\util\GlobalStorage.psm1") -DisableNameChecking
+$globalStorage = Get-GlobalStorage -RepoRoot $repoRoot
 $policyPath = Join-Path $repoRoot "config\serena_background_policy.json"
 $policy = Read-JsonFile -Path $policyPath
 if ($null -eq $policy) {
     throw "Missing policy file: $policyPath"
 }
 
-$artifactRoot = Join-Path $repoRoot $policy.artifacts.root
-$runsRoot = Join-Path $repoRoot $policy.artifacts.runsDir
-$symbolCardsRoot = Join-Path $repoRoot $policy.artifacts.symbolCardsDir
+$artifactRoot = Join-Path $globalStorage $policy.artifacts.root
+$runsRoot = Join-Path $globalStorage $policy.artifacts.runsDir
+$symbolCardsRoot = Join-Path $globalStorage $policy.artifacts.symbolCardsDir
 $runId = Get-Date -Format "yyyyMMdd-HHmmss"
 $runDir = Join-Path $runsRoot $runId
 New-Item -ItemType Directory -Force -Path $runDir, $artifactRoot, $symbolCardsRoot | Out-Null
 
-$lockPath = Join-Path $repoRoot $policy.safety.lockFile
+$lockPath = Join-Path $globalStorage $policy.safety.lockFile
 if (Test-Path -LiteralPath $lockPath) {
     throw "Serena background job lock exists: $lockPath"
 }
@@ -452,11 +470,38 @@ try {
     $staticSymbolsPath = Join-Path $runDir "static-symbols.json"
     Write-Utf8Json -Path $staticSymbolsPath -Value $staticSymbols
 
+    # 1. diff_manifest.json
+    $changedFiles = Get-ChangedFiles -RepoRoot $repoRoot
+    $diffManifestPath = Join-Path $artifactRoot "diff_manifest.json"
+    $diffManifest = [ordered]@{
+        generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+        repoRoot = $repoRoot
+        changedFilesCount = $changedFiles.Count
+        files = $changedFiles
+    }
+    Write-Utf8Json -Path $diffManifestPath -Value $diffManifest
+
+    # 2. context_manifest.json
+    $contextManifestPath = Join-Path $artifactRoot "context_manifest.json"
+    $contextManifest = [ordered]@{
+        generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+        repoRoot = $repoRoot
+        inventory = $inventory
+        serenaSymbols = $serenaSymbols
+        powerShellSymbols = $powerShellSymbols
+        staticSymbols = $staticSymbols
+        diffManifest = $diffManifest
+    }
+    Write-Utf8Json -Path $contextManifestPath -Value $contextManifest
+
+    # 3. Generate Mermaid Architecture
+    & (Join-Path $scriptDir "Generate-MermaidArchitecture.ps1") -RepoRoot $repoRoot | Out-Null
+
     $healthSummaryPath = Join-Path $runDir "serena-health-summary.json"
     Write-Utf8Json -Path $healthSummaryPath -Value $capability
 
     $routingHints = New-RoutingHints -Inventory $inventory -SerenaSymbols $serenaSymbols -PowerShellSymbols $powerShellSymbols -StaticSymbols $staticSymbols
-    $routingHintsPath = Join-Path $repoRoot $policy.artifacts.routingHints
+    $routingHintsPath = Join-Path $globalStorage $policy.artifacts.routingHints
     Write-Utf8Json -Path $routingHintsPath -Value $routingHints
 
     foreach ($file in @($serenaSymbols.files | Sort-Object path)) {
@@ -515,7 +560,7 @@ $(($powerShellSymbols | ConvertTo-Json -Depth 16))
         }
     }
 
-    $repoMapPath = Join-Path $repoRoot $policy.artifacts.repoMap
+    $repoMapPath = Join-Path $globalStorage $policy.artifacts.repoMap
     $repoMap = New-RepoMapMarkdown `
         -RunId $runId `
         -Capability $capability `
@@ -558,7 +603,7 @@ $(($powerShellSymbols | ConvertTo-Json -Depth 16))
             staticSymbolFiles = @($staticSymbols).Count
         }
     }
-    $manifestPath = Join-Path $repoRoot $policy.artifacts.latestManifest
+    $manifestPath = Join-Path $globalStorage $policy.artifacts.latestManifest
     Write-Utf8Json -Path $manifestPath -Value $manifest
 
     $status = "success"
@@ -568,7 +613,7 @@ $(($powerShellSymbols | ConvertTo-Json -Depth 16))
     throw
 } finally {
     Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
-    $ledgerPath = Join-Path $repoRoot $policy.artifacts.ledger
+    $ledgerPath = Join-Path $globalStorage $policy.artifacts.ledger
     Append-LedgerRow -Path $ledgerPath -Row ([pscustomobject]@{
         timestamp = (Get-Date).ToUniversalTime().ToString("o")
         runId = $runId

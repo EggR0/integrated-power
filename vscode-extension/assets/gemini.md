@@ -11,14 +11,14 @@
 [파이프라인 스크립트] ◀──(Read)── dashboard-state.json ──▶ 라우팅 결정 (모델 선택, 작업 분할)
 ```
 
-상태 파일 위치: `.agents/dashboard_global_storage.txt`에 기록된 globalStorage 경로 아래 `reports/dashboard-state.json`
+상태 파일 위치: `~/.gemini/antigravity-ide/persistent_workspaces/<repoName>` 경로 아래 `reports/dashboard-state.json`
 
 ## 1. 자원 및 능력 평가의 구조화 (Pipeline State Detection)
 
 모든 작업 시작 전, 파이프라인 스크립트는 아래 0~8 규칙에 따라 `dashboard-state.json`을 참조하여 현재 상태를 평가해야 합니다.
 
 *   **Rule 0 (능력 점검)**: 각 모델의 코딩 능력은 웹 검색/사용자 평가 기반으로 사전에 정의된 티어를 따르며, 동적 평가 시 짐작하지 않고 이 정량 지표를 참조합니다.
-*   **Rule 1 (토큰 관제)**: 확장 프로그램이 `.agents/dashboard_global_storage.txt`에 기록한 globalStorage 경로 아래 `reports/dashboard-state.json`의 `tokenStatus` 블록(특히 `quotaPools` 배열 내 각 풀의 `remainingPercentage`, `resetTime`)을 스크립트가 파싱하여 현재 잔여량을 읽어옵니다.
+*   **Rule 1 (토큰 관제)**: 확장 프로그램이 `~/.gemini/antigravity-ide/persistent_workspaces/<repoName>` 아래 `reports/dashboard-state.json`의 `tokenStatus` 블록(특히 `quotaPools` 배열 내 각 풀의 `remainingPercentage`, `resetTime`)을 기록하면, 스크립트가 파싱하여 현재 잔여량을 읽어옵니다.
 *   **Rule 2~3 (소프트 캡 여부)**: `dashboard-state.json` 내 `tokenStatus.recommendedTaskWeight`가 `restricted`이거나 토큰 잔량이 현저히 낮을 경우 소프트 캡 도달로 판정하여 안티그래비티 단독 코딩을 차단합니다.
 *   **Rule 4 (내재 모델 페널티)**: 소프트 캡에 달하지 않았으나, 사용 모델이 OPUS 4.6이나 CODEX가 아닌 Gemini(Pro/Flash)일 경우, 모델 캐파시티를 50%로 깎아 라우팅 비중을 조정합니다.
 *   **Rule 5 (로컬 GPU 가용성 검출)**: 확장 프로그램이 `nvidia-smi`를 주기적으로 호출하여 개별 GPU별 VRAM 사용량, 사용률, 전력(power.draw/power.limit)을 측정하고 `dashboard-state.json`의 `tokenStatus.localComputeStatus.gpus[]` 배열에 기록합니다. 파이프라인 스크립트는 이 데이터를 읽어 각 GPU의 잔여 VRAM을 확인하고, 게임 등 백그라운드 점유 시 해당 GPU를 로컬 LLM 라우팅에서 제외합니다.

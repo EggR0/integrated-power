@@ -28,6 +28,10 @@ param (
 )
 
 $scriptDir = Split-Path $MyInvocation.MyCommand.Path
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+Import-Module (Join-Path $scriptDir "..\util\GlobalStorage.psm1") -DisableNameChecking
+$globalStorage = Get-GlobalStorage -RepoRoot $PWD.ProviderPath
 
 function Select-AgenticLoopModelBudget {
     param(
@@ -228,7 +232,7 @@ function Apply-SearchReplacePatch {
         return
     }
     
-    Set-Content -LiteralPath $targetFile -Value $updatedContent -Encoding UTF8 -NoNewline
+    [System.IO.File]::WriteAllText($targetFile, $updatedContent, $utf8NoBom)
     Write-Host "Successfully applied patch."
 }
 
@@ -263,7 +267,7 @@ function Restore-AgenticTransaction {
     param([hashtable]$OriginalContents)
 
     foreach ($path in $OriginalContents.Keys) {
-        Set-Content -LiteralPath $path -Value $OriginalContents[$path] -Encoding UTF8 -NoNewline
+        [System.IO.File]::WriteAllText($path, $OriginalContents[$path], $utf8NoBom)
     }
 }
 
@@ -349,11 +353,11 @@ if ($modelBudget.RecommendedMaxTokens -gt 0) {
 if ($KeepArtifacts) {
     if ([string]::IsNullOrWhiteSpace($ArtifactDir)) {
         $timestamp = (Get-Date).ToString("yyyyMMdd-HHmmss-fff") + "-" + [guid]::NewGuid().ToString("N").Substring(0,8)
-        $ArtifactDir = Join-Path (Join-Path "reports" "agentic-loop-runs") $timestamp
+        $ArtifactDir = Join-Path (Join-Path $globalStorage "reports") (Join-Path "agentic-loop-runs" $timestamp)
     }
-    # Resolve relative path under current working directory (repo root)
+    # Resolve relative path under global storage
     if (-not [System.IO.Path]::IsPathRooted($ArtifactDir)) {
-        $ArtifactDir = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PWD.ProviderPath, $ArtifactDir))
+        $ArtifactDir = Join-Path $globalStorage $ArtifactDir
     }
     # Create the directory if it doesn't exist
     if (-not (Test-Path -LiteralPath $ArtifactDir)) {
@@ -370,8 +374,8 @@ while ($attempt -le $MaxRetries) {
         $promptPath = Join-Path $ArtifactDir "attempt-$attempt-prompt.md"
         $outputPath = Join-Path $ArtifactDir "attempt-$attempt-output.md"
         # Create empty files to mimic New-TemporaryFile
-        [System.IO.File]::WriteAllText($promptPath, "", [System.Text.Encoding]::UTF8)
-        [System.IO.File]::WriteAllText($outputPath, "", [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($promptPath, "", $utf8NoBom)
+        [System.IO.File]::WriteAllText($outputPath, "", $utf8NoBom)
         $tempPromptFile = Get-Item -LiteralPath $promptPath
         $tempOutputFile = Get-Item -LiteralPath $outputPath
     } else {
@@ -481,7 +485,7 @@ User Prompt:
             $combinedPrompt += "`n`n=== PREVIOUS ATTEMPT FEEDBACK ===`n$feedback`nDO NOT REPEAT THE SAME MISTAKE."
         }
 
-        Set-Content -Path $tempPromptFile -Value $combinedPrompt -Encoding UTF8
+        [System.IO.File]::WriteAllText($tempPromptFile, $combinedPrompt, $utf8NoBom)
         
         $invokeScript = Join-Path $scriptDir "Invoke-LocalLLM.ps1"
         
@@ -544,18 +548,18 @@ User Prompt:
         $llmOutput = ""
         if ($candidates.Count -gt 1) {
             Write-Host "Invoking Judge to select best candidate..." -ForegroundColor Magenta
-            $judgeModel = if ($Model -match "32b|40b|70b") { $Model } else { "qwen2.5-coder:32b" }
+            $judgeModel = if ($Model -match "32b|40b|70b|qwen3.6") { $Model } else { "qwen3.6:latest" }
             $judgePromptFile = Join-Path $env:TEMP "judge_prompt_$([guid]::NewGuid()).md"
             
             $judgePrompt = "You are a Judge. Select the BEST and most robust SEARCH/REPLACE patch from the following candidates. Output ONLY the winning SEARCH/REPLACE block exactly as it was provided. Do not add markdown or explanation.`n`n"
             for ($c = 0; $c -lt $candidates.Count; $c++) {
                 $judgePrompt += "=== CANDIDATE $c ===`n$($candidates[$c])`n`n"
             }
-            Set-Content -Path $judgePromptFile -Value $judgePrompt -Encoding UTF8
+            [System.IO.File]::WriteAllText($judgePromptFile, $judgePrompt, $utf8NoBom)
             & $invokeScript -PromptFile $judgePromptFile -OutputFile $tempOutputFile.FullName -Model $judgeModel -NumCtx $NumCtx -TaskTitle "Judge" -TaskType "routing_review" -SelectedBy "agentic-loop-judge" -SelectionReason "CandidateCount=$N requested; judge selected the patch candidate." | Out-Null
             Remove-Item $judgePromptFile -ErrorAction SilentlyContinue
         } elseif ($candidates.Count -eq 1) {
-            Set-Content -Path $tempOutputFile.FullName -Value $candidates[0] -Encoding UTF8
+            [System.IO.File]::WriteAllText($tempOutputFile.FullName, $candidates[0], $utf8NoBom)
         }
         
         if (Test-Path -LiteralPath $tempOutputFile.FullName) {
@@ -677,7 +681,7 @@ $llmOutput
 If the patch breaks syntax, introduces unhandled exceptions, or breaks indentation, output exactly: [YES_BREAKS] and explain why.
 If the patch is completely safe and robust, output exactly: [NO_SAFE].
 "@
-                Set-Content -Path $breakerPromptFile -Value $breakerPrompt -Encoding UTF8
+                [System.IO.File]::WriteAllText($breakerPromptFile, $breakerPrompt, $utf8NoBom)
                 & $invokeScript -PromptFile $breakerPromptFile -OutputFile $breakerOutputFile -Model $Model -NumCtx $NumCtx -TaskTitle "Breaker" -TaskType "routing_review" -SelectedBy "agentic-loop-breaker" -SelectionReason "EnableBreaker was requested for high-risk patch verification." | Out-Null
                 
                 $breakerResponse = ""

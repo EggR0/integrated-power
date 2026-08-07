@@ -4,7 +4,7 @@ param(
 
     [string]$OutputFile = "",
 
-    [string]$Model = "qwen2.5:latest",
+    [string]$Model = "qwen3.6:latest",
 
     [string]$SystemPrompt = "You are a helpful AI coding assistant.",
 
@@ -64,10 +64,10 @@ function Write-CsvRowWithRetry {
     for ($i = 0; $i -lt 3; $i++) {
         try {
             if (Test-Path -LiteralPath $Path) {
-                $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $Path
+                $Row | Export-CsvUtf8NoBom -Append -LiteralPath $Path
             }
             else {
-                $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $Path
+                $Row | Export-CsvUtf8NoBom -LiteralPath $Path
             }
             return
         }
@@ -121,7 +121,7 @@ function Ensure-LocalMetricsSchema {
     Copy-Item -LiteralPath $Path -Destination $backup -Force
     $rows = @(Import-Csv -LiteralPath $Path | ForEach-Object { ConvertTo-LocalMetricRow -Source $_ })
     if ($rows.Count -gt 0) {
-        $rows | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $Path
+        $rows | Export-CsvUtf8NoBom -LiteralPath $Path
     }
 }
 
@@ -183,7 +183,7 @@ $outputPath = if ([System.IO.Path]::IsPathRooted($OutputFile)) {
     $OutputFile
 }
 else {
-    Join-Path $repoRoot $OutputFile
+    Join-Path $storagePath $OutputFile
 }
 
 $outputDir = Split-Path -Parent $outputPath
@@ -232,7 +232,8 @@ if (-not $serverRunning -or $ForceRestart) {
         Stop-Process -Name "ollama*" -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
     }
-    $ollamaExe = "C:\Users\jsp0\AppData\Local\Programs\Ollama\ollama.exe"
+    $ollamaExe = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+    if (!$ollamaExe) { $ollamaExe = "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
     if (Test-Path $ollamaExe) {
         # Prioritize the second GPU (GPU 1) over the first GPU (GPU 0)
         $originalCuda = $env:CUDA_VISIBLE_DEVICES
@@ -299,8 +300,14 @@ try {
     [System.IO.File]::WriteAllText($tempJsonFile, $body, $utf8NoBom)
     
     try {
-        $curlOutput = curl.exe -sS -X POST "$ollamaUrl/api/generate" -d "@$tempJsonFile" -H "Content-Type: application/json"
+        $curlOutput = curl.exe -sS -X POST "$ollamaUrl/api/generate" -d "@$tempJsonFile" -H "Content-Type: application/json" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Ollama curl failed with exit code $LASTEXITCODE. Output: $curlOutput"
+        }
         $response = $curlOutput | ConvertFrom-Json
+        if ($response.error) {
+            throw "Ollama API Error: $($response.error)"
+        }
     }
     finally {
         Remove-Item $tempJsonFile -ErrorAction SilentlyContinue
@@ -311,7 +318,7 @@ try {
 
     $content = if ($response.response) { [string]$response.response } else { "" }
     if ($content) {
-        $content | Out-File -FilePath $outputPath -Encoding UTF8
+        [System.IO.File]::WriteAllText($outputPath, $content, $utf8NoBom)
         Write-Host "Output saved to $outputPath"
     }
 
@@ -319,7 +326,7 @@ try {
         try {
             $remainingLedgerRows = @(Import-Csv -LiteralPath $loopLedger | Where-Object { $_.TaskTitle -ne $TaskTitle })
             if ($remainingLedgerRows.Count -gt 0) {
-                $remainingLedgerRows | Export-Csv -LiteralPath $loopLedger -NoTypeInformation
+                $remainingLedgerRows | Export-CsvUtf8NoBom -LiteralPath $loopLedger
             }
             else {
                 Remove-Item -LiteralPath $loopLedger -ErrorAction SilentlyContinue
@@ -385,7 +392,7 @@ catch {
             TaskTitle    = [string]$TaskTitle
             Success      = $false
             ErrorMessage = [string]$_.Exception.Message
-        } | Export-Csv -LiteralPath $loopLedger -NoTypeInformation -Append
+        } | Export-CsvUtf8NoBom -LiteralPath $loopLedger -Append
     }
     catch {
         Write-Warning "Failed to append loop ledger failure entry: $($_.Exception.Message)"

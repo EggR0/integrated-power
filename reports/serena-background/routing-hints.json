@@ -1,14 +1,17 @@
 {
-    "generatedAt":  "2026-07-05T05:16:28.9079656Z",
+    "generatedAt":  "2026-07-09T03:33:12.8636237Z",
     "source":  "serena-cache-powershell-ast-plus-repo-inventory",
     "neverTreatAsAuthority":  true,
     "areas":  [
                   {
                       "area":  "dispatch",
-                      "fileCount":  15,
-                      "symbolCount":  79,
+                      "fileCount":  25,
+                      "symbolCount":  102,
                       "candidateFiles":  [
+                                             "scripts/dispatch/Ensure-AiDelegationSetup.ps1",
                                              "scripts/dispatch/Export-PowerShellSymbols.ps1",
+                                             "scripts/dispatch/Generate-MermaidArchitecture.ps1",
+                                             "scripts/dispatch/Get-AgenticRuntimeState.ps1",
                                              "scripts/dispatch/Invoke-AgenticLoop.ps1",
                                              "scripts/dispatch/Invoke-AiderWorker.ps1",
                                              "scripts/dispatch/Invoke-AiWorkWindow.ps1",
@@ -17,12 +20,14 @@
                                              "scripts/dispatch/Invoke-DelegatedAgentTask.ps1",
                                              "scripts/dispatch/Invoke-LocalLLM.ps1",
                                              "scripts/dispatch/Invoke-SerenaBackgroundJob.ps1",
+                                             "scripts/dispatch/Invoke-StreamingLocalLLM.ps1",
+                                             "scripts/dispatch/Invoke-VisibleTask.ps1",
                                              "scripts/dispatch/Invoke-vLLMJob.ps1",
                                              "scripts/dispatch/New-ContextManifest.ps1",
-                                             "scripts/dispatch/Select-AgenticDelegationMode.ps1",
-                                             "scripts/dispatch/Select-AgenticValidator.ps1",
-                                             "scripts/dispatch/Select-LocalLLMModel.ps1",
-                                             "scripts/dispatch/Test-SerenaCapability.ps1"
+                                             "scripts/dispatch/Queue-Watcher.ps1",
+                                             "scripts/dispatch/Run-AiderTask.ps1",
+                                             "scripts/dispatch/Run-LocalLLMTask.ps1",
+                                             "scripts/dispatch/Run-StreamingLocalLLMTask.ps1"
                                          ],
                       "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
                   },
@@ -44,10 +49,9 @@
                   },
                   {
                       "area":  "root",
-                      "fileCount":  2,
+                      "fileCount":  1,
                       "symbolCount":  0,
                       "candidateFiles":  [
-                                             "AGENTS.md",
                                              "README.md"
                                          ],
                       "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
@@ -86,32 +90,29 @@
                   },
                   {
                       "area":  "vscode-extension",
-                      "fileCount":  2,
-                      "symbolCount":  0,
+                      "fileCount":  208,
+                      "symbolCount":  9,
                       "candidateFiles":  [
-                                             "vscode-extension/assets/codex-orchestrator-plugin/plugin.json",
-                                             "vscode-extension/assets/codex-orchestrator-plugin/skills/codex-orchestrator/references/ai_routing_policy.json"
-                                         ],
-                      "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
-                  },
-                  {
-                      "area":  "vscode-extension-src",
-                      "fileCount":  13,
-                      "symbolCount":  1202,
-                      "candidateFiles":  [
-                                             "vscode-extension/src/AgyQuotaClient.ts",
-                                             "vscode-extension/src/DashboardController.ts",
-                                             "vscode-extension/src/DashboardProvider.ts",
-                                             "vscode-extension/src/extension.ts",
-                                             "vscode-extension/src/installAntigravityPlugin.ts",
-                                             "vscode-extension/src/RunStore.ts",
-                                             "vscode-extension/src/storagePath.ts",
-                                             "vscode-extension/src/test/runTest.ts",
-                                             "vscode-extension/src/test/suite/index.ts",
-                                             "vscode-extension/src/test/suite/parser.test.ts",
-                                             "vscode-extension/src/TokenManager.ts",
-                                             "vscode-extension/src/types.ts",
-                                             "vscode-extension/src/WorkspacePaths.ts"
+                                             "vscode-extension/.vscode-test/extensions/extensions.json",
+                                             "vscode-extension/.vscode-test/user-data/languagepacks.json",
+                                             "vscode-extension/.vscode-test/user-data/User/chatLanguageModels.json",
+                                             "vscode-extension/.vscode-test/user-data/User/globalStorage/storage.json",
+                                             "vscode-extension/.vscode-test/user-data/User/workspaceStorage/d76b71755aa71c066c1a54221188f54e/meta.json",
+                                             "vscode-extension/.vscode-test/user-data/User/workspaceStorage/ext-dev/chatEditingSessions/ec166d39-d9bd-4927-91d4-3912e69e67bb/state.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/bat/language-configuration.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/bat/package.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/bat/package.nls.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/bat/syntaxes/batchfile.tmLanguage.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/clojure/language-configuration.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/clojure/package.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/clojure/package.nls.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/clojure/syntaxes/clojure.tmLanguage.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/coffeescript/language-configuration.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/coffeescript/package.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/coffeescript/package.nls.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/coffeescript/syntaxes/coffeescript.tmLanguage.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/configuration-editing/package.json",
+                                             "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/configuration-editing/package.nls.json"
                                          ],
                       "routingNote":  "Use these files as candidates only; validate with rg/tests before editing."
                   }

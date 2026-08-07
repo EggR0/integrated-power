@@ -1,4 +1,4 @@
-﻿param(
+param(
     [ValidateSet("coding", "review", "planning", "design", "test_generation", "docs", "debugging")]
     [string]$TaskKind = "coding",
 
@@ -131,6 +131,12 @@ $taskScale = if ($EstimatedContextTokens -gt 16384 -or $EstimatedChangedLines -g
 if (!$RequiresFileWrite -and $TaskKind -in @("planning", "design", "docs", "test_generation")) {
     $mode = "LocalDirect"
     $reason = "Generate an artifact or candidate content locally; Codex/Gemini only reviews or applies the result."
+}
+elseif ($CloudQuotaRemainingPercent -ge 0 -and $CloudQuotaRemainingPercent -lt 20) {
+    # Active Downshift logic based on Quota
+    $mode = if ($RequiresFileWrite) { "AgenticLoop" } else { "LocalDirect" }
+    $reason = "Cloud token quota is dangerously low ($CloudQuotaRemainingPercent%). Downshifting to local execution to conserve remaining quota."
+    $recommendedWorkerBackend = "Aider"
 }
 elseif ($RequiresFileWrite -and ($HighRisk -or $changeSize -ne "Low" -or $fileCount -gt 1)) {
     $mode = "AgenticLoop"

@@ -1,0 +1,769 @@
+[
+    {
+        "path":  "scripts/dispatch/Ensure-AiDelegationSetup.ps1",
+        "symbolCount":  6,
+        "symbols":  [
+                        {
+                            "name":  "Test-CodexCandidate",
+                            "kind":  "function",
+                            "line":  10
+                        },
+                        {
+                            "name":  "Get-InteractiveInstallerPath",
+                            "kind":  "function",
+                            "line":  32
+                        },
+                        {
+                            "name":  "Resolve-CodexExeAutomatically",
+                            "kind":  "function",
+                            "line":  44
+                        },
+                        {
+                            "name":  "Write-CodexSettings",
+                            "kind":  "function",
+                            "line":  83
+                        },
+                        {
+                            "name":  "Invoke-WithFileLock",
+                            "kind":  "function",
+                            "line":  96
+                        },
+                        {
+                            "name":  "Ensure-GlobalRoutingRules",
+                            "kind":  "function",
+                            "line":  126
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Export-PowerShellSymbols.ps1",
+        "symbolCount":  8,
+        "symbols":  [
+                        {
+                            "name":  "Resolve-RepoRoot",
+                            "kind":  "function",
+                            "line":  11
+                        },
+                        {
+                            "name":  "Write-Utf8Json",
+                            "kind":  "function",
+                            "line":  29
+                        },
+                        {
+                            "name":  "ConvertTo-RelativePath",
+                            "kind":  "function",
+                            "line":  44
+                        },
+                        {
+                            "name":  "Get-ParameterNames",
+                            "kind":  "function",
+                            "line":  60
+                        },
+                        {
+                            "name":  "Get-CommandFacts",
+                            "kind":  "function",
+                            "line":  71
+                        },
+                        {
+                            "name":  "Get-TopCommandNames",
+                            "kind":  "function",
+                            "line":  99
+                        },
+                        {
+                            "name":  "Get-Imports",
+                            "kind":  "function",
+                            "line":  116
+                        },
+                        {
+                            "name":  "Get-PSScriptAnalyzerDiagnostics",
+                            "kind":  "function",
+                            "line":  138
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Invoke-AgenticLoop.ps1",
+        "symbolCount":  7,
+        "symbols":  [
+                        {
+                            "name":  "Select-AgenticLoopModelBudget",
+                            "kind":  "function",
+                            "line":  32
+                        },
+                        {
+                            "name":  "Test-SearchReplacePatch",
+                            "kind":  "function",
+                            "line":  115
+                        },
+                        {
+                            "name":  "Test-SearchReplaceSyntax",
+                            "kind":  "function",
+                            "line":  162
+                        },
+                        {
+                            "name":  "Apply-SearchReplacePatch",
+                            "kind":  "function",
+                            "line":  197
+                        },
+                        {
+                            "name":  "Resolve-AgenticPatchFile",
+                            "kind":  "function",
+                            "line":  235
+                        },
+                        {
+                            "name":  "Restore-AgenticTransaction",
+                            "kind":  "function",
+                            "line":  262
+                        },
+                        {
+                            "name":  "Invoke-AgenticValidationCommand",
+                            "kind":  "function",
+                            "line":  270
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Invoke-AiderWorker.ps1",
+        "symbolCount":  5,
+        "symbols":  [
+                        {
+                            "name":  "Get-RepoRoot",
+                            "kind":  "function",
+                            "line":  40
+                        },
+                        {
+                            "name":  "Resolve-WorkspacePath",
+                            "kind":  "function",
+                            "line":  53
+                        },
+                        {
+                            "name":  "Quote-ProcessArgument",
+                            "kind":  "function",
+                            "line":  76
+                        },
+                        {
+                            "name":  "Invoke-ValidationCommand",
+                            "kind":  "function",
+                            "line":  86
+                        },
+                        {
+                            "name":  "Restore-Files",
+                            "kind":  "function",
+                            "line":  132
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Invoke-CodexDebate.ps1",
+        "symbolCount":  19,
+        "symbols":  [
+                        {
+                            "name":  "Write-Utf8",
+                            "kind":  "function",
+                            "line":  34
+                        },
+                        {
+                            "name":  "Write-JsonFile",
+                            "kind":  "function",
+                            "line":  46
+                        },
+                        {
+                            "name":  "Protect-PromptBoundary",
+                            "kind":  "function",
+                            "line":  58
+                        },
+                        {
+                            "name":  "Throw-CodexDebateError",
+                            "kind":  "function",
+                            "line":  68
+                        },
+                        {
+                            "name":  "Get-CodexDebateExitCode",
+                            "kind":  "function",
+                            "line":  82
+                        },
+                        {
+                            "name":  "Test-IsWindows",
+                            "kind":  "function",
+                            "line":  96
+                        },
+                        {
+                            "name":  "Assert-AllowedValue",
+                            "kind":  "function",
+                            "line":  100
+                        },
+                        {
+                            "name":  "Resolve-RequiredPath",
+                            "kind":  "function",
+                            "line":  115
+                        },
+                        {
+                            "name":  "Resolve-RequiredPathList",
+                            "kind":  "function",
+                            "line":  150
+                        },
+                        {
+                            "name":  "Invoke-WithFileLock",
+                            "kind":  "function",
+                            "line":  167
+                        },
+                        {
+                            "name":  "New-Slug",
+                            "kind":  "function",
+                            "line":  217
+                        },
+                        {
+                            "name":  "Set-TranscriptTurnStatus",
+                            "kind":  "function",
+                            "line":  224
+                        },
+                        {
+                            "name":  "Limit-HistoryText",
+                            "kind":  "function",
+                            "line":  255
+                        },
+                        {
+                            "name":  "Get-CurrentPowerShellPath",
+                            "kind":  "function",
+                            "line":  299
+                        },
+                        {
+                            "name":  "New-SelfTestFakeCodex",
+                            "kind":  "function",
+                            "line":  312
+                        },
+                        {
+                            "name":  "Invoke-SelfTestScriptRun",
+                            "kind":  "function",
+                            "line":  389
+                        },
+                        {
+                            "name":  "Assert-SelfTest",
+                            "kind":  "function",
+                            "line":  420
+                        },
+                        {
+                            "name":  "Invoke-SelfTest",
+                            "kind":  "function",
+                            "line":  431
+                        },
+                        {
+                            "name":  "Write-Event",
+                            "kind":  "function",
+                            "line":  595
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Invoke-DelegatedAgentTask.ps1",
+        "symbolCount":  6,
+        "symbols":  [
+                        {
+                            "name":  "Get-RepoRoot",
+                            "kind":  "function",
+                            "line":  73
+                        },
+                        {
+                            "name":  "Write-DecisionLog",
+                            "kind":  "function",
+                            "line":  86
+                        },
+                        {
+                            "name":  "Test-AiderWorkerAvailable",
+                            "kind":  "function",
+                            "line":  108
+                        },
+                        {
+                            "name":  "Split-FileListValue",
+                            "kind":  "function",
+                            "line":  126
+                        },
+                        {
+                            "name":  "Resolve-DelegatedFileInputs",
+                            "kind":  "function",
+                            "line":  154
+                        },
+                        {
+                            "name":  "Test-DestructiveIntent",
+                            "kind":  "function",
+                            "line":  179
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Invoke-LocalLLM.ps1",
+        "symbolCount":  4,
+        "symbols":  [
+                        {
+                            "name":  "Write-CsvRowWithRetry",
+                            "kind":  "function",
+                            "line":  50
+                        },
+                        {
+                            "name":  "ConvertTo-LocalMetricRow",
+                            "kind":  "function",
+                            "line":  81
+                        },
+                        {
+                            "name":  "Ensure-LocalMetricsSchema",
+                            "kind":  "function",
+                            "line":  109
+                        },
+                        {
+                            "name":  "Write-LocalLlmMetric",
+                            "kind":  "function",
+                            "line":  128
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Invoke-SerenaBackgroundJob.ps1",
+        "symbolCount":  13,
+        "symbols":  [
+                        {
+                            "name":  "Resolve-RepoRoot",
+                            "kind":  "function",
+                            "line":  15
+                        },
+                        {
+                            "name":  "Write-Utf8Text",
+                            "kind":  "function",
+                            "line":  26
+                        },
+                        {
+                            "name":  "Write-Utf8Json",
+                            "kind":  "function",
+                            "line":  40
+                        },
+                        {
+                            "name":  "Get-RelativePathCompat",
+                            "kind":  "function",
+                            "line":  50
+                        },
+                        {
+                            "name":  "Read-JsonFile",
+                            "kind":  "function",
+                            "line":  68
+                        },
+                        {
+                            "name":  "Test-PathGlob",
+                            "kind":  "function",
+                            "line":  77
+                        },
+                        {
+                            "name":  "Get-RepositoryFiles",
+                            "kind":  "function",
+                            "line":  93
+                        },
+                        {
+                            "name":  "Get-ChangedFiles",
+                            "kind":  "function",
+                            "line":  141
+                        },
+                        {
+                            "name":  "Get-AreaName",
+                            "kind":  "function",
+                            "line":  155
+                        },
+                        {
+                            "name":  "Get-StaticSymbols",
+                            "kind":  "function",
+                            "line":  173
+                        },
+                        {
+                            "name":  "New-RoutingHints",
+                            "kind":  "function",
+                            "line":  216
+                        },
+                        {
+                            "name":  "New-RepoMapMarkdown",
+                            "kind":  "function",
+                            "line":  267
+                        },
+                        {
+                            "name":  "Append-LedgerRow",
+                            "kind":  "function",
+                            "line":  373
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Invoke-vLLMJob.ps1",
+        "symbolCount":  8,
+        "symbols":  [
+                        {
+                            "name":  "Write-Utf8NoBom",
+                            "kind":  "function",
+                            "line":  39
+                        },
+                        {
+                            "name":  "Invoke-CurlJson",
+                            "kind":  "function",
+                            "line":  58
+                        },
+                        {
+                            "name":  "Write-CsvRowWithRetry",
+                            "kind":  "function",
+                            "line":  77
+                        },
+                        {
+                            "name":  "ConvertTo-LocalMetricRow",
+                            "kind":  "function",
+                            "line":  108
+                        },
+                        {
+                            "name":  "Ensure-LocalMetricsSchema",
+                            "kind":  "function",
+                            "line":  136
+                        },
+                        {
+                            "name":  "Write-LocalLlmMetric",
+                            "kind":  "function",
+                            "line":  155
+                        },
+                        {
+                            "name":  "Get-FirstModelId",
+                            "kind":  "function",
+                            "line":  204
+                        },
+                        {
+                            "name":  "Resolve-OpenAIBaseUrl",
+                            "kind":  "function",
+                            "line":  230
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Select-AgenticDelegationMode.ps1",
+        "symbolCount":  4,
+        "symbols":  [
+                        {
+                            "name":  "Get-RepoRoot",
+                            "kind":  "function",
+                            "line":  32
+                        },
+                        {
+                            "name":  "Resolve-WorkspacePath",
+                            "kind":  "function",
+                            "line":  45
+                        },
+                        {
+                            "name":  "Get-ContextEstimateFromFiles",
+                            "kind":  "function",
+                            "line":  61
+                        },
+                        {
+                            "name":  "Get-Level",
+                            "kind":  "function",
+                            "line":  82
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Select-AgenticValidator.ps1",
+        "symbolCount":  9,
+        "symbols":  [
+                        {
+                            "name":  "Get-RepoRoot",
+                            "kind":  "function",
+                            "line":  20
+                        },
+                        {
+                            "name":  "Resolve-WorkspacePath",
+                            "kind":  "function",
+                            "line":  33
+                        },
+                        {
+                            "name":  "ConvertTo-SingleQuotedPowerShellLiteral",
+                            "kind":  "function",
+                            "line":  49
+                        },
+                        {
+                            "name":  "ConvertTo-RepoRelativePath",
+                            "kind":  "function",
+                            "line":  54
+                        },
+                        {
+                            "name":  "Test-PathPattern",
+                            "kind":  "function",
+                            "line":  73
+                        },
+                        {
+                            "name":  "Expand-ValidatorCommandTemplate",
+                            "kind":  "function",
+                            "line":  94
+                        },
+                        {
+                            "name":  "Select-RegistryValidator",
+                            "kind":  "function",
+                            "line":  105
+                        },
+                        {
+                            "name":  "Find-NearestPackageJson",
+                            "kind":  "function",
+                            "line":  145
+                        },
+                        {
+                            "name":  "Get-PackageScripts",
+                            "kind":  "function",
+                            "line":  181
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Select-LocalLLMModel.ps1",
+        "symbolCount":  9,
+        "symbols":  [
+                        {
+                            "name":  "Get-RepoRoot",
+                            "kind":  "function",
+                            "line":  26
+                        },
+                        {
+                            "name":  "Get-InstalledOllamaModels",
+                            "kind":  "function",
+                            "line":  40
+                        },
+                        {
+                            "name":  "Get-TaskScore",
+                            "kind":  "function",
+                            "line":  54
+                        },
+                        {
+                            "name":  "Normalize-Score",
+                            "kind":  "function",
+                            "line":  82
+                        },
+                        {
+                            "name":  "Get-GpuSnapshot",
+                            "kind":  "function",
+                            "line":  89
+                        },
+                        {
+                            "name":  "Get-DesiredContextTokens",
+                            "kind":  "function",
+                            "line":  113
+                        },
+                        {
+                            "name":  "Get-HardwareContextLimit",
+                            "kind":  "function",
+                            "line":  138
+                        },
+                        {
+                            "name":  "Get-RecommendedNumCtx",
+                            "kind":  "function",
+                            "line":  150
+                        },
+                        {
+                            "name":  "Get-RecommendedMaxTokens",
+                            "kind":  "function",
+                            "line":  171
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/dispatch/Test-SerenaCapability.ps1",
+        "symbolCount":  4,
+        "symbols":  [
+                        {
+                            "name":  "Resolve-RepoRoot",
+                            "kind":  "function",
+                            "line":  11
+                        },
+                        {
+                            "name":  "Write-Utf8Json",
+                            "kind":  "function",
+                            "line":  29
+                        },
+                        {
+                            "name":  "Get-LatestHealthLog",
+                            "kind":  "function",
+                            "line":  44
+                        },
+                        {
+                            "name":  "Parse-HealthLog",
+                            "kind":  "function",
+                            "line":  56
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/metrics/Count-GeminiInputTokens.ps1",
+        "symbolCount":  4,
+        "symbols":  [
+                        {
+                            "name":  "Get-RepoRoot",
+                            "kind":  "function",
+                            "line":  15
+                        },
+                        {
+                            "name":  "Resolve-InputText",
+                            "kind":  "function",
+                            "line":  28
+                        },
+                        {
+                            "name":  "Get-RestFailureMessage",
+                            "kind":  "function",
+                            "line":  63
+                        },
+                        {
+                            "name":  "Export-TokenRow",
+                            "kind":  "function",
+                            "line":  79
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/metrics/Count-OpenAIInputTokens.ps1",
+        "symbolCount":  4,
+        "symbols":  [
+                        {
+                            "name":  "Get-RepoRoot",
+                            "kind":  "function",
+                            "line":  20
+                        },
+                        {
+                            "name":  "Resolve-InputText",
+                            "kind":  "function",
+                            "line":  33
+                        },
+                        {
+                            "name":  "Get-RestFailureMessage",
+                            "kind":  "function",
+                            "line":  68
+                        },
+                        {
+                            "name":  "Export-TokenRow",
+                            "kind":  "function",
+                            "line":  84
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/metrics/Measure-AntigravityTranscript.ps1",
+        "symbolCount":  1,
+        "symbols":  [
+                        {
+                            "name":  "Get-TextEstimate",
+                            "kind":  "function",
+                            "line":  30
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/metrics/Parse-CodexUsage.ps1",
+        "symbolCount":  2,
+        "symbols":  [
+                        {
+                            "name":  "Get-JsonNumber",
+                            "kind":  "function",
+                            "line":  33
+                        },
+                        {
+                            "name":  "Get-CreditEstimate",
+                            "kind":  "function",
+                            "line":  53
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/metrics/Parse-GeminiUsage.ps1",
+        "symbolCount":  1,
+        "symbols":  [
+                        {
+                            "name":  "Get-OptionalNumber",
+                            "kind":  "function",
+                            "line":  27
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/scan/Compare-ScanState.ps1",
+        "symbolCount":  3,
+        "symbols":  [
+                        {
+                            "name":  "Get-StringHash",
+                            "kind":  "function",
+                            "line":  21
+                        },
+                        {
+                            "name":  "Get-CurrentSnapshot",
+                            "kind":  "function",
+                            "line":  29
+                        },
+                        {
+                            "name":  "Compare-Snapshots",
+                            "kind":  "function",
+                            "line":  66
+                        }
+                    ]
+    },
+    {
+        "path":  "scripts/scan/Extract-Todos.ps1",
+        "symbolCount":  1,
+        "symbols":  [
+                        {
+                            "name":  "Get-FilesFast",
+                            "kind":  "function",
+                            "line":  111
+                        }
+                    ]
+    },
+    {
+        "path":  "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/markdown-language-features/markdown-editor-src/editor.ts",
+        "symbolCount":  1,
+        "symbols":  [
+                        {
+                            "name":  "Editor",
+                            "kind":  "class",
+                            "line":  23
+                        }
+                    ]
+    },
+    {
+        "path":  "vscode-extension/.vscode-test/vscode-win32-x64-archive-1.126.0/7e7950df89/resources/app/extensions/markdown-language-features/markdown-editor-src/syntaxHighlighter.ts",
+        "symbolCount":  8,
+        "symbols":  [
+                        {
+                            "name":  "fontStyleRules",
+                            "kind":  "function",
+                            "line":  43
+                        },
+                        {
+                            "name":  "colorRules",
+                            "kind":  "function",
+                            "line":  58
+                        },
+                        {
+                            "name":  "classNameFor",
+                            "kind":  "function",
+                            "line":  62
+                        },
+                        {
+                            "name":  "makeSnapshot",
+                            "kind":  "function",
+                            "line":  69
+                        },
+                        {
+                            "name":  "unstyledTokens",
+                            "kind":  "function",
+                            "line":  76
+                        },
+                        {
+                            "name":  "adjustTokens",
+                            "kind":  "function",
+                            "line":  86
+                        },
+                        {
+                            "name":  "HighlighterDocument",
+                            "kind":  "class",
+                            "line":  101
+                        },
+                        {
+                            "name":  "WebviewSyntaxHighlighter",
+                            "kind":  "class",
+                            "line":  155
+                        }
+                    ]
+    }
+]

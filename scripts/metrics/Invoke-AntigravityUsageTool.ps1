@@ -39,6 +39,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "antigravity-usage failed: $json"
 }
 
-$json | Out-File -LiteralPath $OutputJson -Encoding UTF8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($OutputJson, $json, $utf8NoBom)
 Write-Host "Antigravity quota JSON written to $OutputJson"
 

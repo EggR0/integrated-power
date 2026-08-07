@@ -21,7 +21,8 @@ param(
     [switch]$AllowExternalDiscussionPath,
     [int]$MaxHistoryChars = 60000,
     [switch]$DryRun,
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    [switch]$Visible
 )
 
 $ErrorActionPreference = "Stop"
@@ -815,6 +816,17 @@ $blockEnd
 
         try {
             $proc = Start-Process -FilePath $CodexExe -ArgumentList $procArgs -RedirectStandardInput $preparedPrompt -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru -NoNewWindow
+            
+            if ($Visible) {
+                # Ensure the file exists before queueing the watcher
+                if (!(Test-Path -LiteralPath $stdoutLog)) {
+                    New-Item -ItemType File -Path $stdoutLog -Force | Out-Null
+                }
+                $queueHelper = Join-Path $PSScriptRoot "Queue-Watcher.ps1"
+                if (Test-Path -LiteralPath $queueHelper) {
+                    & $queueHelper -LogPath $stdoutLog -TerminalName "Codex Debate ($Model)" -TargetPid $proc.Id
+                }
+            }
         } catch {
             Throw-CodexDebateError "Codex is unreachable: $($_.Exception.Message)" 4
         }

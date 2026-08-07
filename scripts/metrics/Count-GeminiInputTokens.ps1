@@ -93,9 +93,9 @@ function Export-TokenRow {
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         try {
             if (Test-Path -LiteralPath $OutputCsv) {
-                $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $OutputCsv
+                $Row | Export-CsvUtf8NoBom -Append -LiteralPath $OutputCsv
             } else {
-                $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $OutputCsv
+                $Row | Export-CsvUtf8NoBom -LiteralPath $OutputCsv
             }
             return
         } catch {

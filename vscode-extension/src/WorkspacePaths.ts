@@ -6,10 +6,12 @@ import {
   workspaceStoragePathForFolder,
 } from "./storagePath";
 
+import * as os from "os";
+
 const RUNS_RELATIVE_PATH = ".agent-runs/runs.jsonl";
 const TOKEN_REPORT_RELATIVE_PATH = "reports/agent-dashboard.md";
 const DASHBOARD_STATE_RELATIVE_PATH = "reports/dashboard-state.json";
-const TERMINAL_QUEUE_RELATIVE_PATH = ".agents/terminal-queue.json";
+const TERMINAL_QUEUE_RELATIVE_PATH = "reports/terminal-queue.json";
 
 export { normalizeWorkspacePathForStorage, workspaceStoragePathForFolder };
 
@@ -36,7 +38,8 @@ export class WorkspacePaths {
     const folder = this.primaryFolder;
     if (!folder) return undefined;
 
-    return workspaceStoragePathForFolder(this.context.globalStorageUri.fsPath, folder.uri.fsPath);
+    const folderName = path.basename(folder.uri.fsPath);
+    return path.join(os.homedir(), ".gemini", "antigravity-ide", "persistent_workspaces", folderName);
   }
 
   public runsFileUri(): vscode.Uri | undefined {
@@ -60,9 +63,7 @@ export class WorkspacePaths {
   }
 
   public terminalQueueUri(): vscode.Uri | undefined {
-    const folder = this.primaryFolder;
-    if (!folder) return undefined;
-    return vscode.Uri.file(path.join(folder.uri.fsPath, ...TERMINAL_QUEUE_RELATIVE_PATH.split("/")));
+    return this.joinGlobalStorage(TERMINAL_QUEUE_RELATIVE_PATH);
   }
 
   public createWatchers(onChange: () => void): vscode.Disposable[] {
@@ -92,11 +93,15 @@ export class WorkspacePaths {
       tokenWatcher.onDidDelete(onChange),
     ];
 
-    if (folder) {
+    if (globalStoragePath) {
       const terminalWatcher = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(folder.uri.fsPath, TERMINAL_QUEUE_RELATIVE_PATH),
+        new vscode.RelativePattern(globalStoragePath, TERMINAL_QUEUE_RELATIVE_PATH),
       );
-      watchers.push(terminalWatcher);
+      watchers.push(terminalWatcher,
+        terminalWatcher.onDidCreate(onChange),
+        terminalWatcher.onDidChange(onChange),
+        terminalWatcher.onDidDelete(onChange)
+      );
     }
 
     return watchers;

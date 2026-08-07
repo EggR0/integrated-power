@@ -91,9 +91,9 @@ if (![string]::IsNullOrWhiteSpace($outputDir)) {
 }
 
 if (Test-Path -LiteralPath $OutputCsv) {
-    $row | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $OutputCsv
+    $row | Export-CsvUtf8NoBom -Append -LiteralPath $OutputCsv
 } else {
-    $row | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $OutputCsv
+    $row | Export-CsvUtf8NoBom -LiteralPath $OutputCsv
 }
 
 $row | Format-List

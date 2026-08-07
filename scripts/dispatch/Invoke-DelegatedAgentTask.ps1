@@ -56,9 +56,14 @@ param(
 
     [switch]$AllowAgenticLoopFallback,
 
+    [switch]$SkipValidation,
+
     [switch]$DryRun,
 
-    [string]$DecisionLogFile = ""
+    [string]$DecisionLogFile = "",
+
+    [ValidateSet("Default", "ArchitectureReview", "Refactoring", "Testing")]
+    [string]$StateMachine = "Default"
 )
 
 $ErrorActionPreference = "Stop"
@@ -93,10 +98,10 @@ function Write-DecisionLog {
     }
 
     if (Test-Path -LiteralPath $Path) {
-        $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $Path
+        $Row | Export-CsvUtf8NoBom -Append -LiteralPath $Path
     }
     else {
-        $Row | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $Path
+        $Row | Export-CsvUtf8NoBom -LiteralPath $Path
     }
 }
 
@@ -203,8 +208,11 @@ function Test-DestructiveIntent {
     return $false
 }
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path $MyInvocation.MyCommand.Path
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $repoRoot = Get-RepoRoot
+Import-Module (Join-Path $scriptDir "..\util\GlobalStorage.psm1") -DisableNameChecking
+$globalStorage = Get-GlobalStorage -RepoRoot $repoRoot
 
 if (![string]::IsNullOrWhiteSpace($PromptFile)) {
     $resolvedPromptFile = $PromptFile
@@ -228,6 +236,9 @@ if (![string]::IsNullOrWhiteSpace($TargetFile) -and @($Files).Count -eq 0) {
 $requiresWrite = $RequiresFileWrite.IsPresent -or ![string]::IsNullOrWhiteSpace($TargetFile)
 $destructiveIntent = $requiresWrite -and (Test-DestructiveIntent -Text $Prompt)
 
+# 1. Agentic Runtime State Bridge
+$runtimeState = & (Join-Path $scriptDir "Get-AgenticRuntimeState.ps1") -RepoRoot $repoRoot
+
 $selectorArgs = @{
     TaskKind                      = $TaskKind
     Files                         = $Files
@@ -236,6 +247,8 @@ $selectorArgs = @{
     RequiresIndependentAudit      = $RequiresIndependentAudit.IsPresent
     HighRisk                      = $HighRisk.IsPresent
     PreferCloudTokenConservation  = $PreferCloudTokenConservation.IsPresent
+    CloudQuotaRemainingPercent    = $runtimeState.CloudQuotaRemainingPercent
+    TimeBudgetMinutes             = $runtimeState.TimeBudgetMinutes
     AsJson                        = $true
 }
 
@@ -243,7 +256,10 @@ $selector = Join-Path $scriptDir "Select-AgenticDelegationMode.ps1"
 $decision = & $selector @selectorArgs | ConvertFrom-Json
 
 $validatorSelection = $null
-if ($ValidatorProfile -eq "auto") {
+if ($SkipValidation) {
+    $ValidatorProfile = "none"
+    $ValidationCommand = ""
+} elseif ($ValidatorProfile -eq "auto") {
     $validatorSelector = Join-Path $scriptDir "Select-AgenticValidator.ps1"
     $validatorSelection = & $validatorSelector -TargetFile $TargetFile -Files $Files -TaskKind $TaskKind -Strict:($HighRisk.IsPresent) -AsJson | ConvertFrom-Json
     $ValidatorProfile = [string]$validatorSelection.ValidatorProfile
@@ -308,10 +324,10 @@ if ($destructiveIntent -and !$AllowDestructive.IsPresent) {
 }
 
 if ([string]::IsNullOrWhiteSpace($DecisionLogFile)) {
-    $DecisionLogFile = Join-Path (Join-Path $repoRoot "reports") "delegation-decisions.csv"
+    $DecisionLogFile = Join-Path (Join-Path $globalStorage "reports") "delegation-decisions.csv"
 }
 elseif (![System.IO.Path]::IsPathRooted($DecisionLogFile)) {
-    $DecisionLogFile = Join-Path $repoRoot $DecisionLogFile
+    $DecisionLogFile = Join-Path $globalStorage $DecisionLogFile
 }
 
 $logRow = [pscustomobject]@{
@@ -396,6 +412,7 @@ switch ($executionMode) {
             ValidatorProfile   = $ValidatorProfile
             ValidationCommand  = $ValidationCommand
             ValidationTimeoutSeconds = $ValidationTimeoutSeconds
+            StateMachine       = $StateMachine
         }
         if (![string]::IsNullOrWhiteSpace($Model)) { $loopArgs.Model = $Model }
         if ($NumCtx -gt 0) { $loopArgs.NumCtx = $NumCtx }
@@ -407,7 +424,7 @@ switch ($executionMode) {
         $aiderArgs = @{
             Prompt = $Prompt
             Files = $Files
-            Model = if (![string]::IsNullOrWhiteSpace($Model)) { $Model } else { "qwen2.5-coder:32b" }
+            Model = if (![string]::IsNullOrWhiteSpace($Model)) { $Model } else { "qwen3.6:latest" }
             ValidatorProfile = $ValidatorProfile
             ValidationCommand = $ValidationCommand
             ValidationTimeoutSeconds = $ValidationTimeoutSeconds
@@ -424,8 +441,8 @@ switch ($executionMode) {
     "LocalDirect" {
         $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
         $promptFile = Join-Path $env:TEMP "delegated-local-$stamp-$([guid]::NewGuid().ToString('N')).md"
-        $outputFile = Join-Path (Join-Path $repoRoot "reports") "delegated-local-$stamp.md"
-        Set-Content -LiteralPath $promptFile -Encoding UTF8 -Value $Prompt
+        $outputFile = Join-Path (Join-Path $globalStorage "reports") "delegated-local-$stamp.md"
+        [System.IO.File]::WriteAllText($promptFile, $Prompt, $utf8NoBom)
         try {
             $localArgs = @{
                 PromptFile = $promptFile

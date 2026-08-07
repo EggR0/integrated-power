@@ -136,9 +136,9 @@ if (![string]::IsNullOrWhiteSpace($outputDir)) {
 
 if ($rows.Count -gt 0) {
     if (Test-Path -LiteralPath $OutputCsv) {
-        $rows | Export-Csv -NoTypeInformation -Encoding UTF8 -Append -LiteralPath $OutputCsv
+        $rows | Export-CsvUtf8NoBom -Append -LiteralPath $OutputCsv
     } else {
-        $rows | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $OutputCsv
+        $rows | Export-CsvUtf8NoBom -LiteralPath $OutputCsv
     }
 }
 

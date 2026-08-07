@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $false)]
     [switch]$SelfTest
 )
@@ -12,88 +12,8 @@ if ([string]::IsNullOrWhiteSpace($repoRoot)) {
 }
 Import-Module (Join-Path $repoRoot "scripts\util\GlobalStorage.psm1") -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
-# [SelfTest Mode]
-if ($SelfTest) {
-    Write-Host "[Self-Test] Starting Detect-ActiveWork.ps1 self-test..."
-    $tempProjDir = Join-Path $repoRoot "scripts\__temp_test_git_proj"
-    $tempProjTxt = Join-Path $repoRoot "scripts\__temp_test_projects.txt"
-    $tempReport = Join-Path $storagePath "reports\__temp_test_context.md"
-
-    try {
-        # 1. Clean up stale test files if any
-        if (Test-Path $tempProjDir) { Remove-Item $tempProjDir -Recurse -Force }
-        if (Test-Path $tempProjTxt) { Remove-Item $tempProjTxt -Force }
-        if (Test-Path $tempReport) { Remove-Item $tempReport -Force }
-
-        # 2. Setup mock git project
-        New-Item -ItemType Directory -Path $tempProjDir | Out-Null
-        Push-Location $tempProjDir
-        
-        $gitExists = Get-Command git -ErrorAction SilentlyContinue
-        if ($gitExists) {
-            & git init | Out-Null
-            & git config user.name "Tester"
-            & git config user.email "tester@example.com"
-            [System.IO.File]::WriteAllText((Join-Path $tempProjDir "test.txt"), "initial content", [System.Text.Encoding]::UTF8)
-            & git add test.txt
-            & git commit -m "initial commit" | Out-Null
-            # modify file to create diff
-            [System.IO.File]::WriteAllText((Join-Path $tempProjDir "test.txt"), "modified content", [System.Text.Encoding]::UTF8)
-        } else {
-            # Non-git mock
-            [System.IO.File]::WriteAllText((Join-Path $tempProjDir "test.txt"), "mock content", [System.Text.Encoding]::UTF8)
-        }
-        Pop-Location
-
-        # 3. Create mock projects.txt referencing mock project
-        [System.IO.File]::WriteAllText($tempProjTxt, $tempProjDir, [System.Text.Encoding]::UTF8)
-
-        # 4. Save original projects.txt and reports path pointers for testing execution context
-        $realProjectsFile = Join-Path $repoRoot "config\projects.txt"
-        $realReportFile = Join-Path $storagePath "reports\current_context.md"
-        $projectsBackup = $null
-        
-        if (Test-Path $realProjectsFile) {
-            $projectsBackup = [System.IO.File]::ReadAllText($realProjectsFile, [System.Text.Encoding]::UTF8)
-        }
-        [System.IO.File]::WriteAllText($realProjectsFile, $tempProjDir, [System.Text.Encoding]::UTF8)
-
-        # Execute
-        & $MyInvocation.MyCommand.Path
-        
-        # Asserts on current_context.md
-        if (!(Test-Path $realReportFile)) {
-            throw "Self-Test Failed: Output report file not created."
-        }
-        
-        $outputReport = [System.IO.File]::ReadAllText($realReportFile, [System.Text.Encoding]::UTF8)
-        if ($outputReport -notmatch "Project: .*__temp_test_git_proj") {
-            throw "Self-Test Failed: Output report does not contain temp project path."
-        }
-        
-        # Restore projects.txt
-        if ($projectsBackup -ne $null) {
-            [System.IO.File]::WriteAllText($realProjectsFile, $projectsBackup, [System.Text.Encoding]::UTF8)
-        } else {
-            if (Test-Path $realProjectsFile) { Remove-Item $realProjectsFile -Force }
-        }
-
-        Write-Host "[Self-Test] Detect-ActiveWork.ps1 passed successfully!"
-        exit 0
-    }
-    catch {
-        Write-Warning "[Self-Test] Detect-ActiveWork.ps1 failed: $_"
-        exit 1
-    }
-    finally {
-        # Restore location if we got stuck
-        if ($PWD.Path -eq $tempProjDir) { Pop-Location }
-        if (Test-Path $tempProjDir) { Remove-Item $tempProjDir -Recurse -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $tempProjTxt) { Remove-Item $tempProjTxt -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $tempReport) { Remove-Item $tempReport -Force -ErrorAction SilentlyContinue }
-    }
-}
 
 $projectsFile = Join-Path $repoRoot "config\projects.txt"
 $reportFile = Join-Path $storagePath "reports\current_context.md"
@@ -115,7 +35,7 @@ $reportContent = "# Current Active Work Context`n`nGenerated at $(Get-Date -Form
 
 foreach ($proj in $projects) {
     if (!(Test-Path $proj)) {
-        $reportContent += "## ?좑툘 Project: $proj (Path Not Found)`n`n"
+        $reportContent += "## ?醫묓닔 Project: $proj (Path Not Found)`n`n"
         continue
     }
 
@@ -123,20 +43,20 @@ foreach ($proj in $projects) {
         Push-Location $proj
     }
     catch {
-        $reportContent += "## ?좑툘 Project: $proj (Failed to enter directory)`n`n"
+        $reportContent += "## ?醫묓닔 Project: $proj (Failed to enter directory)`n`n"
         continue
     }
 
     $gitExists = Get-Command git -ErrorAction SilentlyContinue
     if (!$gitExists) {
-        $reportContent += "## ?뱚 Project: $proj`n*Git environment not found in path.*`n`n"
+        $reportContent += "## ?諭?Project: $proj`n*Git environment not found in path.*`n`n"
         Pop-Location
         continue
     }
 
     $isGit = (Test-Path ".git") -or (git rev-parse --is-inside-work-tree 2>$null)
     
-    $reportContent += "## ?뱚 Project: $proj`n"
+    $reportContent += "## ?諭?Project: $proj`n"
 
     if (!$isGit) {
         $reportContent += "*Not a Git repository.*`n`n"
@@ -178,18 +98,18 @@ if (!(Test-Path (Split-Path $reportFile))) {
         New-Item -ItemType Directory -Force -Path (Split-Path $reportFile) | Out-Null
     }
     catch {
-        Write-Warning "Failed to create directory for report file: $_"
+        throw "Failed to create directory for report file: $_"
     }
 }
 
 try {
-    [System.IO.File]::WriteAllText($reportFile, $reportContent, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($reportFile, $reportContent, $utf8NoBom)
 }
 catch {
-    Write-Warning "Failed to write report file to ${reportFile}: $_"
+    throw "Failed to write report file to ${reportFile}: $_"
 }
 
-# [?좏겙 ?뚮え??痢≪젙]
+# [?醫뤾쿃 ???걟??筌β돦??
 $trackScript = Join-Path $repoRoot "scripts\metrics\Track-Tokens.ps1"
 if (Test-Path $trackScript) {
     try {
@@ -200,7 +120,7 @@ if (Test-Path $trackScript) {
     }
 }
 
-# [?ㅼ틪 ?곹깭 ???諛?蹂寃?媛먯?]
+# [??쇳떔 ?怨밴묶 ????獄?癰궰野?揶쏅Ŋ?]
 $compareScript = Join-Path $repoRoot "scripts\scan\Compare-ScanState.ps1"
 if (Test-Path $compareScript) {
     try {

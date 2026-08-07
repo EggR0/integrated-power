@@ -1,4 +1,4 @@
-﻿param(
+param(
     [switch]$UseCalendar,
     [switch]$RunCodex,
     [string]$JobId = "",
@@ -69,7 +69,7 @@ $basePrompt = if (Test-Path -LiteralPath $basePromptPath) {
     "# AI Work Window Dispatch`r`n`r`nSelect the highest-value next coding task from the available runtime context and execute it within the requested constraints."
 }
 
-$queuePath = Join-Path $storagePath "ai-work-queue.md"
+$queuePath = Join-Path $storagePath "reports\ai-work-queue.md"
 $contextPath = Join-Path $storagePath "reports\current_context.md"
 $todosPath = Join-Path $storagePath "reports\current_todos.md"
 

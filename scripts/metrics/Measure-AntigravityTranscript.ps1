@@ -127,7 +127,7 @@ if (![string]::IsNullOrWhiteSpace($outputDir)) {
 }
 
 if ($rows.Count -gt 0) {
-    $rows | Sort-Object LastCreatedAt -Descending | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath $OutputCsv
+    $rows | Sort-Object LastCreatedAt -Descending | Export-CsvUtf8NoBom -LiteralPath $OutputCsv
 }
 
 Write-Host "Wrote $($rows.Count) Antigravity transcript estimate row(s) to $OutputCsv"
