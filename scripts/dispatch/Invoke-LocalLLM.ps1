@@ -232,7 +232,15 @@ $ollamaUrl = $ollamaUrl.TrimEnd("/")
 $serverRunning = $false
 
 try {
-    $response = Invoke-RestMethod -Uri "$ollamaUrl/api/version" -Method Get -TimeoutSec 2 -ErrorAction Stop
+    $restArgs = @{
+        Uri = "$ollamaUrl/api/version"
+        Method = "Get"
+        ErrorAction = "Stop"
+    }
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        $restArgs["TimeoutSec"] = 2
+    }
+    $response = Invoke-RestMethod @restArgs
     if ($response.version) {
         $serverRunning = $true
     }

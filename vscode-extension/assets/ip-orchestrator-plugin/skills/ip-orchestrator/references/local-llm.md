@@ -3,7 +3,7 @@
 **Workspace selector**: `scripts/dispatch/Select-LocalLLMModel.ps1`
 **Workspace Ollama script**: `scripts/dispatch/Invoke-LocalLLM.ps1`
 **Workspace vLLM script**: `scripts/dispatch/Invoke-vLLMJob.ps1`
-**Bundled fallback scripts**: this skill's `scripts/` directory contains the same helper scripts for workspaces that do not vendor them.
+**Bundled fallback scripts**: this skill's `scripts/` directory (`~/.gemini/config/plugins/ip-orchestrator-plugin/skills/ip-orchestrator/scripts/`) contains the same helper scripts for workspaces that do not vendor them.
 
 ## Purpose
 Use a measured local model for token-efficient preprocessing, summarization, extraction, and low-risk draft generation.
@@ -31,8 +31,8 @@ Do not call an arbitrary local model. Before a local LLM call, select a model wi
 
 Use the selected model and pass the selector reason into the invocation with `-SelectedBy selector -SelectionReason "<reason>"`. The selector reads:
 
-- `config/local_llm_model_registry.csv` for web-seeded prior scores by task type.
-- `reports/local_llm_metrics.csv` for local measured success rate, elapsed time, and tokens/second.
+- `this plugin's references/local_llm_model_registry.csv` for web-seeded prior scores by task type.
+- Workspace state `reports/local_llm_metrics.csv` (`%LOCALAPPDATA%\EggR\state\workspaces\<id>\reports\`) for local measured success rate, elapsed time, and tokens/second.
 - Ollama `/api/tags` to prefer models that are actually installed when `-InstalledOnly` is used.
 
 It also reads `LocalLlm.HardwarePolicy` from Integrated Power settings and detects NVIDIA
@@ -69,9 +69,9 @@ Valid `-TaskType` values are `summarization`, `extraction`, `coding`, `reasoning
 
 ## Output
 
-- The final local LLM response is written to `-OutputFile` or a timestamped report under Integrated Power workspace state `reports/`.
-- Token metrics are appended to Integrated Power workspace state `reports/token_usage.csv` when available.
-- Task metrics are appended to Integrated Power workspace state `reports/local_llm_metrics.csv`.
+- The final local LLM response is written to `-OutputFile` or a timestamped report under Integrated Power workspace state `reports/` (`%LOCALAPPDATA%\EggR\state\workspaces\<id>\reports\`).
+- Token metrics are appended to Integrated Power workspace state `reports/token_usage.csv` (`%LOCALAPPDATA%\EggR\state\workspaces\<id>\reports\`) when available.
+- Task metrics are appended to Integrated Power workspace state `reports/local_llm_metrics.csv` (`%LOCALAPPDATA%\EggR\state\workspaces\<id>\reports\`).
 - The task metrics CSV records `TaskType`, `Success`, `ActualElapsedSeconds`, `OutputChars`, `TokensPerSecond`, `SelectedBy`, `SelectionReason`, and `ErrorMessage`.
 - `SuccessRegex` is only an automatic shape check. If semantic review finds the output wrong, relabel the row with `scripts/metrics/Update-LocalLLMMetric.ps1` in this workspace or the bundled `scripts/Update-LocalLLMMetric.ps1` so future routing uses real success data instead of superficial keyword matches.
 

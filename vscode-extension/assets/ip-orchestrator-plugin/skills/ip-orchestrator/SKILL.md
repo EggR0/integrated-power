@@ -70,7 +70,7 @@ Follow these explicit rules:
 4. **Execution Time and Token Feedback Loop**:
    - When the background script completes, observe the actual elapsed time.
    - Retrieve usage from the provider response or JSON log when available. Label the evidence as `provider_reported`, `calculated`, `estimated`, or `unavailable`; never silently substitute an estimate for actual usage.
-   - Store metrics below the Integrated Power workspace state `reports/` directory. The bundled path module resolves it without a repository marker file.
+   - Store metrics below the Integrated Power workspace state `reports/` directory (absolute path is usually `%LOCALAPPDATA%\EggR\state\workspaces\<workspace-id>\reports\`). The bundled path module resolves it without a repository marker file.
    - Compare the pre-start point estimate with provider-reported actual usage. Calibrate by provider, model, task class, route, and agent surface; do not claim an improvement unless the task also passed its quality checks.
    - Report a percentage only when both the numerator and a documented capacity/budget denominator are known.
    - Follow the repository's `docs/reference/eggr-telemetry.ko.md` and `config/eggr.telemetry.schema.json` when they are present.

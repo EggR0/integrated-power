@@ -5,7 +5,7 @@ Choose the lowest-cost reliable execution route before spending large cloud cont
 
 ## Default Policy
 
-Use `config/ai_routing_policy.json` when it exists. The default stance is **local-first**:
+Use `this plugin's references/ai_routing_policy.json` when it exists. The default stance is **local-first**:
 
 - If the computer, GPU, and local endpoint are healthy, prefer local LLM for most delegatable summarization, extraction, Korean/text preprocessing, long-context compression, and low-risk planning.
 - Keep Codex and Antigravity for high-performance implementation, difficult debugging, architectural judgment, final review, and work delegation decisions.
@@ -48,7 +48,7 @@ Use `config/ai_routing_policy.json` when it exists. The default stance is **loca
 - If Codex Debate fails, times out, or returns an inconclusive result, fall back to Main Agent Direct for a narrow next step or ask Codex Job only when the implementation boundary is clear.
 - If Codex quota should be conserved, use local LLM for preprocessing where practical.
 - Keep file contents out of prompts when paths are sufficient.
-- Always leave an artifact under Integrated Power workspace state `reports/` or `discussions/`, or summarize the direct local change.
+- Always leave an artifact under Integrated Power workspace state `reports/` or `discussions/` (`%LOCALAPPDATA%\EggR\state\workspaces\<id>\...`), or summarize the direct local change.
 - Record the chosen route and reason in the artifact whenever delegation is used. Include why cheaper local preprocessing was or was not used.
 
 ## Token Efficiency Checks

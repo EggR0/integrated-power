@@ -11,5 +11,5 @@ orchestrator settings. Treat local-model selection as hardware- and
 backend-dependent, and distinguish quantized weight formats from native FP8/FP4
 compute requirements.
 
-Do not create or modify the user's global `GEMINI.md`. This plugin and its skill
+Do not create or modify the user's global `GEMINI.md` or `AGENTS.md`. This plugin and its skill
 are the EggR integration boundary.

@@ -115,7 +115,14 @@ function Get-NvidiaHardware {
 function Get-OllamaModels {
     param([string]$Endpoint)
     try {
-        $response = Invoke-RestMethod -Uri "$($Endpoint.TrimEnd('/'))/api/tags" -Method Get -TimeoutSec 3
+        $restArgs = @{
+            Uri = "$($Endpoint.TrimEnd('/'))/api/tags"
+            Method = "Get"
+        }
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $restArgs["TimeoutSec"] = 3
+        }
+        $response = Invoke-RestMethod @restArgs
         return @($response.models | ForEach-Object {
             [pscustomobject]@{
                 Name = [string]$_.name
