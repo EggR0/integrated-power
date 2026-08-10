@@ -221,17 +221,46 @@ button:focus-visible {
 .token-section summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 8px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border), var(--vscode-focusBorder) 30%);
+  border-radius: 6px;
   color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--vscode-sideBar-background), var(--vscode-focusBorder) 8%);
   font-size: 13px;
   font-weight: 650;
   cursor: pointer;
   user-select: none;
 }
 
+.token-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.token-section summary::before {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder), transparent 35%);
+  border-radius: 4px;
+  color: var(--vscode-focusBorder);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.token-section[open] summary::before {
+  content: "-";
+}
+
 .token-section summary span {
+  margin-left: auto;
   color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-descriptionForeground) 22%);
   font-size: 12px;
   font-weight: 500;
@@ -281,9 +310,7 @@ button:focus-visible {
 
 .capacity-metric-row {
   display: grid;
-  grid-template-columns: minmax(96px, 0.24fr) minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -294,12 +321,6 @@ button:focus-visible {
   font-weight: 620;
   line-height: 1.35;
   overflow-wrap: anywhere;
-}
-
-.capacity-metric-body {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
 }
 
 .progress-track {
@@ -335,9 +356,9 @@ button:focus-visible {
 
 .metric-reset-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  gap: 10px;
+  align-items: baseline;
   margin-top: 0;
 }
 
@@ -353,6 +374,7 @@ button:focus-visible {
   text-align: right;
 }
 
+.capacity-metric-label,
 .reset-left,
 .reset-right {
   min-width: 0;
@@ -696,9 +718,14 @@ button:focus-visible {
     gap: 10px;
   }
 
-  .capacity-metric-row {
-    grid-template-columns: minmax(82px, 0.3fr) minmax(0, 1fr);
-    gap: 10px;
+  .metric-reset-row {
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 6px 10px;
+  }
+
+  .reset-right {
+    grid-column: 2;
+    text-align: left;
   }
 
   .capacity-metric-label,

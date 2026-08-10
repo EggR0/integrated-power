@@ -478,15 +478,13 @@ function renderCapacityGroup(title, metrics) {
 function renderCapacityMetric(metric) {
   return `
     <div class="capacity-metric-row token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}">
-      <span class="capacity-metric-label">${escapeHtml(metric.label)}</span>
-      <div class="capacity-metric-body">
-        <div class="progress-track" aria-label="${escapeHtml(metric.ariaLabel)} usage">
-          <div class="progress-fill" data-progress="${escapeAttr(metric.percentage.toFixed(1))}"></div>
-        </div>
-        <div class="metric-reset-row">
-          <span class="reset-left">${escapeHtml(metric.subtext)}</span>
-          <span class="reset-right">${metric.refreshText ? escapeHtml(metric.refreshText) : ""}</span>
-        </div>
+      <div class="metric-reset-row">
+        <span class="capacity-metric-label">${escapeHtml(metric.label)}</span>
+        <span class="reset-left">${escapeHtml(metric.subtext)}</span>
+        <span class="reset-right">${metric.refreshText ? escapeHtml(metric.refreshText) : ""}</span>
+      </div>
+      <div class="progress-track" aria-label="${escapeHtml(metric.ariaLabel)} usage">
+        <div class="progress-fill" data-progress="${escapeAttr(metric.percentage.toFixed(1))}"></div>
       </div>
     </div>
   `;

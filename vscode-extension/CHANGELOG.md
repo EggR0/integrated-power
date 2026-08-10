@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.11] - 2026-08-10
+
+### Changed
+
+- Reworked capacity rows so labels, values, and reset times share one compact
+  line and progress bars use the full row width, removing the large empty label
+  column beside `5Hours`, `Weekly`, GPU utilization, and VRAM usage.
+- Restyled the Antigravity IDE, Codex, and Local LLM collapsible section
+  headers as visible tab controls with explicit expand/collapse markers.
+
 ## [0.7.10] - 2026-08-10
 
 ### Changed
