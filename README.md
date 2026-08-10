@@ -36,7 +36,7 @@ Private Knowledge는 같은 페이지에서 보이지만 각각 명시적으로 
 
 ```powershell
 .\distribution\win11\New-EggRWin11Release.ps1 `
-  -VsixPath .\vscode-extension\integrated-power-0.7.4.vsix `
+  -VsixPath .\vscode-extension\integrated-power-0.7.7.vsix `
   -KnowledgeBootstrapRoot ..\environment-bootstrap `
   -OutputDirectory .\release
 ```
