@@ -202,8 +202,11 @@ function normalizeTokenStatus(status) {
 }
 
 function render() {
+  const isRefreshing = dashboardState.isLoading || dashboardState.isTokenLoading;
+  const showingPreviousData = isRefreshing && hasDashboardContent(dashboardState);
+
   root.innerHTML = `
-    <main class="dashboard-shell ${dashboardState.isLoading ? "is-loading" : ""}">
+    <main class="dashboard-shell ${dashboardState.isLoading ? "is-loading" : ""} ${isRefreshing ? "is-refreshing" : ""}">
       <header class="dashboard-header">
         <div>
           <p class="eyebrow">AI Workflow</p>
@@ -212,15 +215,12 @@ function render() {
             <span>Updated ${escapeHtml(formatDateTime(dashboardState.updatedAt))}</span>
             ${dashboardState.runsFile ? `<span>${escapeHtml(dashboardState.runsFile)}</span>` : ""}
             ${dashboardState.isStale ? `<span class="stale-badge">Stale</span>` : ""}
+            ${showingPreviousData ? `<span class="refreshing-badge">Refreshing, showing previous data</span>` : ""}
           </div>
-        </div>
-        <div class="header-actions">
-          <button type="button" data-command="refresh">Refresh</button>
-          <button type="button" data-command="openRunsFile">Open Runs</button>
         </div>
       </header>
 
-      ${dashboardState.isLoading ? renderLoadingStrip() : ""}
+      ${dashboardState.isLoading ? renderLoadingStrip(showingPreviousData) : ""}
 
       <section class="dashboard-grid">
         ${renderTokenStatus(dashboardState.tokenStatus)}
@@ -272,11 +272,23 @@ function render() {
   });
 }
 
-function renderLoadingStrip() {
+function hasDashboardContent(state) {
+  return Boolean(
+    state.tokenStatus ||
+      state.runs?.length ||
+      state.activeRuns?.length ||
+      state.artifacts?.length ||
+      state.queueContent ||
+      state.metricsCsv ||
+      state.localLlmMetrics?.length
+  );
+}
+
+function renderLoadingStrip(showingPreviousData) {
   return `
     <div class="loading-strip" role="status" aria-live="polite">
       <span class="spinner"></span>
-      <span>Refreshing dashboard</span>
+      <span>${showingPreviousData ? "Refreshing dashboard; showing previous data" : "Refreshing dashboard"}</span>
     </div>
   `;
 }
@@ -373,15 +385,7 @@ function renderTokenStatus(tokenStatus) {
           <p class="eyebrow">Capacity</p>
           <h2>Token Status</h2>
         </div>
-        ${dashboardState.isTokenLoading
-          ? `<span class="status-pill status-warning">Loading</span>`
-          : (() => {
-              const visibleStatuses = [];
-              if (dashboardState.viewConfig?.showCodex !== false && status.codexStatus) visibleStatuses.push(status.codexStatus);
-              if (dashboardState.viewConfig?.showLocalLlm !== false && status.llmStatus) visibleStatuses.push(status.llmStatus);
-              const pillStatus = visibleStatuses[0] || "Unknown";
-              return `<span class="status-pill ${statusClass(pillStatus)}">${escapeHtml(pillStatus)}</span>`;
-            })()}
+        ${renderTokenPanelStatus(status)}
       </div>
 
       ${sections.join('\n      <hr class="section-divider" />\n')}
@@ -401,6 +405,16 @@ function renderTokenStatus(tokenStatus) {
       }
     </article>
   `;
+}
+
+function renderTokenPanelStatus(status) {
+  const visibleStatuses = [];
+  if (dashboardState.viewConfig?.showCodex !== false && status.codexStatus) visibleStatuses.push(status.codexStatus);
+  if (dashboardState.viewConfig?.showLocalLlm !== false && status.llmStatus) visibleStatuses.push(status.llmStatus);
+  const pillStatus = visibleStatuses[0] || "Unknown";
+  const refreshingClass = dashboardState.isTokenLoading ? " status-refreshing" : "";
+
+  return `<span class="status-pill ${statusClass(pillStatus)}${refreshingClass}">${escapeHtml(pillStatus)}</span>`;
 }
 
 function renderTokenSkeleton() {
@@ -653,19 +667,40 @@ function renderMetricsPanel(csv) {
 }
 
 function renderErrorsPanel(parseErrors, systemErrors) {
-  const combined = [...(systemErrors || []), ...(parseErrors || [])];
+  const safeSystemErrors = systemErrors || [];
+  const safeParseErrors = parseErrors || [];
+  const combined = [...safeSystemErrors, ...safeParseErrors];
   return `
     <article class="panel list-panel errors-panel">
       <div class="panel-heading">
-        <h2>Errors</h2>
+        <div>
+          <h2>Errors</h2>
+          <p class="panel-caption">Dashboard telemetry, quota collection, run failures, and run-log parsing.</p>
+        </div>
         <span class="count-badge">${combined.length}</span>
       </div>
       ${
         combined.length
-          ? `<ul class="error-list">${combined.slice(0, 8).map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>`
+          ? `
+            ${renderErrorGroup("Dashboard / quota / run failures", safeSystemErrors)}
+            ${renderErrorGroup("Run log parse errors", safeParseErrors)}
+          `
           : `<p class="empty-state">No errors.</p>`
       }
     </article>
+  `;
+}
+
+function renderErrorGroup(title, errors) {
+  if (!errors.length) {
+    return "";
+  }
+
+  return `
+    <section class="error-group">
+      <h3>${escapeHtml(title)}</h3>
+      <ul class="error-list">${errors.slice(0, 8).map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>
+    </section>
   `;
 }
 
@@ -727,7 +762,7 @@ function stringArray(value) {
 }
 
 function normalizeTaskWeight(value) {
-  return ["heavy", "light", "restricted", "unknown"].includes(value) ? value : "unknown";
+  return ["normal", "degraded", "restricted", "unknown", "heavy", "light"].includes(value) ? value : "unknown";
 }
 
 function toFiniteNumber(value) {

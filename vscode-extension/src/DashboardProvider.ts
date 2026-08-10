@@ -49,8 +49,8 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
   }
 
-  public refresh(): Promise<void> {
-    return this.controller.refresh();
+  public refresh(force: boolean = false): Promise<void> {
+    return this.controller.refresh(force);
   }
 
   public openRunsFile(): Promise<void> {
