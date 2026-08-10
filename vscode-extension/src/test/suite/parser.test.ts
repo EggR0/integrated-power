@@ -206,15 +206,23 @@ suite('Parser and Store Test Suite', () => {
     assert.ok(webview.includes('dashboardState.isTokenLoading = true'));
     assert.ok(!webview.includes('<button type="button" data-command="refresh">Refresh</button>'));
     assert.ok(!webview.includes('<button type="button" data-command="openRunsFile">Open Runs</button>'));
+    assert.ok(webview.includes('buildTokenMetric("5Hours"'));
+    assert.ok(webview.includes('buildTokenMetric("Weekly"'));
+    assert.ok(!webview.includes('buildTokenMetric("(5Hours)"'));
+    assert.ok(!webview.includes('buildTokenMetric("(Weekly)"'));
     assert.ok(webview.includes('Refreshing, showing previous data'));
     assert.ok(!webview.includes('data-command="refresh" ${dashboardState.isLoading ? "disabled" : ""}'));
 
     const styles = fs.readFileSync(stylesPath, 'utf8');
     assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
     assert.match(styles, /body\s*\{[\s\S]*min-width:\s*340px;/);
+    assert.match(styles, /\.capacity-groups\s*\{[\s\S]*gap:\s*12px;/);
 
     const extensionSource = fs.readFileSync(path.join(extensionRoot, 'src', 'extension.ts'), 'utf8');
     assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));
+    const dashboardControllerSource = fs.readFileSync(path.join(extensionRoot, 'src', 'DashboardController.ts'), 'utf8');
+    assert.ok(dashboardControllerSource.includes('hasUsableTokenStatus(this.state.tokenStatus)'));
+    assert.ok(dashboardControllerSource.includes('keep the previous visible data while refresh continues'));
 
     const debateReference = fs.readFileSync(debateReferencePath, 'utf8');
     assert.ok(debateReference.includes("Integrated Power workspace state `discussions/`"));

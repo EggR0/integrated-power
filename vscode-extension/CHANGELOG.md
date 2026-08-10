@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.9] - 2026-08-10
+
+### Changed
+
+- Reduced vertical spacing in token capacity rows, labels, progress bars, and
+  supporting text so model usage groups take substantially less height.
+- Removed parentheses from the `5Hours` and `Weekly` capacity labels.
+
+### Fixed
+
+- Preserved the previous visible token data during refresh when the newly read
+  token report is empty or still being refreshed, preventing the panel from
+  falling back to a loading-only view.
+
 ## [0.7.8] - 2026-08-10
 
 ### Changed

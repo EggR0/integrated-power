@@ -188,7 +188,7 @@ button:focus-visible {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .panel-heading h2 {
@@ -206,7 +206,7 @@ button:focus-visible {
 }
 
 .token-panel {
-  padding: 16px;
+  padding: 12px;
   border-color: var(--vscode-focusBorder);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 70%),
@@ -215,7 +215,7 @@ button:focus-visible {
 
 .token-section {
   display: grid;
-  gap: 12px;
+  gap: 6px;
 }
 
 .token-section summary {
@@ -223,7 +223,7 @@ button:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   color: var(--vscode-foreground);
   font-size: 13px;
   font-weight: 650;
@@ -244,31 +244,31 @@ button:focus-visible {
 
 .section-divider {
   height: 1px;
-  margin: 14px 0;
+  margin: 9px 0;
   border: 0;
   background: color-mix(in srgb, var(--vscode-panel-border), transparent 45%);
 }
 
 .token-metric {
   display: grid;
-  gap: 7px;
+  gap: 4px;
 }
 
 .capacity-groups {
   display: grid;
-  gap: 22px;
+  gap: 12px;
 }
 
 .capacity-group {
   display: grid;
-  gap: 12px;
+  gap: 6px;
   min-width: 0;
 }
 
 .capacity-group h3 {
   margin: 0;
   color: var(--vscode-foreground);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 680;
   line-height: 1.3;
   overflow-wrap: anywhere;
@@ -276,13 +276,13 @@ button:focus-visible {
 
 .capacity-row-list {
   display: grid;
-  gap: 12px;
+  gap: 6px;
 }
 
 .capacity-metric-row {
   display: grid;
   grid-template-columns: minmax(96px, 0.24fr) minmax(0, 1fr);
-  gap: 14px;
+  gap: 10px;
   align-items: center;
   min-width: 0;
 }
@@ -298,13 +298,13 @@ button:focus-visible {
 
 .capacity-metric-body {
   display: grid;
-  gap: 7px;
+  gap: 4px;
   min-width: 0;
 }
 
 .progress-track {
   width: 100%;
-  height: 9px;
+  height: 7px;
   overflow: hidden;
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: 999px;
@@ -338,7 +338,7 @@ button:focus-visible {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
   align-items: start;
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .reset-left,
@@ -346,7 +346,7 @@ button:focus-visible {
   color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-descriptionForeground) 24%);
   font-size: 12px;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.2;
 }
 
 .reset-right {
@@ -364,7 +364,7 @@ button:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 9px;
   color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-descriptionForeground) 24%);
   font-size: 12px;
 }
@@ -416,8 +416,8 @@ button:focus-visible {
 .activity-list {
   display: grid;
   gap: 6px;
-  margin: 12px 0 0;
-  padding: 10px 0 0 16px;
+  margin: 8px 0 0;
+  padding: 8px 0 0 16px;
   border-top: 1px solid var(--vscode-panel-border);
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
@@ -693,7 +693,7 @@ button:focus-visible {
   }
 
   .capacity-groups {
-    gap: 20px;
+    gap: 10px;
   }
 
   .capacity-metric-row {

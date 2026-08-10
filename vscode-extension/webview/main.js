@@ -299,12 +299,12 @@ function renderTokenStatus(tokenStatus) {
   }
 
   const status = tokenStatus || {};
-  const antigravity = buildTokenMetric("(5Hours)", status, "antigravity", "Gemini 3.1 Pro (5Hours)");
-  const antigravityWeekly = buildTokenMetric("(Weekly)", status, "antigravityWeekly", "Gemini 3.1 Pro (Weekly)");
-  const opus = buildTokenMetric("(5Hours)", status, "opus", "Opus 4.6 Thinking (5Hours)");
-  const opusWeekly = buildTokenMetric("(Weekly)", status, "opusWeekly", "Opus 4.6 Thinking (Weekly)");
-  const codex = buildTokenMetric("(5Hours)", status, "codex", "Codex (5Hours)");
-  const codexWeekly = buildTokenMetric("(Weekly)", status, "codexWeekly", "Codex (Weekly)");
+  const antigravity = buildTokenMetric("5Hours", status, "antigravity", "Gemini 3.1 Pro 5Hours");
+  const antigravityWeekly = buildTokenMetric("Weekly", status, "antigravityWeekly", "Gemini 3.1 Pro Weekly");
+  const opus = buildTokenMetric("5Hours", status, "opus", "Opus 4.6 Thinking 5Hours");
+  const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Opus 4.6 Thinking Weekly");
+  const codex = buildTokenMetric("5Hours", status, "codex", "Codex 5Hours");
+  const codexWeekly = buildTokenMetric("Weekly", status, "codexWeekly", "Codex Weekly");
   const localComputeStatus = status.localComputeStatus || {};
   const localProgramName = stringValue(localComputeStatus.programName) || "Offline";
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);

@@ -265,19 +265,19 @@ export class DashboardController implements vscode.Disposable {
     }
 
     let resolvedTokenStatus: TokenStatus | undefined = tokenStatus;
-    if (tokenStatus && this.state.tokenStatus && (this.state.tokenStatus.codexMax > 0 || this.state.tokenStatus.antigravityMax > 0)) {
-      // If the newly fetched tokenStatus is empty (0-filled), but we already have valid data, keep the valid data!
-      if (tokenStatus.codexMax === 0 && tokenStatus.antigravityMax === 0 && tokenStatus.opusMax === 0) {
+    const previousTokenStatus = this.state.tokenStatus;
+    if (tokenStatus && previousTokenStatus && this.hasUsableTokenStatus(previousTokenStatus)) {
+      // If the newly fetched tokenStatus is empty, keep the previous visible data while refresh continues.
+      if (!this.hasUsableTokenStatus(tokenStatus)) {
         resolvedTokenStatus = {
-          ...this.state.tokenStatus,
+          ...previousTokenStatus,
           activity: tokenStatus.activity,
         };
       }
     }
 
-    // Instead of falling back to a 0-filled object, let it be undefined if it has no data.
-    // This allows the webview to show the Loading Skeleton.
-    if (resolvedTokenStatus && resolvedTokenStatus.codexMax === 0 && resolvedTokenStatus.antigravityMax === 0 && resolvedTokenStatus.opusMax === 0) {
+    // On first load, show the skeleton only when there is truly no prior or newly fetched quota data.
+    if (resolvedTokenStatus && !this.hasUsableTokenStatus(resolvedTokenStatus)) {
       resolvedTokenStatus = undefined;
     }
 
@@ -321,7 +321,12 @@ export class DashboardController implements vscode.Disposable {
         return;
       }
 
-      const safeTokenStatus: TokenStatus = tokenStatus || {
+      const previousTokenStatus = this.state.tokenStatus;
+      const safeTokenStatus: TokenStatus | undefined = this.hasUsableTokenStatus(tokenStatus)
+        ? tokenStatus
+        : previousTokenStatus && this.hasUsableTokenStatus(previousTokenStatus)
+          ? previousTokenStatus
+          : tokenStatus || {
           antigravityTokensLeft: 0,
           antigravityMax: 0,
           antigravityWeeklyTokensLeft: 0,
@@ -338,7 +343,7 @@ export class DashboardController implements vscode.Disposable {
           llmStatus: "offline",
           recommendedTaskWeight: "unknown",
           activity: []
-      };
+        };
 
       this.state = {
         ...this.state,
@@ -363,6 +368,32 @@ export class DashboardController implements vscode.Disposable {
       this.postState();
       this.postError(message);
     }
+  }
+
+  private hasUsableTokenStatus(status: TokenStatus | undefined): boolean {
+    if (!status) {
+      return false;
+    }
+
+    return [
+      status.antigravityMax,
+      status.opusMax,
+      status.codexMax,
+      status.antigravityTokensLeft,
+      status.opusTokensLeft,
+      status.codexTokensLeft,
+      status.antigravityEstimatedAbsolute,
+      status.opusEstimatedAbsolute,
+      status.codexEstimatedAbsolute,
+      status.opusWeeklyEstimatedAbsolute,
+      status.codexWeeklyEstimatedAbsolute,
+      status.antigravityPercentage,
+      status.antigravityWeeklyPercentage,
+      status.opusPercentage,
+      status.opusWeeklyPercentage,
+      status.codexPercentage,
+      status.codexWeeklyPercentage,
+    ].some((value) => typeof value === "number" && Number.isFinite(value) && value > 0);
   }
 
   private async openArtifact(artifactId: string): Promise<void> {
