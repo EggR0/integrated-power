@@ -204,11 +204,17 @@ suite('Parser and Store Test Suite', () => {
     const webview = fs.readFileSync(webviewPath, 'utf8');
     assert.ok(!webview.includes('tokenStatus = emptyTokenStatus()'));
     assert.ok(webview.includes('dashboardState.isTokenLoading = true'));
-    assert.ok(webview.includes('<button type="button" data-command="refresh">Refresh</button>'));
+    assert.ok(!webview.includes('<button type="button" data-command="refresh">Refresh</button>'));
+    assert.ok(!webview.includes('<button type="button" data-command="openRunsFile">Open Runs</button>'));
+    assert.ok(webview.includes('Refreshing, showing previous data'));
     assert.ok(!webview.includes('data-command="refresh" ${dashboardState.isLoading ? "disabled" : ""}'));
 
     const styles = fs.readFileSync(stylesPath, 'utf8');
     assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
+    assert.match(styles, /body\s*\{[\s\S]*min-width:\s*340px;/);
+
+    const extensionSource = fs.readFileSync(path.join(extensionRoot, 'src', 'extension.ts'), 'utf8');
+    assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));
 
     const debateReference = fs.readFileSync(debateReferencePath, 'utf8');
     assert.ok(debateReference.includes("Integrated Power workspace state `discussions/`"));

@@ -108,7 +108,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider("integratedPower.agentRunsDashboard", provider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.commands.registerCommand("integratedPower.agentRuns.refresh", () => provider.refresh()),
+    vscode.commands.registerCommand("integratedPower.agentRuns.refresh", () => provider.refresh(true)),
     vscode.commands.registerCommand("integratedPower.agentRuns.openRunsFile", () => provider.openRunsFile()),
     vscode.commands.registerCommand(
       "integratedPower.agentRuns.configureViews",

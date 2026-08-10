@@ -29,6 +29,7 @@ $stateRoot = Join-Path $testRoot "state"
 $serverJob = $null
 $previousSettingsPath = $env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS
 $previousStateRoot = $env:INTEGRATED_POWER_STATE_ROOT
+$previousOllamaHost = $env:OLLAMA_HOST
 
 New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
 
@@ -150,6 +151,7 @@ try {
 
     $env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS = $settingsPath
     $env:INTEGRATED_POWER_STATE_ROOT = $stateRoot
+    Remove-Item Env:\OLLAMA_HOST -ErrorAction SilentlyContinue
 
     & $scriptPath `
         -PromptText "Return the mocked response without creating a prompt artifact." `
@@ -182,6 +184,12 @@ try {
 finally {
     $env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS = $previousSettingsPath
     $env:INTEGRATED_POWER_STATE_ROOT = $previousStateRoot
+    if ($null -ne $previousOllamaHost) {
+        $env:OLLAMA_HOST = $previousOllamaHost
+    }
+    else {
+        Remove-Item Env:\OLLAMA_HOST -ErrorAction SilentlyContinue
+    }
 
     if ($null -ne $serverJob) {
         if ($serverJob.State -eq "Running") {

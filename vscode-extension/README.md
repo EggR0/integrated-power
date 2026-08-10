@@ -1,5 +1,7 @@
 # Integrated Power
 
+현재 릴리스: `0.7.8`
+
 Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Windows 11에서
 에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고,
 Integrated Orchestrator와 사용자 소유 Private Git Knowledge를 이어 주는 설정

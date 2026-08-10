@@ -313,15 +313,20 @@ test("dashboard activation does not silently install or overwrite the EggR orche
   assert.ok(!setupSources.includes("InstallGlobalRules"));
 });
 
-test("webview preserves token status and keeps Refresh clickable", () => {
+test("webview preserves token status and removes duplicate header buttons", () => {
   const webview = readText("webview", "main.js");
   const styles = readText("webview", "styles.css");
+  const extensionSource = readText("src", "extension.ts");
 
   assert.ok(!webview.includes("tokenStatus = emptyTokenStatus()"));
   assert.ok(webview.includes("dashboardState.isTokenLoading = true"));
-  assert.ok(webview.includes('<button type="button" data-command="refresh">Refresh</button>'));
+  assert.ok(!webview.includes('<button type="button" data-command="refresh">Refresh</button>'));
+  assert.ok(!webview.includes('<button type="button" data-command="openRunsFile">Open Runs</button>'));
+  assert.ok(webview.includes("Refreshing, showing previous data"));
   assert.ok(!webview.includes('data-command="refresh" ${dashboardState.isLoading ? "disabled" : ""}'));
   assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
+  assert.match(styles, /body\s*\{[\s\S]*min-width:\s*340px;/);
+  assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));
 });
 
 test("debate documentation uses Integrated Power state paths", () => {

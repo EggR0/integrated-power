@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.7.8] - 2026-08-10
+
+### Changed
+
+- Unified the token capacity layout so each model shows its 5-hour and weekly
+  limits together in the same repeated structure.
+- Removed the large header Refresh and Open Runs buttons while preserving the
+  compact title-bar runs and refresh controls.
+- Kept the existing status pill value visible during token refresh instead of
+  replacing Idle with Loading.
+
+### Fixed
+
+- Added a refresh-in-progress notice when the dashboard is showing previous
+  data while new data is loading.
+- Tightened the dashboard responsive layout so the capacity panel no longer
+  collapses into a broken narrow blue border state.
+- Aligned the main dashboard refresh command and compact title-bar refresh
+  command so both request the same data refresh path.
+- Normalized `OLLAMA_HOST=0.0.0.0` to a localhost client endpoint and isolated
+  local LLM tests from machine-level Ollama environment variables.
+
 ## [0.7.7] - 2026-08-01
 
 ### Fixed

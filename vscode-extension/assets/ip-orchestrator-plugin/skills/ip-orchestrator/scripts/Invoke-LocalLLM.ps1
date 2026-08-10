@@ -241,6 +241,28 @@ function Write-LocalLlmMetric {
     Write-CsvRowWithRetry -Path $MetricsPath -Row $row
 }
 
+function Resolve-OllamaClientEndpoint {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Endpoint
+    )
+
+    $candidate = $Endpoint.Trim()
+    if ($candidate -notmatch "^[a-zA-Z][a-zA-Z0-9+.-]*://") {
+        $candidate = "http://$candidate"
+    }
+
+    $builder = [UriBuilder]::new([Uri]$candidate)
+    if ($builder.Host -eq "0.0.0.0" -or $builder.Host -eq "::" -or $builder.Host -eq "[::]") {
+        $builder.Host = "127.0.0.1"
+    }
+    if ($builder.Port -eq -1) {
+        $builder.Port = 11434
+    }
+
+    return $builder.Uri.AbsoluteUri.TrimEnd("/")
+}
+
 $artifactTarget = Resolve-IntegratedPowerArtifactTarget `
     -OutputFile $OutputFile `
     -RepoRoot $repoRoot `
@@ -295,7 +317,7 @@ if ($resolvedContextFiles.Count -gt 0) {
 }
 
 # Ensure Ollama is running
-$ollamaUrl = if (-not [string]::IsNullOrWhiteSpace($env:OLLAMA_HOST)) {
+$configuredOllamaUrl = if (-not [string]::IsNullOrWhiteSpace($env:OLLAMA_HOST)) {
     $env:OLLAMA_HOST
 } elseif (
     $orchestratorSettings.LocalLlm -and
@@ -306,7 +328,7 @@ $ollamaUrl = if (-not [string]::IsNullOrWhiteSpace($env:OLLAMA_HOST)) {
 } else {
     "http://localhost:11434"
 }
-$ollamaUrl = $ollamaUrl.TrimEnd("/")
+$ollamaUrl = Resolve-OllamaClientEndpoint -Endpoint $configuredOllamaUrl
 $serverRunning = $false
 
 try {
