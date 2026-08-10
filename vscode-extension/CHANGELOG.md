@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.10] - 2026-08-10
+
+### Changed
+
+- Renamed the Codex capacity group label to `ChatGPT` so the `Codex` platform
+  section no longer repeats `Codex` as both platform and model/quota name.
+
 ## [0.7.9] - 2026-08-10
 
 ### Changed

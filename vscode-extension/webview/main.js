@@ -303,8 +303,8 @@ function renderTokenStatus(tokenStatus) {
   const antigravityWeekly = buildTokenMetric("Weekly", status, "antigravityWeekly", "Gemini 3.1 Pro Weekly");
   const opus = buildTokenMetric("5Hours", status, "opus", "Opus 4.6 Thinking 5Hours");
   const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Opus 4.6 Thinking Weekly");
-  const codex = buildTokenMetric("5Hours", status, "codex", "Codex 5Hours");
-  const codexWeekly = buildTokenMetric("Weekly", status, "codexWeekly", "Codex Weekly");
+  const codex = buildTokenMetric("5Hours", status, "codex", "ChatGPT 5Hours");
+  const codexWeekly = buildTokenMetric("Weekly", status, "codexWeekly", "ChatGPT Weekly");
   const localComputeStatus = status.localComputeStatus || {};
   const localProgramName = stringValue(localComputeStatus.programName) || "Offline";
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
@@ -330,7 +330,7 @@ function renderTokenStatus(tokenStatus) {
       <details class="token-section" data-section="codex" ${sectionStates.codex ? "open" : ""}>
         <summary>Codex</summary>
         <div class="capacity-groups">
-          ${renderCapacityGroup("Codex", [codex, codexWeekly])}
+          ${renderCapacityGroup("ChatGPT", [codex, codexWeekly])}
         </div>
       </details>
     `);

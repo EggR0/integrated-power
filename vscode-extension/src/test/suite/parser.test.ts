@@ -208,6 +208,9 @@ suite('Parser and Store Test Suite', () => {
     assert.ok(!webview.includes('<button type="button" data-command="openRunsFile">Open Runs</button>'));
     assert.ok(webview.includes('buildTokenMetric("5Hours"'));
     assert.ok(webview.includes('buildTokenMetric("Weekly"'));
+    assert.ok(webview.includes('renderCapacityGroup("ChatGPT"'));
+    assert.ok(webview.includes('"ChatGPT 5Hours"'));
+    assert.ok(webview.includes('"ChatGPT Weekly"'));
     assert.ok(!webview.includes('buildTokenMetric("(5Hours)"'));
     assert.ok(!webview.includes('buildTokenMetric("(Weekly)"'));
     assert.ok(webview.includes('Refreshing, showing previous data'));
