@@ -299,12 +299,12 @@ function renderTokenStatus(tokenStatus) {
   }
 
   const status = tokenStatus || {};
-  const antigravity = buildTokenMetric("Gemini 3.1 Pro (5Hours)", status, "antigravity");
-  const antigravityWeekly = buildTokenMetric("Gemini 3.1 Pro (Weekly)", status, "antigravityWeekly");
-  const opus = buildTokenMetric("Opus 4.6 Thinking (5Hours)", status, "opus");
-  const opusWeekly = buildTokenMetric("Opus 4.6 Thinking (Weekly)", status, "opusWeekly");
-  const codex = buildTokenMetric("Codex (5Hours)", status, "codex");
-  const codexWeekly = buildTokenMetric("Codex (Weekly)", status, "codexWeekly");
+  const antigravity = buildTokenMetric("(5Hours)", status, "antigravity", "Gemini 3.1 Pro (5Hours)");
+  const antigravityWeekly = buildTokenMetric("(Weekly)", status, "antigravityWeekly", "Gemini 3.1 Pro (Weekly)");
+  const opus = buildTokenMetric("(5Hours)", status, "opus", "Opus 4.6 Thinking (5Hours)");
+  const opusWeekly = buildTokenMetric("(Weekly)", status, "opusWeekly", "Opus 4.6 Thinking (Weekly)");
+  const codex = buildTokenMetric("(5Hours)", status, "codex", "Codex (5Hours)");
+  const codexWeekly = buildTokenMetric("(Weekly)", status, "codexWeekly", "Codex (Weekly)");
   const localComputeStatus = status.localComputeStatus || {};
   const localProgramName = stringValue(localComputeStatus.programName) || "Offline";
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
@@ -317,11 +317,9 @@ function renderTokenStatus(tokenStatus) {
     sections.push(`
       <details class="token-section" data-section="antigravity" ${sectionStates.antigravity ? "open" : ""}>
         <summary>Antigravity IDE</summary>
-        <div class="token-metrics">
-          ${renderTokenMetric(antigravity)}
-          ${renderTokenMetric(antigravityWeekly)}
-          ${renderTokenMetric(opus)}
-          ${renderTokenMetric(opusWeekly)}
+        <div class="capacity-groups">
+          ${renderCapacityGroup("Gemini 3.1 Pro", [antigravity, antigravityWeekly])}
+          ${renderCapacityGroup("Opus 4.6 Thinking", [opus, opusWeekly])}
         </div>
       </details>
     `);
@@ -331,9 +329,8 @@ function renderTokenStatus(tokenStatus) {
     sections.push(`
       <details class="token-section" data-section="codex" ${sectionStates.codex ? "open" : ""}>
         <summary>Codex</summary>
-        <div class="token-metrics">
-          ${renderTokenMetric(codex)}
-          ${renderTokenMetric(codexWeekly)}
+        <div class="capacity-groups">
+          ${renderCapacityGroup("Codex", [codex, codexWeekly])}
         </div>
       </details>
     `);
@@ -343,35 +340,30 @@ function renderTokenStatus(tokenStatus) {
     sections.push(`
       <details class="token-section" data-section="localLlm" ${sectionStates.localLlm ? "open" : ""}>
         <summary>Local LLM <span>${escapeHtml(localProgramName)}</span></summary>
-        <div class="token-metrics-container">
+        <div class="capacity-groups">
           ${
             localComputeStatus.gpus?.length 
-            ? localComputeStatus.gpus.map(gpu => `
-                <div class="gpu-block">
-                  <div class="gpu-header">GPU ${gpu.id}: ${escapeHtml(gpu.name)}</div>
-                  <div class="token-metrics">
-                    ${renderHardwareMetric(
+            ? localComputeStatus.gpus.map(gpu =>
+                renderCapacityGroup(`GPU ${gpu.id}: ${gpu.name}`, [
+                  buildHardwareMetric(
                       "GPU Utilization",
                       gpu.utilizationPercentage,
                       100,
                       "%",
                       `${gpu.powerDrawW}W / ${gpu.powerLimitW}W`
-                    )}
-                    ${renderHardwareMetric(
+                    ),
+                  buildHardwareMetric(
                       "VRAM Usage",
                       gpu.vramUsedMb,
                       gpu.vramTotalMb,
                       "MB"
-                    )}
-                  </div>
-                </div>
-              `).join('<hr class="section-divider" />')
-            : `
-              <div class="token-metrics">
-                ${renderHardwareMetric("GPU Utilization", null, 100, "%")}
-                ${renderHardwareMetric("VRAM Usage", null, null, "MB")}
-              </div>
-            `
+                    ),
+                ])
+              ).join("")
+            : renderCapacityGroup("Offline", [
+                buildHardwareMetric("GPU Utilization", null, 100, "%"),
+                buildHardwareMetric("VRAM Usage", null, null, "MB"),
+              ])
           }
         </div>
       </details>
@@ -433,7 +425,7 @@ function renderTokenSkeleton() {
   `;
 }
 
-function buildTokenMetric(label, status, prefix, secondaryResetTime) {
+function buildTokenMetric(label, status, prefix, ariaLabel) {
   const left = toFiniteNumber(status[`${prefix}TokensLeft`]);
   const max = toFiniteNumber(status[`${prefix}Max`]);
   const exactPercentage = status[`${prefix}Percentage`];
@@ -462,6 +454,7 @@ function buildTokenMetric(label, status, prefix, secondaryResetTime) {
 
   return {
     label,
+    ariaLabel: ariaLabel || label,
     mainText,
     subtext,
     refreshText,
@@ -471,25 +464,35 @@ function buildTokenMetric(label, status, prefix, secondaryResetTime) {
   };
 }
 
-function renderTokenMetric(metric) {
+function renderCapacityGroup(title, metrics) {
   return `
-    <div class="token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}">
-      <div class="metric-row">
-        <span>${escapeHtml(metric.label)}</span>
-        <strong>${escapeHtml(metric.mainText)}</strong>
-      </div>
-      <div class="progress-track" aria-label="${escapeHtml(metric.label)} usage">
-        <div class="progress-fill" data-progress="${escapeAttr(metric.percentage.toFixed(1))}"></div>
-      </div>
-      <div class="metric-reset-row">
-        <span class="reset-left">${escapeHtml(metric.subtext)}</span>
-        <span class="reset-right">${metric.refreshText ? escapeHtml(metric.refreshText) : ""}</span>
+    <div class="capacity-group">
+      <h3>${escapeHtml(title)}</h3>
+      <div class="capacity-row-list">
+        ${metrics.map(renderCapacityMetric).join("")}
       </div>
     </div>
   `;
 }
 
-function renderHardwareMetric(label, used, total, unit, extraRightText = "") {
+function renderCapacityMetric(metric) {
+  return `
+    <div class="capacity-metric-row token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}">
+      <span class="capacity-metric-label">${escapeHtml(metric.label)}</span>
+      <div class="capacity-metric-body">
+        <div class="progress-track" aria-label="${escapeHtml(metric.ariaLabel)} usage">
+          <div class="progress-fill" data-progress="${escapeAttr(metric.percentage.toFixed(1))}"></div>
+        </div>
+        <div class="metric-reset-row">
+          <span class="reset-left">${escapeHtml(metric.subtext)}</span>
+          <span class="reset-right">${metric.refreshText ? escapeHtml(metric.refreshText) : ""}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildHardwareMetric(label, used, total, unit, extraRightText = "") {
   const safeUsed = Number(used);
   const safeTotal = Number(total);
   const hasMetric = Number.isFinite(safeUsed) && safeUsed >= 0 && Number.isFinite(safeTotal) && safeTotal > 0;
@@ -507,15 +510,16 @@ function renderHardwareMetric(label, used, total, unit, extraRightText = "") {
     : "Waiting for hardware data";
   const tone = percentage >= 90 ? "critical" : percentage >= 75 ? "warning" : "healthy";
 
-  return renderTokenMetric({
+  return {
     label,
+    ariaLabel: label,
     mainText,
     subtext,
     refreshText: extraRightText,
     percentage,
     unavailable: !hasMetric,
     tone,
-  });
+  };
 }
 
 function renderSummaryCard(title, value, detail) {
