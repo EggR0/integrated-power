@@ -203,7 +203,6 @@ function normalizeTokenStatus(status) {
 
 function render() {
   const isRefreshing = dashboardState.isLoading || dashboardState.isTokenLoading;
-  const showingPreviousData = isRefreshing && hasDashboardContent(dashboardState);
 
   root.innerHTML = `
     <main class="dashboard-shell ${dashboardState.isLoading ? "is-loading" : ""} ${isRefreshing ? "is-refreshing" : ""}">
@@ -215,12 +214,9 @@ function render() {
             <span>Updated ${escapeHtml(formatDateTime(dashboardState.updatedAt))}</span>
             ${dashboardState.runsFile ? `<span>${escapeHtml(dashboardState.runsFile)}</span>` : ""}
             ${dashboardState.isStale ? `<span class="stale-badge">Stale</span>` : ""}
-            ${showingPreviousData ? `<span class="refreshing-badge">Refreshing, showing previous data</span>` : ""}
           </div>
         </div>
       </header>
-
-      ${dashboardState.isLoading ? renderLoadingStrip(showingPreviousData) : ""}
 
       <section class="dashboard-grid">
         ${renderTokenStatus(dashboardState.tokenStatus)}
@@ -282,15 +278,6 @@ function hasDashboardContent(state) {
       state.metricsCsv ||
       state.localLlmMetrics?.length
   );
-}
-
-function renderLoadingStrip(showingPreviousData) {
-  return `
-    <div class="loading-strip" role="status" aria-live="polite">
-      <span class="spinner"></span>
-      <span>${showingPreviousData ? "Refreshing dashboard; showing previous data" : "Refreshing dashboard"}</span>
-    </div>
-  `;
 }
 
 function renderTokenStatus(tokenStatus) {

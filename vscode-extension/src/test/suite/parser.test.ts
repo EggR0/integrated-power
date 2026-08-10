@@ -213,16 +213,19 @@ suite('Parser and Store Test Suite', () => {
     assert.ok(webview.includes('"ChatGPT Weekly"'));
     assert.ok(!webview.includes('buildTokenMetric("(5Hours)"'));
     assert.ok(!webview.includes('buildTokenMetric("(Weekly)"'));
-    assert.ok(webview.includes('Refreshing, showing previous data'));
+    assert.ok(!webview.includes('Refreshing, showing previous data'));
+    assert.ok(!webview.includes('renderLoadingStrip'));
     assert.ok(!webview.includes('data-command="refresh" ${dashboardState.isLoading ? "disabled" : ""}'));
 
     const styles = fs.readFileSync(stylesPath, 'utf8');
-    assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
+    assert.ok(!styles.includes('.loading-strip'));
     assert.match(styles, /body\s*\{[\s\S]*min-width:\s*340px;/);
     assert.match(styles, /\.capacity-groups\s*\{[\s\S]*gap:\s*12px;/);
     assert.match(styles, /\.metric-reset-row\s*\{[\s\S]*grid-template-columns:\s*max-content minmax\(0,\s*1fr\) max-content;/);
     assert.match(styles, /\.token-section summary::before\s*\{[\s\S]*content:\s*"\+";/);
     assert.match(styles, /\.token-section\[open\] summary::before\s*\{[\s\S]*content:\s*"-";/);
+    assert.match(styles, /\.dashboard-shell\.is-refreshing \.progress-fill\s*\{[\s\S]*var\(--vscode-descriptionForeground\)/);
+    assert.match(styles, /\.dashboard-shell:not\(\.is-refreshing\) \.token-metric\.warning \.progress-fill/);
 
     const extensionSource = fs.readFileSync(path.join(extensionRoot, 'src', 'extension.ts'), 'utf8');
     assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));

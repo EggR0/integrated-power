@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.12] - 2026-08-10
+
+### Changed
+
+- Unified refresh feedback by removing the separate header refresh text and
+  floating refresh banner when previous data is visible.
+- Greyed capacity progress gauges while refresh is in progress so stale values
+  remain visible but are visually distinct from fresh data.
+
 ## [0.7.11] - 2026-08-10
 
 ### Changed

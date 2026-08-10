@@ -322,10 +322,13 @@ test("webview preserves token status and removes duplicate header buttons", () =
   assert.ok(webview.includes("dashboardState.isTokenLoading = true"));
   assert.ok(!webview.includes('<button type="button" data-command="refresh">Refresh</button>'));
   assert.ok(!webview.includes('<button type="button" data-command="openRunsFile">Open Runs</button>'));
-  assert.ok(webview.includes("Refreshing, showing previous data"));
+  assert.ok(!webview.includes("Refreshing, showing previous data"));
+  assert.ok(!webview.includes("renderLoadingStrip"));
   assert.ok(!webview.includes('data-command="refresh" ${dashboardState.isLoading ? "disabled" : ""}'));
-  assert.match(styles, /\.loading-strip\s*\{[\s\S]*position:\s*fixed;/);
+  assert.ok(!styles.includes(".loading-strip"));
   assert.match(styles, /body\s*\{[\s\S]*min-width:\s*340px;/);
+  assert.match(styles, /\.dashboard-shell\.is-refreshing \.progress-fill\s*\{[\s\S]*var\(--vscode-descriptionForeground\)/);
+  assert.match(styles, /\.dashboard-shell:not\(\.is-refreshing\) \.token-metric\.warning \.progress-fill/);
   assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));
 });
 
