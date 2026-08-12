@@ -325,6 +325,10 @@ test("webview preserves token status and removes duplicate header buttons", () =
   assert.ok(!webview.includes("Refreshing, showing previous data"));
   assert.ok(!webview.includes("renderLoadingStrip"));
   assert.ok(!webview.includes('data-command="refresh" ${dashboardState.isLoading ? "disabled" : ""}'));
+  assert.ok(webview.includes("Claude Direct"));
+  assert.ok(webview.includes("renderClaudeDirectUsage"));
+  assert.ok(!webview.includes("renderCapacityGroup(\"Claude Opus 4.6 Thinking\""));
+  assert.ok(webview.includes("Opus 4.6 Thinking via Antigravity"));
   assert.ok(!styles.includes(".loading-strip"));
   assert.match(styles, /body\s*\{[\s\S]*min-width:\s*340px;/);
   assert.match(styles, /\.dashboard-shell\.is-refreshing \.progress-fill\s*\{[\s\S]*var\(--vscode-descriptionForeground\)/);

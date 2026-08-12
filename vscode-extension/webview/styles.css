@@ -178,6 +178,62 @@ button:focus-visible {
   border-color: color-mix(in srgb, var(--vscode-panel-border), var(--vscode-focusBorder) 45%);
 }
 
+.claude-direct-panel {
+  border-color: color-mix(in srgb, var(--vscode-panel-border), var(--vscode-charts-purple, var(--vscode-focusBorder)) 45%);
+}
+
+.usage-window-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.usage-window {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border), transparent 30%);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-editor-background), var(--vscode-sideBar-background) 35%);
+}
+
+.usage-window div,
+.usage-source-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.usage-window span,
+.usage-source-row span {
+  color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-descriptionForeground) 12%);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.usage-window strong,
+.usage-source-row strong {
+  min-width: 0;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  font-weight: 680;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.usage-window p {
+  margin: 5px 0 0;
+  color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-descriptionForeground) 18%);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.usage-source-row {
+  margin-top: 8px;
+}
+
 .capacity-summary {
   display: flex;
   flex-wrap: wrap;
@@ -730,6 +786,10 @@ button:focus-visible {
 
   .capacity-groups {
     gap: 10px;
+  }
+
+  .usage-window-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .metric-reset-row {

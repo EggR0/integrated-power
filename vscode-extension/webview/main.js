@@ -204,8 +204,38 @@ function normalizeTokenStatus(status) {
     codexWeeklyPercentage: optionalNumber(status.codexWeeklyPercentage),
     codexWeeklyEstimatedAbsolute: optionalNumber(status.codexWeeklyEstimatedAbsolute),
     codexWeeklyResetTime: stringValue(status.codexWeeklyResetTime),
+    claudeDirectUsage: normalizeClaudeDirectUsage(status.claudeDirectUsage),
     recommendedTaskWeight: normalizeTaskWeight(status.recommendedTaskWeight),
     activity: stringArray(status.activity),
+  };
+}
+
+function normalizeClaudeDirectUsage(value) {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  return {
+    status: value.status === "measured" ? "measured" : "no-data",
+    today: normalizeUsageSummary(value.today),
+    sevenDays: normalizeUsageSummary(value.sevenDays),
+    sources: stringArray(value.sources),
+    lastUsedAt: stringValue(value.lastUsedAt),
+    lastMeasuredAt: stringValue(value.lastMeasuredAt) || new Date().toISOString(),
+    errors: stringArray(value.errors),
+  };
+}
+
+function normalizeUsageSummary(value) {
+  const safeValue = value && typeof value === "object" ? value : {};
+  return {
+    inputTokens: toFiniteNumber(safeValue.inputTokens),
+    cachedInputTokens: toFiniteNumber(safeValue.cachedInputTokens),
+    outputTokens: toFiniteNumber(safeValue.outputTokens),
+    reasoningOutputTokens: toFiniteNumber(safeValue.reasoningOutputTokens),
+    totalTokens: toFiniteNumber(safeValue.totalTokens),
+    billableTokens: toFiniteNumber(safeValue.billableTokens),
+    eventCount: toFiniteNumber(safeValue.eventCount),
   };
 }
 
@@ -232,6 +262,7 @@ function render() {
 
       <section class="dashboard-grid">
         ${renderTokenStatus(dashboardState.tokenStatus)}
+        ${renderClaudeDirectUsage(dashboardState.tokenStatus?.claudeDirectUsage)}
         ${dashboardState.viewConfig?.showLocalLlm !== false ? renderLocalComputeStatus(dashboardState.tokenStatus) : ""}
       </section>
 
@@ -305,8 +336,8 @@ function renderTokenStatus(tokenStatus) {
   const status = tokenStatus || {};
   const antigravity = buildTokenMetric("5Hours", status, "antigravity", "Gemini 3.1 Pro 5Hours");
   const antigravityWeekly = buildTokenMetric("Weekly", status, "antigravityWeekly", "Gemini 3.1 Pro Weekly");
-  const opus = buildTokenMetric("5Hours", status, "opus", "Claude Opus 4.6 Thinking 5Hours");
-  const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Claude Opus 4.6 Thinking Weekly");
+  const opus = buildTokenMetric("5Hours", status, "opus", "Opus 4.6 Thinking via Antigravity 5Hours");
+  const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Opus 4.6 Thinking via Antigravity Weekly");
   const codex = buildTokenMetric("5Hours", status, "codex", "ChatGPT 5Hours");
   const codexWeekly = buildTokenMetric("Weekly", status, "codexWeekly", "ChatGPT Weekly");
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
@@ -321,7 +352,7 @@ function renderTokenStatus(tokenStatus) {
         <summary>Antigravity IDE</summary>
         <div class="capacity-groups">
           ${renderCapacityGroup("Gemini 3.1 Pro", [antigravity, antigravityWeekly])}
-          ${renderCapacityGroup("Claude Opus 4.6 Thinking", [opus, opusWeekly])}
+          ${renderCapacityGroup("Opus 4.6 Thinking", [opus, opusWeekly])}
         </div>
       </details>
     `);
@@ -366,6 +397,76 @@ function renderTokenStatus(tokenStatus) {
       }
     </article>
   `;
+}
+
+function renderClaudeDirectUsage(usage) {
+  if (!usage && dashboardState.isTokenLoading) {
+    return "";
+  }
+
+  const safeUsage = usage || {
+    status: "no-data",
+    today: normalizeUsageSummary(),
+    sevenDays: normalizeUsageSummary(),
+    sources: [],
+    lastMeasuredAt: new Date().toISOString(),
+    errors: [],
+  };
+  const hasUsage = safeUsage.status === "measured" && safeUsage.sevenDays.eventCount > 0;
+  const sourceText = safeUsage.sources.length ? safeUsage.sources.join(", ") : "No Claude API, CLI, or Cowork usage events found";
+
+  return `
+    <article class="panel token-panel claude-direct-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Direct Usage</p>
+          <h2>Claude Direct</h2>
+          <p class="panel-caption">Claude API, Claude CLI, and Cowork usage measured from local metadata logs.</p>
+        </div>
+        <span class="status-pill ${hasUsage ? "status-ok" : "status-neutral"}">${hasUsage ? "Measured" : "No data"}</span>
+      </div>
+      <div class="usage-window-list">
+        ${renderClaudeUsageWindow("Today", safeUsage.today)}
+        ${renderClaudeUsageWindow("7Days", safeUsage.sevenDays)}
+      </div>
+      <div class="usage-source-row" title="${escapeAttr(sourceText)}">
+        <span>Sources</span>
+        <strong>${escapeHtml(sourceText)}</strong>
+      </div>
+      <div class="usage-source-row">
+        <span>Last used</span>
+        <strong>${safeUsage.lastUsedAt ? escapeHtml(formatDateTime(safeUsage.lastUsedAt)) : "Waiting for Claude usage data"}</strong>
+      </div>
+      ${
+        safeUsage.errors?.length
+          ? `<ul class="activity-list">${safeUsage.errors.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+          : ""
+      }
+    </article>
+  `;
+}
+
+function renderClaudeUsageWindow(label, summary) {
+  return `
+    <div class="usage-window">
+      <div>
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(formatTokenCount(summary.totalTokens))}</strong>
+      </div>
+      <p>${escapeHtml(formatTokenBreakdown(summary))}</p>
+    </div>
+  `;
+}
+
+function formatTokenBreakdown(summary) {
+  const parts = [
+    summary.inputTokens ? `${formatNumber(summary.inputTokens)} in` : "",
+    summary.cachedInputTokens ? `${formatNumber(summary.cachedInputTokens)} cached` : "",
+    summary.outputTokens ? `${formatNumber(summary.outputTokens)} out` : "",
+    summary.reasoningOutputTokens ? `${formatNumber(summary.reasoningOutputTokens)} reasoning` : "",
+  ].filter(Boolean);
+  const events = `${formatNumber(summary.eventCount)} events`;
+  return parts.length ? `${parts.join(" · ")} · ${events}` : events;
 }
 
 function renderLocalComputeStatus(tokenStatus) {
@@ -425,8 +526,8 @@ function renderCapacitySummary(status) {
   const entries = [
     capacitySummaryEntry("Gemini 5Hours", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
     capacitySummaryEntry("Gemini Weekly", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
-    capacitySummaryEntry("Claude 5Hours", status.opusPercentage, status.opusTokensLeft, status.opusMax),
-    capacitySummaryEntry("Claude Weekly", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
+    capacitySummaryEntry("Opus 5Hours", status.opusPercentage, status.opusTokensLeft, status.opusMax),
+    capacitySummaryEntry("Opus Weekly", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
     capacitySummaryEntry("ChatGPT 5Hours", status.codexPercentage, status.codexTokensLeft, status.codexMax),
     capacitySummaryEntry("ChatGPT Weekly", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax),
   ].filter(Boolean);
@@ -786,6 +887,8 @@ function classifyErrorGroups(systemErrors, parseErrors) {
       normalized.includes("antigravity") ||
       normalized.includes("codex") ||
       normalized.includes("claude") ||
+      normalized.includes("anthropic") ||
+      normalized.includes("cowork") ||
       normalized.includes("opus") ||
       normalized.includes("gemini") ||
       normalized.includes("localllm") ||
@@ -907,6 +1010,17 @@ function statusClass(status) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat().format(toFiniteNumber(value));
+}
+
+function formatTokenCount(value) {
+  const number = toFiniteNumber(value);
+  if (number >= 1_000_000) {
+    return `${(number / 1_000_000).toFixed(number >= 10_000_000 ? 1 : 2)}M tokens`;
+  }
+  if (number >= 1_000) {
+    return `${(number / 1_000).toFixed(number >= 10_000 ? 1 : 2)}K tokens`;
+  }
+  return `${formatNumber(number)} tokens`;
 }
 
 function formatDateTime(value) {

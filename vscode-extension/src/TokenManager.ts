@@ -3,7 +3,17 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { JsonObject, TokenStatus, QuotaPoolStatus, LocalComputeStatus, QuotaSource, UsageConfidence, GpuStatus } from "./types";
+import {
+  ClaudeDirectUsageStatus,
+  JsonObject,
+  TokenStatus,
+  QuotaPoolStatus,
+  LocalComputeStatus,
+  QuotaSource,
+  UsageConfidence,
+  GpuStatus,
+  UsageWindowSummary,
+} from "./types";
 import { AgyQuotaClient, AgyNotInstalledError, AgyNotAuthenticatedError } from "./AgyQuotaClient";
 import matter from "gray-matter";
 
@@ -13,6 +23,10 @@ const MAX_SESSION_FILES = 80;
 const MAX_SESSION_FILE_BYTES = 256 * 1024;
 const MAX_SESSION_LINES_PER_FILE = 1_000;
 const AGY_CREDITS_TIMEOUT_MS = 15_000;
+const CLAUDE_USAGE_SCAN_DEPTH = 5;
+const CLAUDE_USAGE_MAX_FILES = 120;
+const CLAUDE_USAGE_MAX_FILE_BYTES = 512 * 1024;
+const CLAUDE_USAGE_MAX_LINES_PER_FILE = 2_000;
 
 interface ExecTextOptions {
   timeoutMs?: number;
@@ -42,6 +56,7 @@ interface NodePtyModule {
 interface QuotaData {
   quotaPools?: QuotaPoolStatus[];
   localComputeStatus?: LocalComputeStatus;
+  claudeDirectUsage?: ClaudeDirectUsageStatus;
   antigravityPercentage?: number;
   antigravityResetTime?: string;
   antigravityWeeklyPercentage?: number;
@@ -65,6 +80,17 @@ interface QuotaData {
 interface JsonlFileStat {
   fullPath: string;
   mtimeMs: number;
+}
+
+interface ClaudeUsageEvent {
+  timestamp: number;
+  source: string;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  billableTokens: number;
 }
 
 interface StatusOptions {
@@ -107,6 +133,7 @@ export class TokenManager {
     // as it causes phantom UI values (e.g. 74%) during initial load.
 
     const fallbackQuota = this.quotaFromStatus(tokenStatus);
+    const workspaceStateRoot = this.workspaceStateRootFromTokenReport(fileUri);
     if (options.refreshQuota === false) {
       const cachedQuota = this.getFreshCachedQuota(activity);
       if (cachedQuota) {
@@ -119,7 +146,7 @@ export class TokenManager {
       return tokenStatus;
     }
 
-    const quotaData = await this.getQuotaData(activity, fallbackQuota, options.forceRefresh);
+    const quotaData = await this.getQuotaData(activity, fallbackQuota, options.forceRefresh, workspaceStateRoot);
     this.applyQuotaData(tokenStatus, quotaData);
 
     if (quotaData.errors.length > 0) {
@@ -305,6 +332,7 @@ export class TokenManager {
       codexWeeklyEstimatedAbsolute: tokenStatus.codexWeeklyEstimatedAbsolute,
       quotaPools: tokenStatus.quotaPools,
       localComputeStatus: tokenStatus.localComputeStatus,
+      claudeDirectUsage: tokenStatus.claudeDirectUsage,
       errors: [],
     };
   }
@@ -315,6 +343,9 @@ export class TokenManager {
     }
     if (quotaData.localComputeStatus) {
       tokenStatus.localComputeStatus = quotaData.localComputeStatus;
+    }
+    if (quotaData.claudeDirectUsage) {
+      tokenStatus.claudeDirectUsage = quotaData.claudeDirectUsage;
     }
     if (quotaData.antigravityPercentage !== undefined) {
       tokenStatus.antigravityPercentage = quotaData.antigravityPercentage;
@@ -453,7 +484,12 @@ export class TokenManager {
     return undefined;
   }
 
-  private async getQuotaData(activity: string[], fallback: QuotaData, forceRefresh?: boolean): Promise<QuotaData> {
+  private async getQuotaData(
+    activity: string[],
+    fallback: QuotaData,
+    forceRefresh?: boolean,
+    workspaceStateRoot?: string,
+  ): Promise<QuotaData> {
     if (!forceRefresh) {
       const cached = this.getFreshCachedQuota(activity);
       if (cached) {
@@ -463,12 +499,12 @@ export class TokenManager {
 
     if (this.fetchPromise) {
       if (forceRefresh) {
-        this.fetchPromise = this.fetchQuotaData(forceRefresh);
+        this.fetchPromise = this.fetchQuotaData(forceRefresh, workspaceStateRoot);
       } else {
         activity.push("Waiting for in-flight quota telemetry request.");
       }
     } else {
-      this.fetchPromise = this.fetchQuotaData(forceRefresh);
+      this.fetchPromise = this.fetchQuotaData(forceRefresh, workspaceStateRoot);
     }
 
     const currentFetch = this.fetchPromise;
@@ -496,6 +532,7 @@ export class TokenManager {
     return {
       quotaPools: fetched.quotaPools ?? fallback.quotaPools,
       localComputeStatus: fetched.localComputeStatus ?? fallback.localComputeStatus,
+      claudeDirectUsage: fetched.claudeDirectUsage ?? fallback.claudeDirectUsage,
       antigravityPercentage: fetched.antigravityPercentage ?? fallback.antigravityPercentage,
       antigravityResetTime: fetched.antigravityResetTime ?? fallback.antigravityResetTime,
       antigravityWeeklyPercentage: fetched.antigravityWeeklyPercentage ?? fallback.antigravityWeeklyPercentage,
@@ -517,7 +554,7 @@ export class TokenManager {
     };
   }
 
-  private async fetchQuotaData(forceRefresh = false): Promise<QuotaData> {
+  private async fetchQuotaData(forceRefresh = false, workspaceStateRoot?: string): Promise<QuotaData> {
     const data: QuotaData = { errors: [], quotaPools: [] };
 
     // Use collectors to gather quota and compute metrics
@@ -619,10 +656,364 @@ export class TokenManager {
         })
         .catch((error: unknown) => {
           data.errors.push(`LocalLLM: ${this.errorMessage(error)}`);
+        }),
+      this.fetchClaudeDirectUsage(workspaceStateRoot)
+        .then((usage) => {
+          data.claudeDirectUsage = usage;
+          if (usage.errors?.length) {
+            data.errors.push(...usage.errors.map((error) => `Claude Direct: ${error}`));
+          }
         })
+        .catch((error: unknown) => {
+          data.errors.push(`Claude Direct: ${this.errorMessage(error)}`);
+        }),
     ]);
 
     return data;
+  }
+
+  private async fetchClaudeDirectUsage(workspaceStateRoot: string | undefined): Promise<ClaudeDirectUsageStatus> {
+    const events: ClaudeUsageEvent[] = [];
+    const errors: string[] = [];
+    const sources = new Set<string>();
+
+    const readJsonl = async (filePath: string, source: string, trustClaudePath = false): Promise<void> => {
+      try {
+        const content = await this.readFileTail(filePath, CLAUDE_USAGE_MAX_FILE_BYTES);
+        const lines = content.split(/\r?\n/).reverse().slice(0, CLAUDE_USAGE_MAX_LINES_PER_FILE).reverse();
+        lines.forEach((line, index) => {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.includes("{")) {
+            return;
+          }
+
+          const jsonStart = trimmed.indexOf("{");
+          try {
+            const parsed = JSON.parse(trimmed.slice(jsonStart)) as JsonObject;
+            const event = this.claudeUsageEventFromObject(parsed, source, trustClaudePath);
+            if (event) {
+              events.push({ ...event, source });
+              sources.add(source);
+            }
+          } catch {
+            // Log files can contain non-JSON diagnostic lines. Ignore those lines.
+          }
+        });
+      } catch (error) {
+        if (!this.isFileNotFound(error)) {
+          errors.push(`${source}: ${this.errorMessage(error)}`);
+        }
+      }
+    };
+
+    if (workspaceStateRoot) {
+      await readJsonl(path.join(workspaceStateRoot, "telemetry", "events.jsonl"), "Integrated Power telemetry");
+      await this.readClaudeCsvUsage(path.join(workspaceStateRoot, "reports", "token_usage.csv"), events, sources, errors);
+    }
+
+    const claudeFiles = await this.findClaudeUsageFiles();
+    await Promise.all(
+      claudeFiles.map((file) => readJsonl(file.fullPath, this.claudeSourceLabel(file.fullPath), true)),
+    );
+
+    const now = Date.now();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const sevenDaysStart = now - 7 * 24 * 60 * 60 * 1000;
+    const today = this.summarizeClaudeUsage(events.filter((event) => event.timestamp >= todayStart.getTime()));
+    const sevenDays = this.summarizeClaudeUsage(events.filter((event) => event.timestamp >= sevenDaysStart));
+    const lastUsedAt = events.length
+      ? new Date(Math.max(...events.map((event) => event.timestamp))).toISOString()
+      : undefined;
+
+    return {
+      status: events.length ? "measured" : "no-data",
+      today,
+      sevenDays,
+      sources: Array.from(sources).sort(),
+      lastUsedAt,
+      lastMeasuredAt: new Date().toISOString(),
+      errors: errors.slice(0, 6),
+    };
+  }
+
+  private async readClaudeCsvUsage(
+    filePath: string,
+    events: ClaudeUsageEvent[],
+    sources: Set<string>,
+    errors: string[],
+  ): Promise<void> {
+    try {
+      const content = await fs.promises.readFile(filePath, "utf8");
+      const lines = content.split(/\r?\n/).filter((line) => line.trim());
+      if (lines.length < 2) {
+        return;
+      }
+
+      const headers = this.parseCsvLine(lines[0]).map((header) => header.trim());
+      for (const line of lines.slice(1)) {
+        const row = this.parseCsvLine(line);
+        const value = (name: string): string | undefined => {
+          const index = headers.indexOf(name);
+          return index >= 0 ? row[index] : undefined;
+        };
+        const providerText = [
+          value("Provider"),
+          value("Method"),
+          value("Operation"),
+          value("Model"),
+          value("Source"),
+        ].join(" ").toLowerCase();
+
+        if (!/(anthropic|claude|cowork)/.test(providerText)) {
+          continue;
+        }
+
+        const timestamp = Date.parse(value("Timestamp") || "");
+        if (!Number.isFinite(timestamp)) {
+          continue;
+        }
+
+        const inputTokens = this.safePositiveNumber(value("InputTokens"));
+        const cachedInputTokens = this.safePositiveNumber(value("CachedInputTokens"));
+        const outputTokens = this.safePositiveNumber(value("OutputTokens"));
+        const reasoningOutputTokens = this.safePositiveNumber(value("ReasoningOutputTokens"));
+        const totalTokens =
+          this.safePositiveNumber(value("TotalTokens")) ||
+          inputTokens + cachedInputTokens + outputTokens + reasoningOutputTokens;
+
+        if (totalTokens <= 0) {
+          continue;
+        }
+
+        events.push({
+          timestamp,
+          source: "Integrated Power token_usage.csv",
+          inputTokens,
+          cachedInputTokens,
+          outputTokens,
+          reasoningOutputTokens,
+          totalTokens,
+          billableTokens: this.safePositiveNumber(value("BillableTokens")),
+        });
+        sources.add("Integrated Power token_usage.csv");
+      }
+    } catch (error) {
+      if (!this.isFileNotFound(error)) {
+        errors.push(`token_usage.csv: ${this.errorMessage(error)}`);
+      }
+    }
+  }
+
+  private claudeUsageEventFromObject(
+    event: JsonObject,
+    source: string,
+    trustClaudePath: boolean,
+  ): ClaudeUsageEvent | undefined {
+    const producer = this.objectValue(event.producer);
+    const usage = this.firstObjectValue([
+      event.usage,
+      this.objectValue(event.message)?.usage,
+      this.objectValue(event.response)?.usage,
+      this.objectValue(event.result)?.usage,
+      event,
+    ]);
+
+    if (!usage) {
+      return undefined;
+    }
+
+    const providerText = [
+      producer?.provider,
+      producer?.model,
+      event.provider,
+      event.model,
+      this.objectValue(event.message)?.model,
+      this.objectValue(event.response)?.model,
+      source,
+    ].join(" ").toLowerCase();
+
+    if (!trustClaudePath && !/(anthropic|claude|cowork)/.test(providerText)) {
+      return undefined;
+    }
+
+    const inputTokens = this.safePositiveNumber(
+      usage.input_tokens ?? usage.prompt_tokens ?? usage.inputTokens ?? usage.promptTokens,
+    );
+    const cachedInputTokens = this.safePositiveNumber(
+      usage.cached_tokens ??
+        usage.cache_read_input_tokens ??
+        usage.cache_creation_input_tokens ??
+        usage.cachedInputTokens,
+    );
+    const outputTokens = this.safePositiveNumber(
+      usage.output_tokens ?? usage.completion_tokens ?? usage.outputTokens ?? usage.completionTokens,
+    );
+    const reasoningOutputTokens = this.safePositiveNumber(
+      usage.reasoning_tokens ?? usage.reasoning_output_tokens ?? usage.reasoningOutputTokens,
+    );
+    const totalTokens =
+      this.safePositiveNumber(usage.total_tokens ?? usage.totalTokens) ||
+      inputTokens + cachedInputTokens + outputTokens + reasoningOutputTokens;
+    const billableTokens = this.safePositiveNumber(usage.billable_tokens ?? usage.billableTokens);
+
+    if (totalTokens <= 0) {
+      return undefined;
+    }
+
+    const timestamp = this.timestampFromUsageEvent(event);
+    return {
+      timestamp,
+      source,
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+      reasoningOutputTokens,
+      totalTokens,
+      billableTokens,
+    };
+  }
+
+  private timestampFromUsageEvent(event: JsonObject): number {
+    const candidates = [
+      event.timestamp,
+      event.created_at,
+      event.createdAt,
+      this.objectValue(event.message)?.created_at,
+      this.objectValue(event.message)?.createdAt,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "number" && Number.isFinite(candidate)) {
+        return candidate > 10_000_000_000 ? candidate : candidate * 1000;
+      }
+      if (typeof candidate === "string" && candidate.trim()) {
+        const parsed = Date.parse(candidate);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+    }
+
+    return Date.now();
+  }
+
+  private summarizeClaudeUsage(events: ClaudeUsageEvent[]): UsageWindowSummary {
+    return events.reduce<UsageWindowSummary>(
+      (summary, event) => ({
+        inputTokens: summary.inputTokens + event.inputTokens,
+        cachedInputTokens: summary.cachedInputTokens + event.cachedInputTokens,
+        outputTokens: summary.outputTokens + event.outputTokens,
+        reasoningOutputTokens: summary.reasoningOutputTokens + event.reasoningOutputTokens,
+        totalTokens: summary.totalTokens + event.totalTokens,
+        billableTokens: summary.billableTokens + event.billableTokens,
+        eventCount: summary.eventCount + 1,
+      }),
+      this.emptyUsageSummary(),
+    );
+  }
+
+  private emptyUsageSummary(): UsageWindowSummary {
+    return {
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      reasoningOutputTokens: 0,
+      totalTokens: 0,
+      billableTokens: 0,
+      eventCount: 0,
+    };
+  }
+
+  private async findClaudeUsageFiles(): Promise<JsonlFileStat[]> {
+    const roots = [
+      path.join(os.homedir(), ".claude"),
+      process.env.APPDATA ? path.join(process.env.APPDATA, "Claude") : undefined,
+      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "AnthropicClaude") : undefined,
+      process.env.CLAUDE_USAGE_LOG_DIR,
+      process.env.COWORK_USAGE_LOG_DIR,
+    ].filter((value): value is string => Boolean(value));
+
+    const files: JsonlFileStat[] = [];
+    for (const root of roots) {
+      await this.collectClaudeUsageFiles(root, 0, files);
+    }
+
+    return files
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .slice(0, CLAUDE_USAGE_MAX_FILES);
+  }
+
+  private async collectClaudeUsageFiles(directory: string, depth: number, files: JsonlFileStat[]): Promise<void> {
+    if (depth > CLAUDE_USAGE_SCAN_DEPTH || files.length >= CLAUDE_USAGE_MAX_FILES) {
+      return;
+    }
+
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    const inspected = await Promise.all(
+      entries.map(async (entry) => {
+        const fullPath = path.join(directory, entry.name);
+        try {
+          return { entry, fullPath, stat: await fs.promises.stat(fullPath) };
+        } catch {
+          return undefined;
+        }
+      }),
+    );
+
+    const existing = inspected.filter((entry): entry is { entry: fs.Dirent; fullPath: string; stat: fs.Stats } => Boolean(entry));
+    const jsonFiles = existing
+      .filter(({ entry }) => entry.isFile() && /\.(jsonl|log)$/i.test(entry.name))
+      .filter(({ fullPath }) => !fullPath.toLowerCase().includes(`${path.sep}node_modules${path.sep}`))
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+
+    for (const file of jsonFiles) {
+      if (files.length >= CLAUDE_USAGE_MAX_FILES) {
+        return;
+      }
+
+      files.push({ fullPath: file.fullPath, mtimeMs: file.stat.mtimeMs });
+    }
+
+    const directories = existing
+      .filter(({ entry, fullPath }) => entry.isDirectory() && !fullPath.toLowerCase().includes(`${path.sep}node_modules${path.sep}`))
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+
+    for (const child of directories) {
+      if (files.length >= CLAUDE_USAGE_MAX_FILES) {
+        return;
+      }
+
+      await this.collectClaudeUsageFiles(child.fullPath, depth + 1, files);
+    }
+  }
+
+  private claudeSourceLabel(filePath: string): string {
+    const normalized = filePath.toLowerCase();
+    if (normalized.includes(`${path.sep}.claude${path.sep}`)) {
+      return "Claude CLI";
+    }
+    if (normalized.includes("cowork")) {
+      return "Cowork";
+    }
+    if (normalized.includes("anthropicclaude") || normalized.includes(`${path.sep}claude${path.sep}`)) {
+      return "Claude app";
+    }
+    return "Claude log";
+  }
+
+  private workspaceStateRootFromTokenReport(fileUri: vscode.Uri | undefined): string | undefined {
+    if (!fileUri?.fsPath) {
+      return undefined;
+    }
+
+    return path.dirname(path.dirname(fileUri.fsPath));
   }
 
   private async fetchGpuMetrics(): Promise<GpuStatus[] | undefined> {
@@ -1168,6 +1559,54 @@ export class TokenManager {
 
   private objectValue(value: unknown): JsonObject | undefined {
     return this.isObject(value) ? value : undefined;
+  }
+
+  private firstObjectValue(values: unknown[]): JsonObject | undefined {
+    for (const value of values) {
+      const object = this.objectValue(value);
+      if (object) {
+        return object;
+      }
+    }
+
+    return undefined;
+  }
+
+  private safePositiveNumber(value: unknown): number {
+    const number = typeof value === "string" && value.trim() ? Number(value) : Number(value);
+    return Number.isFinite(number) && number > 0 ? number : 0;
+  }
+
+  private parseCsvLine(line: string): string[] {
+    const values: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let index = 0; index < line.length; index++) {
+      const char = line[index];
+      const next = line[index + 1];
+
+      if (char === "\"") {
+        if (inQuotes && next === "\"") {
+          current += "\"";
+          index++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+
+      if (char === "," && !inQuotes) {
+        values.push(current);
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    values.push(current);
+    return values;
   }
 
   private isObject(value: unknown): value is JsonObject {

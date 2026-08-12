@@ -72,6 +72,26 @@ export interface LocalLlmMetric {
   errorMessage?: string;
 }
 
+export interface UsageWindowSummary {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  billableTokens: number;
+  eventCount: number;
+}
+
+export interface ClaudeDirectUsageStatus {
+  status: "measured" | "no-data";
+  today: UsageWindowSummary;
+  sevenDays: UsageWindowSummary;
+  sources: string[];
+  lastUsedAt?: string;
+  lastMeasuredAt: string;
+  errors?: string[];
+}
+
 export interface RunSummary {
   id: string;
   title: string;
@@ -101,6 +121,7 @@ export type ParsedArtifact = ArtifactRef;
 export interface TokenStatus {
   quotaPools?: QuotaPoolStatus[];
   localComputeStatus?: LocalComputeStatus;
+  claudeDirectUsage?: ClaudeDirectUsageStatus;
   
   // Legacy fields
   antigravityTokensLeft: number;

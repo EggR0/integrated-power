@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.14] - 2026-08-12
+
+### Added
+
+- Added a separate `Claude Direct` usage panel for Claude API, Claude CLI, and
+  Cowork token usage measured from local metadata logs and Integrated Power
+  telemetry.
+- Added local collectors for Claude-related JSONL/log usage events and
+  `token_usage.csv` rows tagged as Claude, Anthropic, or Cowork.
+
+### Changed
+
+- Restored the Antigravity IDE Opus quota label to `Opus 4.6 Thinking` so it is
+  not confused with direct Claude API or CLI usage.
+
 ## [0.7.13] - 2026-08-12
 
 ### Changed
