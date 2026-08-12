@@ -125,7 +125,7 @@ button:focus-visible {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 1.6fr) repeat(3, minmax(150px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -172,6 +172,43 @@ button:focus-visible {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 70%),
     var(--vscode-sideBar-background);
+}
+
+.local-compute-panel {
+  border-color: color-mix(in srgb, var(--vscode-panel-border), var(--vscode-focusBorder) 45%);
+}
+
+.capacity-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.capacity-summary span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder), transparent 50%);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--vscode-focusBorder), transparent 90%);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.capacity-summary strong {
+  margin-right: 5px;
+  color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-charts-green) 22%);
+}
+
+.capacity-summary .summary-warning strong {
+  color: var(--vscode-charts-yellow);
+}
+
+.capacity-summary .summary-critical strong {
+  color: var(--vscode-charts-red);
 }
 
 .token-section {
@@ -291,6 +328,7 @@ button:focus-visible {
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: 999px;
   background: var(--vscode-input-background);
+  cursor: help;
 }
 
 .progress-fill {
@@ -624,9 +662,16 @@ button:focus-visible {
 
 .error-group h3 {
   margin: 0;
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-foreground);
   font-size: 12px;
   font-weight: 650;
+}
+
+.error-group p {
+  margin: -3px 0 0;
+  color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-descriptionForeground) 18%);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .error-list li {

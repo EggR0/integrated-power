@@ -154,6 +154,7 @@ export interface DashboardState {
   isTokenLoading: boolean;
   isStale: boolean;
   updatedAt: string;
+  refreshStartedAt?: string;
   tokenStatus?: TokenStatus;
   localLlmMetrics?: LocalLlmMetric[];
   viewConfig?: {
@@ -164,7 +165,7 @@ export interface DashboardState {
 }
 
 export type WebviewToExtensionMessage =
-  | { type: "ready" }
+  | { type: "ready"; state?: Partial<DashboardState> }
   | { type: "refresh" }
   | { type: "openRunsFile" }
   | { type: "openArtifact"; artifactId: string };

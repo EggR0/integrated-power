@@ -74,6 +74,7 @@ export class DashboardController implements vscode.Disposable {
 
     switch (message.type) {
       case "ready":
+        this.seedVisibleState(message.state);
         this.postState();
         await this.refresh();
         return;
@@ -97,11 +98,12 @@ export class DashboardController implements vscode.Disposable {
 
     this.isRefreshing = true;
     const generation = ++this.tokenRefreshGeneration;
+    const refreshStartedAt = new Date().toISOString();
     this.state = {
       ...this.state,
       isLoading: true,
       isStale: false,
-      updatedAt: new Date().toISOString(),
+      refreshStartedAt,
     };
     this.postState();
 
@@ -118,6 +120,7 @@ export class DashboardController implements vscode.Disposable {
         isLoading: false,
         isTokenLoading: false,
         isStale: true,
+        refreshStartedAt: undefined,
         updatedAt: new Date().toISOString(),
       };
       this.postState();
@@ -306,6 +309,7 @@ export class DashboardController implements vscode.Disposable {
       isLoading: false,
       isTokenLoading: true,
       isStale: false,
+      refreshStartedAt: this.state.refreshStartedAt,
       updatedAt: new Date().toISOString(),
       viewConfig: this.getViewConfig(),
     };
@@ -349,6 +353,7 @@ export class DashboardController implements vscode.Disposable {
         ...this.state,
         tokenStatus: safeTokenStatus,
         isTokenLoading: false,
+        refreshStartedAt: undefined,
         updatedAt: new Date().toISOString(),
       };
       this.postState();
@@ -363,6 +368,7 @@ export class DashboardController implements vscode.Disposable {
         ...this.state,
         systemErrors: [message, ...this.state.systemErrors].slice(0, 50),
         isTokenLoading: false,
+        refreshStartedAt: undefined,
         updatedAt: new Date().toISOString(),
       };
       this.postState();
@@ -394,6 +400,20 @@ export class DashboardController implements vscode.Disposable {
       status.codexPercentage,
       status.codexWeeklyPercentage,
     ].some((value) => typeof value === "number" && Number.isFinite(value) && value > 0);
+  }
+
+  private seedVisibleState(state: Partial<DashboardState> | undefined): void {
+    if (!state || typeof state !== "object") {
+      return;
+    }
+
+    if (!this.hasUsableTokenStatus(this.state.tokenStatus) && this.hasUsableTokenStatus(state.tokenStatus)) {
+      this.state = {
+        ...this.state,
+        tokenStatus: state.tokenStatus,
+        updatedAt: state.updatedAt || this.state.updatedAt,
+      };
+    }
   }
 
   private async openArtifact(artifactId: string): Promise<void> {
@@ -571,6 +591,7 @@ export class DashboardController implements vscode.Disposable {
       isLoading: false,
       isTokenLoading: false,
       isStale: false,
+      refreshStartedAt: undefined,
       tokenStatus: {
           antigravityTokensLeft: 0,
           antigravityMax: 0,

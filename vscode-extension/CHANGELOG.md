@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.13] - 2026-08-12
+
+### Changed
+
+- Kept refresh feedback in one place: the Token Status pill now shows elapsed
+  refresh time while previous quota data remains visible and greyed.
+- Split Local LLM GPU capacity into its own Local Compute panel so token quota
+  rows no longer inherit wide hardware labels.
+- Added a compact capacity summary for the strongest and lowest remaining
+  quotas across Gemini, Claude, and ChatGPT.
+- Renamed the Opus quota group to `Claude Opus 4.6 Thinking`.
+- Added hover threshold details to quota and hardware gauges.
+- Grouped Errors by dashboard, quota telemetry, run execution, and run-log
+  parsing sources.
+
 ## [0.7.12] - 2026-08-10
 
 ### Changed

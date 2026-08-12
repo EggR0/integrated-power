@@ -3,6 +3,7 @@ const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : und
 let dashboardState = emptyState();
 
 const root = document.getElementById("app") || document.body;
+let refreshRenderTimer;
 
 window.addEventListener("message", (event) => {
   const message = event.data;
@@ -22,10 +23,13 @@ window.addEventListener("message", (event) => {
   }
 
   if (message.type === "loading") {
+    const nextIsLoading = Boolean(message.isLoading ?? dashboardState.isLoading);
+    const nextIsTokenLoading = Boolean(message.isTokenLoading ?? dashboardState.isTokenLoading);
     dashboardState = {
       ...dashboardState,
-      isLoading: Boolean(message.isLoading ?? dashboardState.isLoading),
-      isTokenLoading: Boolean(message.isTokenLoading ?? dashboardState.isTokenLoading),
+      isLoading: nextIsLoading,
+      isTokenLoading: nextIsTokenLoading,
+      refreshStartedAt: nextIsLoading || nextIsTokenLoading ? dashboardState.refreshStartedAt || new Date().toISOString() : undefined,
     };
     render();
     return;
@@ -36,6 +40,8 @@ window.addEventListener("message", (event) => {
       ...dashboardState,
       systemErrors: [String(message.message || "Unknown error"), ...dashboardState.systemErrors].slice(0, 50),
       isLoading: false,
+      isTokenLoading: false,
+      refreshStartedAt: undefined,
     };
     persistState();
     render();
@@ -86,6 +92,7 @@ function emptyState() {
     sectionStates: { antigravity: true, codex: true, localLlm: true },
     viewConfig: undefined,
     updatedAt: new Date().toISOString(),
+    refreshStartedAt: undefined,
     tokenStatus: emptyTokenStatus(),
   };
 }
@@ -115,6 +122,7 @@ function normalizeState(state) {
     sectionStates,
     viewConfig: safeState.viewConfig && typeof safeState.viewConfig === "object" ? safeState.viewConfig : undefined,
     updatedAt: stringValue(safeState.updatedAt) || new Date().toISOString(),
+    refreshStartedAt: stringValue(safeState.refreshStartedAt),
   };
 }
 
@@ -203,6 +211,10 @@ function normalizeTokenStatus(status) {
 
 function render() {
   const isRefreshing = dashboardState.isLoading || dashboardState.isTokenLoading;
+  if (refreshRenderTimer) {
+    clearTimeout(refreshRenderTimer);
+    refreshRenderTimer = undefined;
+  }
 
   root.innerHTML = `
     <main class="dashboard-shell ${dashboardState.isLoading ? "is-loading" : ""} ${isRefreshing ? "is-refreshing" : ""}">
@@ -220,6 +232,7 @@ function render() {
 
       <section class="dashboard-grid">
         ${renderTokenStatus(dashboardState.tokenStatus)}
+        ${dashboardState.viewConfig?.showLocalLlm !== false ? renderLocalComputeStatus(dashboardState.tokenStatus) : ""}
       </section>
 
       <section class="content-grid">
@@ -266,6 +279,10 @@ function render() {
       persistState();
     });
   });
+
+  if (isRefreshing) {
+    refreshRenderTimer = setTimeout(render, 1000);
+  }
 }
 
 function hasDashboardContent(state) {
@@ -288,12 +305,10 @@ function renderTokenStatus(tokenStatus) {
   const status = tokenStatus || {};
   const antigravity = buildTokenMetric("5Hours", status, "antigravity", "Gemini 3.1 Pro 5Hours");
   const antigravityWeekly = buildTokenMetric("Weekly", status, "antigravityWeekly", "Gemini 3.1 Pro Weekly");
-  const opus = buildTokenMetric("5Hours", status, "opus", "Opus 4.6 Thinking 5Hours");
-  const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Opus 4.6 Thinking Weekly");
+  const opus = buildTokenMetric("5Hours", status, "opus", "Claude Opus 4.6 Thinking 5Hours");
+  const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Claude Opus 4.6 Thinking Weekly");
   const codex = buildTokenMetric("5Hours", status, "codex", "ChatGPT 5Hours");
   const codexWeekly = buildTokenMetric("Weekly", status, "codexWeekly", "ChatGPT Weekly");
-  const localComputeStatus = status.localComputeStatus || {};
-  const localProgramName = stringValue(localComputeStatus.programName) || "Offline";
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
   const taskWeight = normalizeTaskWeight(status.recommendedTaskWeight);
   const activity = Array.isArray(status.activity) ? status.activity.slice(0, 4) : [];
@@ -306,7 +321,7 @@ function renderTokenStatus(tokenStatus) {
         <summary>Antigravity IDE</summary>
         <div class="capacity-groups">
           ${renderCapacityGroup("Gemini 3.1 Pro", [antigravity, antigravityWeekly])}
-          ${renderCapacityGroup("Opus 4.6 Thinking", [opus, opusWeekly])}
+          ${renderCapacityGroup("Claude Opus 4.6 Thinking", [opus, opusWeekly])}
         </div>
       </details>
     `);
@@ -323,40 +338,6 @@ function renderTokenStatus(tokenStatus) {
     `);
   }
 
-  if (dashboardState.viewConfig?.showLocalLlm !== false) {
-    sections.push(`
-      <details class="token-section" data-section="localLlm" ${sectionStates.localLlm ? "open" : ""}>
-        <summary>Local LLM <span>${escapeHtml(localProgramName)}</span></summary>
-        <div class="capacity-groups">
-          ${
-            localComputeStatus.gpus?.length 
-            ? localComputeStatus.gpus.map(gpu =>
-                renderCapacityGroup(`GPU ${gpu.id}: ${gpu.name}`, [
-                  buildHardwareMetric(
-                      "GPU Utilization",
-                      gpu.utilizationPercentage,
-                      100,
-                      "%",
-                      `${gpu.powerDrawW}W / ${gpu.powerLimitW}W`
-                    ),
-                  buildHardwareMetric(
-                      "VRAM Usage",
-                      gpu.vramUsedMb,
-                      gpu.vramTotalMb,
-                      "MB"
-                    ),
-                ])
-              ).join("")
-            : renderCapacityGroup("Offline", [
-                buildHardwareMetric("GPU Utilization", null, 100, "%"),
-                buildHardwareMetric("VRAM Usage", null, null, "MB"),
-              ])
-          }
-        </div>
-      </details>
-    `);
-  }
-
   return `
     <article class="panel token-panel">
       <div class="panel-heading">
@@ -367,6 +348,8 @@ function renderTokenStatus(tokenStatus) {
         ${renderTokenPanelStatus(status)}
       </div>
 
+      ${renderCapacitySummary(status)}
+
       ${sections.join('\n      <hr class="section-divider" />\n')}
 
       <div class="token-footer">
@@ -374,7 +357,6 @@ function renderTokenStatus(tokenStatus) {
         <span class="task-routing-pill task-routing-${escapeAttr(taskWeight)}">
           Task Routing: ${escapeHtml(taskWeight)}
         </span>
-        ${dashboardState.viewConfig?.showLocalLlm !== false && status.llmStatus ? `<span>Local LLM: ${escapeHtml(status.llmStatus)}</span>` : ""}
       </div>
 
       ${
@@ -386,14 +368,114 @@ function renderTokenStatus(tokenStatus) {
   `;
 }
 
+function renderLocalComputeStatus(tokenStatus) {
+  if (!tokenStatus && dashboardState.isTokenLoading) {
+    return "";
+  }
+
+  const status = tokenStatus || {};
+  const localComputeStatus = status.localComputeStatus || {};
+  const localProgramName = stringValue(localComputeStatus.programName) || "Offline";
+  const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
+
+  return `
+    <article class="panel token-panel local-compute-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Local Compute</p>
+          <h2>Local LLM</h2>
+        </div>
+        <span class="status-pill ${statusClass(status.llmStatus || localProgramName)}">${escapeHtml(localProgramName)}</span>
+      </div>
+
+      <details class="token-section" data-section="localLlm" ${sectionStates.localLlm ? "open" : ""}>
+        <summary>GPU Capacity <span>${escapeHtml(status.llmStatus || "Unknown")}</span></summary>
+        <div class="capacity-groups">
+          ${
+            localComputeStatus.gpus?.length
+              ? localComputeStatus.gpus.map((gpu) =>
+                  renderCapacityGroup(`GPU ${gpu.id}: ${gpu.name}`, [
+                    buildHardwareMetric(
+                      "GPU",
+                      gpu.utilizationPercentage,
+                      100,
+                      "%",
+                      `${gpu.powerDrawW}W / ${gpu.powerLimitW}W`
+                    ),
+                    buildHardwareMetric(
+                      "VRAM",
+                      gpu.vramUsedMb,
+                      gpu.vramTotalMb,
+                      "MB"
+                    ),
+                  ])
+                ).join("")
+              : renderCapacityGroup("Offline", [
+                  buildHardwareMetric("GPU", null, 100, "%"),
+                  buildHardwareMetric("VRAM", null, null, "MB"),
+                ])
+          }
+        </div>
+      </details>
+    </article>
+  `;
+}
+
+function renderCapacitySummary(status) {
+  const entries = [
+    capacitySummaryEntry("Gemini 5Hours", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
+    capacitySummaryEntry("Gemini Weekly", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
+    capacitySummaryEntry("Claude 5Hours", status.opusPercentage, status.opusTokensLeft, status.opusMax),
+    capacitySummaryEntry("Claude Weekly", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
+    capacitySummaryEntry("ChatGPT 5Hours", status.codexPercentage, status.codexTokensLeft, status.codexMax),
+    capacitySummaryEntry("ChatGPT Weekly", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax),
+  ].filter(Boolean);
+
+  if (!entries.length) {
+    return "";
+  }
+
+  const sorted = entries.slice().sort((a, b) => a.percentage - b.percentage);
+  const lowest = sorted[0];
+  const strongest = sorted[sorted.length - 1];
+
+  return `
+    <div class="capacity-summary" title="${escapeAttr("Higher remaining quota is better. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.")}">
+      <span><strong>Best</strong> ${escapeHtml(strongest.label)} ${strongest.percentage.toFixed(0)}%</span>
+      <span class="summary-${escapeAttr(capacityTone(lowest.percentage))}"><strong>Lowest</strong> ${escapeHtml(lowest.label)} ${lowest.percentage.toFixed(0)}%</span>
+    </div>
+  `;
+}
+
+function capacitySummaryEntry(label, exactPercentage, left, max) {
+  let percentage;
+  if (typeof exactPercentage === "number" && Number.isFinite(exactPercentage)) {
+    percentage = clamp(exactPercentage, 0, 100);
+  } else {
+    const safeLeft = toFiniteNumber(left);
+    const safeMax = toFiniteNumber(max);
+    if (safeMax > 0) {
+      percentage = clamp((safeLeft / safeMax) * 100, 0, 100);
+    }
+  }
+
+  return typeof percentage === "number" ? { label, percentage } : undefined;
+}
+
 function renderTokenPanelStatus(status) {
   const visibleStatuses = [];
   if (dashboardState.viewConfig?.showCodex !== false && status.codexStatus) visibleStatuses.push(status.codexStatus);
-  if (dashboardState.viewConfig?.showLocalLlm !== false && status.llmStatus) visibleStatuses.push(status.llmStatus);
   const pillStatus = visibleStatuses[0] || "Unknown";
-  const refreshingClass = dashboardState.isTokenLoading ? " status-refreshing" : "";
+  const isRefreshing = dashboardState.isLoading || dashboardState.isTokenLoading;
+  const refreshingClass = isRefreshing ? " status-refreshing" : "";
+  const label = isRefreshing
+    ? `Refreshing ${formatElapsed(dashboardState.refreshStartedAt)}`
+    : pillStatus;
+  const title = isRefreshing
+    ? `Showing previous data. Last fresh update: ${formatDateTime(dashboardState.updatedAt)}.`
+    : `Current status: ${pillStatus}.`;
 
-  return `<span class="status-pill ${statusClass(pillStatus)}${refreshingClass}">${escapeHtml(pillStatus)}</span>`;
+  return `<span class="status-pill ${statusClass(pillStatus)}${refreshingClass}" title="${escapeAttr(title)}">${escapeHtml(label)}</span>`;
 }
 
 function renderTokenSkeleton() {
@@ -438,6 +520,7 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
   }
 
   const refreshText = formatRefreshCountdown(rawResetTime);
+  const tooltip = `${ariaLabel || label}: ${subtext}${refreshText ? ` ${refreshText}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
 
   return {
     label,
@@ -447,7 +530,8 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
     refreshText,
     percentage: normalizedPercentage,
     unavailable: percentage === undefined && !hasAbsolute,
-    tone: normalizedPercentage <= 15 ? "critical" : normalizedPercentage <= 35 ? "warning" : "healthy",
+    tone: capacityTone(normalizedPercentage),
+    tooltip,
   };
 }
 
@@ -464,7 +548,7 @@ function renderCapacityGroup(title, metrics) {
 
 function renderCapacityMetric(metric) {
   return `
-    <div class="capacity-metric-row token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}">
+    <div class="capacity-metric-row token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}" title="${escapeAttr(metric.tooltip || "")}">
       <div class="metric-reset-row">
         <span class="capacity-metric-label">${escapeHtml(metric.label)}</span>
         <span class="reset-left">${escapeHtml(metric.subtext)}</span>
@@ -494,6 +578,7 @@ function buildHardwareMetric(label, used, total, unit, extraRightText = "") {
       : `${percentage.toFixed(1)}% used`
     : "Waiting for hardware data";
   const tone = percentage >= 90 ? "critical" : percentage >= 75 ? "warning" : "healthy";
+  const tooltip = `${label}: ${subtext}${extraRightText ? ` ${extraRightText}` : ""}. Healthy: under 75%. Caution: 75-89%. Limited: 90% or higher.`;
 
   return {
     label,
@@ -504,6 +589,7 @@ function buildHardwareMetric(label, used, total, unit, extraRightText = "") {
     percentage,
     unavailable: !hasMetric,
     tone,
+    tooltip,
   };
 }
 
@@ -658,21 +744,22 @@ function renderMetricsPanel(csv) {
 function renderErrorsPanel(parseErrors, systemErrors) {
   const safeSystemErrors = systemErrors || [];
   const safeParseErrors = parseErrors || [];
-  const combined = [...safeSystemErrors, ...safeParseErrors];
+  const groups = classifyErrorGroups(safeSystemErrors, safeParseErrors);
+  const combined = groups.flatMap((group) => group.errors);
+
   return `
     <article class="panel list-panel errors-panel">
       <div class="panel-heading">
         <div>
           <h2>Errors</h2>
-          <p class="panel-caption">Dashboard telemetry, quota collection, run failures, and run-log parsing.</p>
+          <p class="panel-caption">Grouped by source so dashboard, quota, run, and parse failures do not blur together.</p>
         </div>
         <span class="count-badge">${combined.length}</span>
       </div>
       ${
         combined.length
           ? `
-            ${renderErrorGroup("Dashboard / quota / run failures", safeSystemErrors)}
-            ${renderErrorGroup("Run log parse errors", safeParseErrors)}
+            ${groups.map(renderErrorGroup).join("")}
           `
           : `<p class="empty-state">No errors.</p>`
       }
@@ -680,15 +767,49 @@ function renderErrorsPanel(parseErrors, systemErrors) {
   `;
 }
 
-function renderErrorGroup(title, errors) {
-  if (!errors.length) {
+function classifyErrorGroups(systemErrors, parseErrors) {
+  const groups = [
+    { id: "dashboard", title: "Dashboard", detail: "Extension state, file reads, and dashboard refresh failures.", errors: [] },
+    { id: "quota", title: "Quota Telemetry", detail: "Antigravity, Claude, ChatGPT, and quota collector failures.", errors: [] },
+    { id: "runs", title: "Run Execution", detail: "Agent run failures reported from the workspace run log.", errors: [] },
+    { id: "parse", title: "Run Log Parsing", detail: "Malformed or unreadable run-log entries.", errors: parseErrors },
+  ];
+
+  const byId = Object.fromEntries(groups.map((group) => [group.id, group]));
+  systemErrors.forEach((error) => {
+    const normalized = error.toLowerCase();
+    if (normalized.includes("run failed")) {
+      byId.runs.errors.push(error);
+    } else if (
+      normalized.includes("quota") ||
+      normalized.includes("token") ||
+      normalized.includes("antigravity") ||
+      normalized.includes("codex") ||
+      normalized.includes("claude") ||
+      normalized.includes("opus") ||
+      normalized.includes("gemini") ||
+      normalized.includes("localllm") ||
+      normalized.includes("local llm")
+    ) {
+      byId.quota.errors.push(error);
+    } else {
+      byId.dashboard.errors.push(error);
+    }
+  });
+
+  return groups.filter((group) => group.errors.length);
+}
+
+function renderErrorGroup(group) {
+  if (!group.errors.length) {
     return "";
   }
 
   return `
     <section class="error-group">
-      <h3>${escapeHtml(title)}</h3>
-      <ul class="error-list">${errors.slice(0, 8).map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>
+      <h3>${escapeHtml(group.title)}</h3>
+      <p>${escapeHtml(group.detail)}</p>
+      <ul class="error-list">${group.errors.slice(0, 8).map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>
     </section>
   `;
 }
@@ -704,11 +825,13 @@ function postCommand(command) {
       isLoading: true,
       isTokenLoading: true,
       isStale: false,
+      refreshStartedAt: new Date().toISOString(),
     };
     render();
   }
 
-  vscode.postMessage({ type: command });
+  const message = command === "ready" ? { type: command, state: dashboardState } : { type: command };
+  vscode.postMessage(message);
 }
 
 function persistState() {
@@ -764,6 +887,10 @@ function clamp(value, min, max) {
   return Number.isFinite(number) ? Math.min(Math.max(number, min), max) : min;
 }
 
+function capacityTone(percentage) {
+  return percentage <= 15 ? "critical" : percentage <= 35 ? "warning" : "healthy";
+}
+
 function statusClass(status) {
   const normalized = String(status || "").toLowerCase();
   if (["ok", "ready", "online", "active", "running", "healthy", "completed"].some((term) => normalized.includes(term))) {
@@ -794,6 +921,23 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatElapsed(value) {
+  const startedAt = new Date(value || Date.now());
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+  if (!Number.isFinite(diffSeconds) || diffSeconds < 60) {
+    return `${diffSeconds || 0}s`;
+  }
+
+  const minutes = Math.floor(diffSeconds / 60);
+  const seconds = diffSeconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
 }
 
 function formatResetTime(value) {
