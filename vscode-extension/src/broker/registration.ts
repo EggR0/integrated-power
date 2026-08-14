@@ -15,6 +15,8 @@ export function resolveMcpServerScript(): string {
     return path.resolve(process.env.INTEGRATED_POWER_MCP_SERVER.trim());
   }
   const candidates = [
+    path.resolve(__dirname, "../../../integrated-power-control-center/mcp-server.js"),
+    path.resolve(__dirname, "../../integrated-power-control-center/mcp-server.js"),
     path.resolve(__dirname, "../../../control-center/mcp-server.js"),
     path.resolve(__dirname, "../../control-center/mcp-server.js"),
     path.resolve(__dirname, "../control-center/mcp-server.js"),

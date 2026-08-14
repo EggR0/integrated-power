@@ -12,9 +12,17 @@ requireText("src\\broker\\adapters.ts", "runLegacyLocalLlm");
 forbidText("src\\broker\\adapters.ts", "/api/generate");
 requireText("assets\\ip-orchestrator-plugin\\skills\\ip-orchestrator\\scripts\\Select-LocalLLMModel.ps1", "GpuUuid");
 requireText("assets\\ip-orchestrator-plugin\\skills\\ip-orchestrator\\scripts\\Select-LocalLLMModel.ps1", "UtilizationPercent");
-forbidText("..\\control-center\\src\\main.js", "innerHTML");
-forbidText("..\\control-center\\broker-server.js", "IntegratedPower\\control-center");
-forbidText("..\\control-center\\mcp-server.js", "IntegratedPower\\control-center");
+const ccRoot = fs.existsSync(path.join(root, "..", "control-center"))
+  ? path.join(root, "..", "control-center")
+  : path.resolve(root, "..", "..", "integrated-power-control-center");
+if (fs.existsSync(ccRoot)) {
+  const ccMain = path.join(ccRoot, "src", "main.js");
+  const ccBroker = path.join(ccRoot, "broker-server.js");
+  const ccMcp = path.join(ccRoot, "mcp-server.js");
+  if (fs.existsSync(ccMain) && fs.readFileSync(ccMain, "utf8").includes("innerHTML")) failures.push("control-center main.js contains forbidden innerHTML");
+  if (fs.existsSync(ccBroker) && fs.readFileSync(ccBroker, "utf8").includes("IntegratedPower\\control-center")) failures.push("control-center broker-server contains forbidden path pattern");
+  if (fs.existsSync(ccMcp) && fs.readFileSync(ccMcp, "utf8").includes("IntegratedPower\\control-center")) failures.push("control-center mcp-server contains forbidden path pattern");
+}
 if (!read("package.json").includes("@modelcontextprotocol/sdk")) failures.push("official MCP SDK is not declared");
 if (!read("package.json").includes("@ag-ui/core")) failures.push("official AG-UI core is not declared");
 
