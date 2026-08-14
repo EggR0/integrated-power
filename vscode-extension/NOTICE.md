@@ -28,6 +28,8 @@ The distributable JavaScript bundle includes the following runtime dependencies:
 | strip-bom-string | MIT |
 | esprima | BSD-2-Clause |
 | sprintf-js | BSD-3-Clause |
+| @a2a-js/sdk | Apache-2.0 |
+| better-sqlite3-multiple-ciphers | MIT |
 
 Antigravity IDE, Gemini, Codex, Ollama, vLLM, GitHub and Open VSX are names or
 marks of their respective owners. Their mention describes compatibility or a

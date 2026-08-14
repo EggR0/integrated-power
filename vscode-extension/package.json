@@ -2,8 +2,8 @@
   "name": "integrated-power",
   "publisher": "EggR",
   "displayName": "Integrated Power",
-  "description": "Antigravity IDE dashboard for AI usage, local compute, first-run setup, and Integrated Orchestrator management.",
-  "version": "0.7.14",
+  "description": "Integrated Power multi-AI broker and Antigravity IDE dashboard for Agy, Codex, local LLM delegation, usage, and approvals.",
+  "version": "0.8.0",
   "author": {
     "name": "EggR"
   },
@@ -98,11 +98,16 @@
       ]
     },
     "commands": [
-      {
-        "command": "integratedPower.agentRuns.refresh",
-        "title": "Refresh Agent Runs Dashboard",
-        "icon": "$(refresh)"
-      },
+        {
+          "command": "integratedPower.agentRuns.refresh",
+          "title": "Refresh Agent Runs Dashboard",
+          "icon": "$(refresh)"
+        },
+        {
+          "command": "integratedPower.agentRuns.openCompact",
+          "title": "Integrated Power: Open Compact Toolbar Panel",
+          "icon": "$(pulse)"
+        },
       {
         "command": "integratedPower.agentRuns.openRunsFile",
         "title": "Open Runs JSONL File",
@@ -135,9 +140,26 @@
       {
         "command": "integratedPower.eggr.runPrivateKnowledgeSetup",
         "title": "Integrated Power: Configure Private Git Knowledge"
+      },
+      {
+        "command": "integratedPower.broker.start",
+        "title": "Integrated Power: Start Multi-AI Broker"
+      },
+      {
+        "command": "integratedPower.broker.openDashboard",
+        "title": "Integrated Power: Open Broker Tasks"
+      },
+      {
+        "command": "integratedPower.local.startDModelServer",
+        "title": "Integrated Power: Start D: Local Model Server"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "integratedPower.agentRuns.openCompact"
+        }
+      ],
       "view/title": [
         {
           "command": "integratedPower.agentRuns.refresh",
@@ -156,7 +178,9 @@
     "vscode:prepublish": "node ./scripts/build-extension.js",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "pnpm run compile && node ./scripts/run-headless-tests.js && pnpm run test:powershell",
+    "test": "pnpm run test:reuse && pnpm run compile && node ./scripts/test-compact-ui.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && pnpm run test:powershell",
+    "test:ui": "node ./scripts/test-compact-ui.js",
+    "test:reuse": "node ./scripts/run-reuse-gate.js && node ./scripts/test-gpu-selection.js",
     "test:powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-LocalLLMInventory.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-OnboardingMigration.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/scripts/tests/Invoke-LocalLLM.Tests.ps1",
     "test:extension": "pnpm run compile && node ./out/test/runTest.js",
     "package": "vsce package --no-dependencies"
@@ -174,6 +198,13 @@
     "typescript": "^5.1.3"
   },
   "dependencies": {
-    "gray-matter": "^4.0.3"
+    "@ag-ui/core": "^0.0.57",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "gray-matter": "^4.0.3",
+    "zod": "^4.4.3"
+  },
+  "optionalDependencies": {
+    "@a2a-js/sdk": "1.0.1",
+    "better-sqlite3-multiple-ciphers": "13.0.3"
   }
 }

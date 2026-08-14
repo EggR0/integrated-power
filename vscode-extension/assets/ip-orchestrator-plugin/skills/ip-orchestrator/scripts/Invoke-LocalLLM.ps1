@@ -354,12 +354,13 @@ if (-not $serverRunning -or $ForceRestart) {
         $originalCuda = $env:CUDA_VISIBLE_DEVICES
         if ([string]::IsNullOrWhiteSpace($env:CUDA_VISIBLE_DEVICES)) {
             try {
-                $bestGpu = nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits 2>$null |
-                    ConvertFrom-Csv -Header "index","free" |
-                    Sort-Object { [int]$_.free } -Descending |
+                $bestGpu = nvidia-smi --query-gpu=index,memory.free,utilization.gpu,uuid --format=csv,noheader,nounits 2>$null |
+                    ConvertFrom-Csv -Header "index","free","utilization","uuid" |
+                    Sort-Object @{ Expression = { [int]$_.free }; Descending = $true }, @{ Expression = { [int]$_.utilization }; Descending = $false } |
                     Select-Object -First 1
                 if ($bestGpu) {
                     $env:CUDA_VISIBLE_DEVICES = $bestGpu.index.ToString().Trim()
+                    Write-Host "Selected GPU index $($bestGpu.index.Trim()) UUID $($bestGpu.uuid.Trim()) free $($bestGpu.free.Trim()) MiB utilization $($bestGpu.utilization.Trim())%."
                 }
             } catch {
                 # Rely on default system GPU routing if nvidia-smi is unavailable
@@ -430,11 +431,13 @@ $startedAt = Get-Date
 $localMetricsFile = Join-Path $storagePath "reports\local_llm_metrics.csv"
 
 Write-Host "Sending prompt to Local LLM ($Model)..."
+$thinkEnabled = $env:INTEGRATED_POWER_LOCAL_THINKING -eq "1"
 $bodyObject = [pscustomobject]@{
     model   = [string]$Model
     prompt  = [string]$prompt
     system  = [string]$SystemPrompt
     stream  = $false
+    think   = $thinkEnabled
     keep_alive = [string]$KeepAlive
     options = [pscustomobject]@{
         num_ctx = [int]$NumCtx

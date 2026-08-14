@@ -1,7 +1,7 @@
 {
   "name": "ip-orchestrator-plugin",
   "version": "3.3.0",
-  "description": "Integrated Orchestrator for active-agent work, Codex delegation, and hardware-aware local LLM preprocessing.",
+  "description": "Integrated Power broker bridge for Agy and local LLM delegation with encrypted task events, routing, and approval boundaries.",
   "author": {
     "name": "Integrated Power"
   },

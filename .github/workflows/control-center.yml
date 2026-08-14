@@ -1,0 +1,60 @@
+name: Control Center Packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["control-center-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows
+          - os: macos-latest
+            artifact: macos
+          - os: ubuntu-22.04
+            artifact: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: vscode-extension/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux WebKit dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsecret-1-0 libsecret-tools
+      - name: Install extension dependencies
+        working-directory: vscode-extension
+        run: pnpm install --frozen-lockfile
+      - name: Enforce reuse-first implementation gate
+        working-directory: vscode-extension
+        run: pnpm run test:reuse
+      - name: Install control center dependencies
+        working-directory: control-center
+        run: npm ci
+      - name: Build Tauri package
+        working-directory: control-center
+        run: npm run tauri:build
+      - name: Smoke bundled broker runtime
+        working-directory: control-center
+        run: node scripts/smoke-broker.js
+      - name: Verify package contents
+        working-directory: control-center
+        run: npm run verify:package
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: integrated-power-control-center-${{ matrix.artifact }}
+          path: control-center/src-tauri/target/release/bundle/**

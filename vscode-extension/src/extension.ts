@@ -15,6 +15,7 @@ import {
   workspaceStoragePathForFolder,
 } from "./storagePath";
 import { offerFirstRunSetup } from "./configurationModel";
+import { BrokerController } from "./BrokerController";
 
 async function migrateLegacyDashboardState(context: vscode.ExtensionContext): Promise<number> {
   const primaryFolder = vscode.workspace.workspaceFolders?.[0];
@@ -96,6 +97,8 @@ async function installOrUpdateEggROrchestrator(
 export function activate(context: vscode.ExtensionContext): void {
   ensureIntegratedPowerStorageMigration();
   const provider = new DashboardProvider(context);
+  const brokerController = new BrokerController();
+  context.subscriptions.push(brokerController);
   const openConfigurationCenter = (section: ConfigurationSection = "overview") =>
     ConfigurationCenter.open(
       context,
@@ -103,12 +106,21 @@ export function activate(context: vscode.ExtensionContext): void {
       () => provider.refresh(),
       () => installOrUpdateEggROrchestrator(context, provider),
     );
+  const toolbarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  toolbarItem.text = "$(pulse) Integrated Power";
+  toolbarItem.tooltip = "Open Integrated Power compact control panel";
+  toolbarItem.command = "integratedPower.agentRuns.openCompact";
+  toolbarItem.show();
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("integratedPower.agentRunsDashboard", provider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     vscode.commands.registerCommand("integratedPower.agentRuns.refresh", () => provider.refresh(true)),
+    vscode.commands.registerCommand("integratedPower.agentRuns.openCompact", async () => {
+      await vscode.commands.executeCommand("workbench.view.extension.integratedPower");
+      await provider.refresh(true);
+    }),
     vscode.commands.registerCommand("integratedPower.agentRuns.openRunsFile", () => provider.openRunsFile()),
     vscode.commands.registerCommand(
       "integratedPower.agentRuns.configureViews",
@@ -138,9 +150,44 @@ export function activate(context: vscode.ExtensionContext): void {
       "integratedPower.eggr.installOrUpdateOrchestrator",
       () => openConfigurationCenter("orchestrator"),
     ),
+    vscode.commands.registerCommand(
+      "integratedPower.broker.start",
+      async () => {
+        await brokerController.start(context);
+        void vscode.window.showInformationMessage(
+          `Integrated Power broker is listening on 127.0.0.1:${brokerController.getPort()}.`,
+        );
+      },
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.broker.openDashboard",
+      async () => {
+        await brokerController.start(context);
+        await vscode.env.openExternal(vscode.Uri.parse(`http://127.0.0.1:${brokerController.getPort()}/v1/tasks`));
+      },
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.local.startDModelServer",
+      async () => {
+        try {
+          const message = await brokerController.startDLocalModelServer(context);
+          void vscode.window.showInformationMessage(message || "D: local model server is ready.");
+        } catch (error) {
+          void vscode.window.showErrorMessage(
+            `D: local model server could not start: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      },
+    ),
     provider,
+    toolbarItem,
   );
 
+  void brokerController.start(context).catch((error) => {
+    void vscode.window.showWarningMessage(
+      `Integrated Power broker could not start: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
   void provider.refresh();
   void offerFirstRunSetup(context, () => openConfigurationCenter("overview"));
 }

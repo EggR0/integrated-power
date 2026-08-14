@@ -808,3 +808,90 @@ button:focus-visible {
     font-size: 11px;
   }
 }
+
+/* Compact toolbar panel: the dashboard is intentionally sized like a small
+ * Windows flyout while retaining the full state and accessible details. */
+html,
+body {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.dashboard-shell {
+  max-width: 390px;
+  padding: 10px;
+}
+
+.dashboard-header {
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dashboard-header h1 {
+  margin: 0 0 3px;
+  font-size: 17px;
+}
+
+.dashboard-header .eyebrow,
+.dashboard-header .header-meta {
+  font-size: 10px;
+}
+
+.dashboard-grid,
+.content-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.panel,
+.token-panel,
+.list-panel,
+.summary-card {
+  border-radius: 7px;
+  padding: 9px;
+}
+
+.panel-heading {
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.panel-heading h2,
+.capacity-group h3 {
+  font-size: 13px;
+}
+
+.panel-caption,
+.summary-card p,
+.summary-card span,
+.list-item span,
+.activity-list,
+.empty-state {
+  font-size: 11px;
+}
+
+.summary-card {
+  min-height: 76px;
+}
+
+.summary-card strong {
+  margin: 4px 0;
+  font-size: 22px;
+}
+
+.usage-window-list {
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.usage-window,
+.list-item {
+  padding: 7px;
+}
+
+button {
+  padding: 5px 8px;
+  font-size: 11px;
+}

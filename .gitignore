@@ -1,7 +1,6 @@
 # Private agent state and operational records
 .ai/
 .agents/
-AGENTS.md
 reports/
 discussions/
 operational-data/
@@ -33,3 +32,8 @@ coverage/
 config/last_scan_state.json
 scripts/__temp_*
 scratch_*
+.integrated-power/
+.system_generated/
+.aider*
+target/
+src-tauri/target/

@@ -93,16 +93,18 @@ function Get-Settings {
 function Get-NvidiaHardware {
     $rows = @()
     try {
-        $lines = @(& nvidia-smi --query-gpu=index,name,memory.total,memory.free,compute_cap --format=csv,noheader,nounits 2>$null)
+        $lines = @(& nvidia-smi --query-gpu=index,name,memory.total,memory.free,compute_cap,uuid,utilization.gpu --format=csv,noheader,nounits 2>$null)
         if ($LASTEXITCODE -ne 0) { throw "compute_cap query unavailable" }
         foreach ($line in $lines) {
-            if ([string]$line -match '^\s*(\d+),\s*(.*),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\s*$') {
+            if ([string]$line -match '^\s*(\d+),\s*(.*),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+),\s*([^,]+),\s*([\d.]+)\s*$') {
                 $rows += [pscustomobject]@{
                     Index = [int]$matches[1]
                     Name = $matches[2].Trim()
                     TotalVramGB = [math]::Round((ConvertTo-Number $matches[3]) / 1024.0, 3)
                     AvailableVramGB = [math]::Round((ConvertTo-Number $matches[4]) / 1024.0, 3)
                     ComputeCapability = $matches[5]
+                    Uuid = $matches[6].Trim()
+                    UtilizationPercent = ConvertTo-Number $matches[7]
                 }
             }
         }
@@ -117,12 +119,14 @@ function Get-NvidiaHardware {
                         TotalVramGB = [math]::Round((ConvertTo-Number $matches[3]) / 1024.0, 3)
                         AvailableVramGB = [math]::Round((ConvertTo-Number $matches[4]) / 1024.0, 3)
                         ComputeCapability = $null
+                        Uuid = $null
+                        UtilizationPercent = $null
                     }
                 }
             }
         } catch {}
     }
-    return @($rows | Sort-Object AvailableVramGB -Descending)
+    return @($rows | Sort-Object @{ Expression = "AvailableVramGB"; Descending = $true }, @{ Expression = "UtilizationPercent"; Descending = $false })
 }
 
 function Get-OllamaModels {
@@ -546,6 +550,9 @@ $result = [pscustomobject]@{
     Hardware = [pscustomobject]@{
         Detection = if ($PSBoundParameters.ContainsKey("AvailableVramGB") -or $PSBoundParameters.ContainsKey("ComputeCapability")) { "override" } elseif ($null -ne $selectedGpu) { "nvidia-smi" } else { "unknown" }
         GpuName = if ($null -ne $selectedGpu) { $selectedGpu.Name } else { $null }
+        GpuIndex = if ($null -ne $selectedGpu) { $selectedGpu.Index } else { $null }
+        GpuUuid = if ($null -ne $selectedGpu) { $selectedGpu.Uuid } else { $null }
+        GpuUtilizationPercent = if ($null -ne $selectedGpu) { $selectedGpu.UtilizationPercent } else { $null }
         AvailableVramGB = if ($AvailableVramGB -ge 0) { $AvailableVramGB } else { $null }
         ComputeCapability = if ([string]::IsNullOrWhiteSpace($ComputeCapability)) { $null } else { $ComputeCapability }
         ReserveVramGB = $ReserveVramGB

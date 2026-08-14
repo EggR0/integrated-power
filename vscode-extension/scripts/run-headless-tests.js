@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 
 const extensionRoot = path.resolve(__dirname, "..");
+const repositoryRoot = path.resolve(extensionRoot, "..");
 const {
   eggRWorkspaceId,
   normalizeEggRRemoteIdentity,
@@ -217,14 +218,18 @@ test("package commands exclude removed Athena workflow", () => {
 
   assert.deepStrictEqual(commands, [
     "integratedPower.agentRuns.configureViews",
+    "integratedPower.agentRuns.openCompact",
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
+    "integratedPower.broker.openDashboard",
+    "integratedPower.broker.start",
     "integratedPower.eggr.installOrUpdateOrchestrator",
     "integratedPower.eggr.openConfigurationCenter",
     "integratedPower.eggr.runDashboardSetup",
     "integratedPower.eggr.runFirstRunSetup",
     "integratedPower.eggr.runOrchestratorSetup",
     "integratedPower.eggr.runPrivateKnowledgeSetup",
+    "integratedPower.local.startDModelServer",
   ]);
 });
 
@@ -376,6 +381,41 @@ test("compiled runtime excludes stale path and workflow patterns", () => {
   const tokenManagerOut = readText("out", "TokenManager.js");
   assert.ok(tokenManagerOut.includes("triggerCodexLiveRefresh"), "Expected triggerCodexLiveRefresh in TokenManager.js");
   assert.ok(tokenManagerOut.includes("findCodexCli"), "Expected findCodexCli in TokenManager.js");
+});
+
+test("Tauri control center is loopback-only and keeps the broker boundary", () => {
+  const config = JSON.parse(fs.readFileSync(path.join(repositoryRoot, "control-center", "src-tauri", "tauri.conf.json"), "utf8"));
+  const ui = fs.readFileSync(path.join(repositoryRoot, "control-center", "src", "main.js"), "utf8");
+  const server = readText("src", "broker", "server.ts");
+  const tauriMain = fs.readFileSync(path.join(repositoryRoot, "control-center", "src-tauri", "src", "main.rs"), "utf8");
+  assert.strictEqual(config.identifier, "com.eggr.integrated-power.control-center");
+  assert.ok(ui.includes("http://127.0.0.1:37241"));
+  assert.ok(server.includes('server.listen(requestedPort, "127.0.0.1"'));
+  assert.ok(!ui.includes("api.openai.com"));
+  assert.ok(fs.existsSync(path.join(repositoryRoot, "control-center", "broker-server.js")));
+  assert.ok(tauriMain.includes("Command::new"));
+  assert.ok(tauriMain.includes("BrokerProcess"));
+  const workflow = fs.readFileSync(path.join(repositoryRoot, ".github", "workflows", "control-center.yml"), "utf8");
+  assert.ok(workflow.includes("windows-latest"));
+  assert.ok(workflow.includes("macos-latest"));
+  assert.ok(workflow.includes("ubuntu-22.04"));
+});
+
+test("MCP, A2A, and AG-UI boundaries are declared without importing GUI credentials", () => {
+  const boundary = readText("src", "broker", "protocols.ts");
+  const server = readText("src", "broker", "server.ts");
+  assert.ok(boundary.includes("integrated_power_create_task"));
+  assert.ok(boundary.includes("RUN_STARTED"));
+  assert.ok(boundary.includes("streamable-http"));
+  assert.ok(server.includes("/.well-known/agent-card.json"));
+  assert.ok(server.includes("/a2a/tasks"));
+  assert.ok(server.includes("/message:send"));
+  assert.ok(server.includes("HTTP+JSON"));
+  assert.ok(readText("package.json").includes("@a2a-js/sdk"));
+  assert.ok(server.includes('url.pathname === "/mcp"'));
+  assert.ok(fs.existsSync(path.join(repositoryRoot, "control-center", "mcp-server.js")));
+  assert.ok(fs.existsSync(path.join(repositoryRoot, "control-center", "scripts", "smoke-broker.js")));
+  assert.ok(!boundary.match(/password|api[_-]?key|credential/i));
 });
 
 async function runPluginDistributionTests() {

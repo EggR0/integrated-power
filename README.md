@@ -1,20 +1,19 @@
+
 # Integrated Power
 
-현재 릴리스: `0.7.14`
+현재 릴리스: `0.8.0`
 
-Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Windows 11에서
-에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고,
-Integrated Orchestrator와 사용자 소유 Private Git Knowledge를 이어 주는 설정
-진입점을 제공한다. 목적은 단순한 상태 표시가 아니라, 서로 다른 에이전트와 PC를
-오가더라도 “어떤 실행 경로를 왜 골랐는지”와 “다음 작업이 무엇을 이어받아야
-하는지”를 잃지 않게 하는 것이다.
+Integrated Power는 AI 엔지니어링 및 멀티 에이전트 작업을 위한 **2-Track 에코시스템**을 제공합니다:
+
+1. **Integrated Power VSX Extension (이 저장소)**: **Antigravity IDE / VS Code 전용 확장 프로그램**. Windows 11에서 에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고, Integrated Orchestrator와 Private Git Knowledge를 이어 주는 IDE 전용 대시보드와 진입점을 제공합니다.
+2. **[Integrated Power Control Center & Multi-AI Broker](https://github.com/EggR0/integrated-power-control-center) (독립 실행 저장소)**: IDE 설치 여부와 상관없이 ChatGPT Desktop, Claude Desktop, Antigravity CLI, Local LLM(Ollama/Qwen), Codex 등 **어떤 AI 환경과도 연결·중계·호환하는 독립형 관제 데스크톱 앱 및 범용 Loopback Broker**.
 
 | 항목 | 값 |
 |---|---|
 | 제품 표시명 | Integrated Power |
 | Publisher | EggR |
 | 확장 ID | `EggR.integrated-power` |
-| 공개 배포 채널 | Open VSX Registry |
+| 공개 배포 채널 | Open VSX Registry / GitHub Releases |
 | 우선 지원 환경 | Antigravity IDE on Windows 11 |
 
 Open VSX는 배포 채널이다. Open VSX에 게시되더라도 Visual Studio Code, Cursor 또는
@@ -22,6 +21,30 @@ Open VSX는 배포 채널이다. Open VSX에 게시되더라도 Visual Studio Co
 
 > 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
 > Codex, Agy, Ollama와 vLLM은 사용자가 선택할 수 있는 외부 실행 경로다.
+
+## 30초 안에 이해하기
+
+작업이 Antigravity quota에서 멈췄을 때, Integrated Power는 남은 사용량만 보여 주는 데서 끝나지 않는다.
+Antigravity·Codex·로컬 LLM·GPU 상태를 나눠 보여 주고, 다음 작업을 어떤 실행 경로로 이어갈지 선택할 수 있게 한다.
+
+### 시작하기
+
+1. Antigravity IDE의 Extensions에서 `Integrated Power`를 검색한다.
+2. Publisher가 `EggR`인지 확인하고 설치한다.
+3. Dashboard와 Configuration Center를 열어 사용할 실행 경로를 선택한다.
+
+마켓 검색이 불가능한 환경에서는 [GitHub Releases](https://github.com/EggR0/integrated-power/releases)에서 최신
+`.vsix`를 받은 뒤 `Extensions: Install from VSIX...`로 설치한다.
+
+공급·홍보 실행안과 채널별 게시 문안은 [`docs/marketing`](docs/marketing/)에 정리되어 있다.
+
+### 이 확장이 하지 않는 것
+
+- quota를 늘리거나 제공자 제한을 우회하지 않는다.
+- 사용자를 대신해 Google·Anthropic·OpenAI 계정에 로그인하지 않는다.
+- Antigravity quota와 직접 측정한 Claude/API/CLI 활동을 같은 숫자로 합치지 않는다.
+
+핵심 문장: **quota를 기다리는 대시보드가 아니라, 작업을 다음 실행 경로로 이어 주는 컨트롤 센터.**
 
 ## 세 가지 독립 구성
 
@@ -346,3 +369,10 @@ Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integra
 라이선스, 보안 신고, 지원 범위와 변경 이력은 각각 [LICENSE](LICENSE),
 [COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md), [SECURITY.md](SECURITY.md),
 [SUPPORT.md](SUPPORT.md), [CHANGELOG.md](CHANGELOG.md)에서 확인한다.
+## Control Center cross-platform note
+
+The standalone Tauri Control Center is packaged for Windows, macOS, and Linux
+through the matrix workflow at `.github/workflows/control-center.yml`. The
+VSIX remains a host extension; cross-platform broker packaging belongs to the
+Tauri application. CI builds each platform and runs the bundled broker smoke
+test before uploading its installer artifacts.

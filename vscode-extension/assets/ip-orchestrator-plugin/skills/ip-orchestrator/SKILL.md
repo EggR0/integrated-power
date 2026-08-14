@@ -7,6 +7,11 @@ description: Routes non-trivial AI engineering work between the active agent, Co
 
 This is the primary routing skill for token-efficient AI work. When a task may benefit from delegation, classify the work first and choose one of three routes:
 
+For the first-wave Integrated Power path, read `references/broker.md` and use
+`scripts/Invoke-IntegratedPowerBroker.ps1`. Prefer `local.openai-compatible`
+for low-risk preprocessing and `google.antigravity.ide` for workspace-aware
+implementation. Do not bypass the broker by importing an unlinked conversation.
+
 Before choosing a route, resolve the settings path with the bundled settings
 module; do not assume another user's home path. Read `references/paths.md` for
 any install, migration, Knowledge, state, or cross-PC path operation. Never
@@ -60,7 +65,12 @@ Always read the detailed contract in the `references/` directory before executin
    - **Consent boundary**: Treat selection and installation as separate operations. If the selector returns `NeedsUserConfirmation=true`, explain its `SuggestedInstalls` to the user and ask whether to install one. Never run `ollama pull` until the user explicitly approves the named model.
    - **Contract**: Read `references/local-llm.md`.
 
-5. **Durable Knowledge Routing**:
+5. **Integrated Power Broker Mode (`scripts/Invoke-IntegratedPowerBroker.ps1`)**:
+   - **Trigger**: Explicit Agy/local delegation, shared task state, concurrent GUI control, or a need to preserve revisions and approvals.
+   - **Action**: Create or link a task, delegate through the loopback broker, and read the encrypted event-backed result.
+   - **Contract**: Read `references/broker.md`.
+
+6. **Durable Knowledge Routing**:
    - **Trigger**: A result, decision, incident, procedure, or worklog entry must survive the current task or be reused by another agent or PC.
    - **Action**: Resolve the user-owned Knowledge root, reuse an existing Obsidian note when possible, and select only a declared route. Never classify knowledge by inventing a Git branch.
    - **Contract**: Read `references/knowledge.md`.
