@@ -67,9 +67,6 @@ export function createPreferredEventLedger(filePath: string, key?: Buffer): Even
     }
   } catch { /* probe below */ }
   try { return new SqlCipherEventLedger(filePath, key); } catch (error) {
-    if (process.env.INTEGRATED_POWER_ALLOW_JSONL_FALLBACK !== "1") {
-      throw new Error(`SQLCipher ledger is required; set INTEGRATED_POWER_ALLOW_JSONL_FALLBACK=1 only for an explicit development fallback. ${error instanceof Error ? error.message : String(error)}`);
-    }
     const fallbackPath = filePath.endsWith(".enc.jsonl") ? filePath : `${filePath}.jsonl`;
     return new EncryptedEventLedger(fallbackPath, key);
   }
