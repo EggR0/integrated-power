@@ -1,4 +1,5 @@
 import * as path from "path";
+import * as fs from "fs";
 import * as vscode from "vscode";
 import * as http from "http";
 import { execFile } from "child_process";
@@ -31,6 +32,8 @@ export class BrokerController implements vscode.Disposable {
 
   public spawnBackgroundTerminals(context: vscode.ExtensionContext): void {
     const existing = vscode.window.terminals;
+    const ccDir = resolveControlCenterDir(context);
+    const isWin = process.platform === "win32";
     
     // 1. Integrated Power: Broker
     let brokerTerm = existing.find((t) => t.name === "Integrated Power: Broker");
@@ -40,8 +43,6 @@ export class BrokerController implements vscode.Disposable {
         iconPath: new vscode.ThemeIcon("pulse"),
       });
       this.spawnedTerminals.push(brokerTerm);
-      const isWin = process.platform === "win32";
-      const ccDir = "d:\\Workspace\\integrated-power-control-center";
       brokerTerm.sendText(isWin ? `cd '${ccDir}'; node broker-server.js` : `cd "${ccDir}" && node broker-server.js`);
     }
 
@@ -53,7 +54,7 @@ export class BrokerController implements vscode.Disposable {
         iconPath: new vscode.ThemeIcon("server-process"),
       });
       this.spawnedTerminals.push(ollamaTerm);
-      if (process.platform === "win32") {
+      if (isWin) {
         ollamaTerm.sendText("& \"$env:LOCALAPPDATA\\Programs\\Ollama\\ollama.exe\" serve");
       } else {
         ollamaTerm.sendText("ollama serve");
@@ -68,8 +69,6 @@ export class BrokerController implements vscode.Disposable {
         iconPath: new vscode.ThemeIcon("browser"),
       });
       this.spawnedTerminals.push(uiTerm);
-      const isWin = process.platform === "win32";
-      const ccDir = "d:\\Workspace\\integrated-power-control-center";
       uiTerm.sendText(isWin ? `cd '${ccDir}'; npx vite --host 127.0.0.1 --port 5173` : `cd "${ccDir}" && npx vite --host 127.0.0.1 --port 5173`);
     }
 
@@ -172,4 +171,20 @@ function probeBroker(port: number): Promise<boolean> {
 
 function isAddressInUse(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "EADDRINUSE");
+}
+
+function resolveControlCenterDir(context?: vscode.ExtensionContext): string {
+  const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const extPath = context?.extensionPath;
+  const candidates = [
+    wsFolder ? path.join(wsFolder, "control-center") : undefined,
+    wsFolder ? path.join(wsFolder, "..", "integrated-power-control-center") : undefined,
+    extPath ? path.join(extPath, "control-center") : undefined,
+    process.platform === "win32" ? "d:\\Workspace\\integrated-power-control-center" : undefined,
+  ].filter(Boolean) as string[];
+
+  for (const dir of candidates) {
+    if (fs.existsSync(dir)) return dir;
+  }
+  return wsFolder || (extPath ?? process.cwd());
 }
