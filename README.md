@@ -83,9 +83,9 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
 ## 주요 기능
 
 - Antigravity IDE, Codex 및 로컬 LLM 상태 영역 선택 표시
-- **순수 Node.js Native HTTP 로컬 실행기 (Cross-Platform / 0-의존성)**: Windows, macOS(Apple Silicon), Linux 완벽 호환 (PowerShell 불필요)
+- **Node.js Native HTTP 로컬 실행기**: PowerShell 스크립트 프로세스 의존성을 최소화하고 HTTP REST 통신 기반 처리
 - **Antigravity IDE 백그라운드 터미널 연동**: Broker, Ollama, Web UI를 IDE 터미널 탭으로 즉시 띄우고 실시간 가시화 및 원클릭 제어
-- **최대 32k (`32,768`) 토큰 로컬 컨텍스트 지원**: RTX 3090/4090 및 대용량 통합 메모리 모델 고속 적재
+- **최대 32k (`32,768`) 토큰 로컬 컨텍스트 지원**: RTX 3090/4090 등 고용량 VRAM 환경 모델 적재 지원
 - **100% 쿼터 완충 알림 및 Windows 부팅 자동 실행(AutoStart)** 옵션 탑재
 - GPU 사용률, VRAM, 전력 사용량과 현재 전력 제한 표시
 - 작업별 실행 기록, 활성 작업, 결과물과 JSONL 기록 열기
