@@ -116,23 +116,49 @@ function sendDesktopNotification(title, body) {
   }
 }
 
+function playFullChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc1.type = "sine";
+    osc2.type = "triangle";
+    osc1.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc1.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
+    osc2.frequency.setValueAtTime(1174.66, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+    osc1.start();
+    osc2.start();
+    osc1.stop(ctx.currentTime + 0.85);
+    osc2.stop(ctx.currentTime + 0.85);
+  } catch {
+    // ignore
+  }
+}
+
 function checkTokenFullNotification(previous, current) {
   if (!current || !state.notifyOnFullTokens) return;
 
   const agy = current.antigravityPercentage ?? 100;
   const opus = current.opusPercentage ?? 100;
-  const codex = current.codexPercentage ?? 100;
+  const codex = current.codexWeeklyPercentage ?? 100;
 
   const isAllFull = agy >= 100 && opus >= 100 && codex >= 100;
   const wasAnyDepleted = previous
     ? (previous.antigravityPercentage !== undefined && previous.antigravityPercentage < 100) ||
       (previous.opusPercentage !== undefined && previous.opusPercentage < 100) ||
-      (previous.codexPercentage !== undefined && previous.codexPercentage < 100)
+      (previous.codexWeeklyPercentage !== undefined && previous.codexWeeklyPercentage < 100)
     : false;
 
   if (isAllFull) {
     if (wasAnyDepleted && !state.lastFullNotified) {
       state.lastFullNotified = true;
+      playFullChime();
       const msg = "모든 AI 모델 쿼터(Gemini, Claude, Codex)가 100%로 완충되었습니다! 작업을 최대 속도로 진행할 수 있습니다.";
       showToast(`🎉 [100% 완충] ${msg}`);
       sendDesktopNotification("🎉 [Integrated Power] AI 토큰 100% 충전 완료", msg);
@@ -168,105 +194,194 @@ function switchTab(targetTab) {
 }
 
 function formatCountdown(resetTimeStr) {
-  if (!resetTimeStr) return "5시간 윈도우";
+  if (!resetTimeStr) return "";
   const target = Date.parse(resetTimeStr);
-  if (Number.isNaN(target)) return resetTimeStr;
+  if (Number.isNaN(target)) return `· ${resetTimeStr}`;
   const diffMs = target - Date.now();
-  if (diffMs <= 0) return "리셋 완료 (100%)";
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
-  const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-  return hours > 0 ? `리셋까지 ${hours}시간 ${mins}분` : `리셋까지 ${mins}분`;
+  if (diffMs <= 0) return "· Refreshes soon (100%)";
+  const totalMinutes = Math.floor(diffMs / (1000 * 60));
+  const totalHours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  if (totalHours >= 48) {
+    const days = Math.floor(totalHours / 24);
+    const remHours = totalHours % 24;
+    return `· Refreshes in ${days}d ${remHours}h`;
+  }
+  return `· Refreshes in ${totalHours}h ${mins}m`;
 }
 
 function renderTokens() {
   const ts = state.tokenStatus || {};
-  const agy5h = ts.antigravityPercentage ?? 100;
-  const agyWeekly = ts.antigravityWeeklyPercentage ?? 100;
-  const opus5h = ts.opusPercentage ?? 100;
-  const opusWeekly = ts.opusWeeklyPercentage ?? 100;
-  const codex5h = ts.codexPercentage ?? 100;
-  const codexWeekly = ts.codexWeeklyPercentage ?? 100;
+  const agy5h = ts.antigravityPercentage;
+  const agyWeekly = ts.antigravityWeeklyPercentage;
+  const opus5h = ts.opusPercentage;
+  const opusWeekly = ts.opusWeeklyPercentage;
+  const codex5h = ts.codexPercentage;
+  const codexWeekly = ts.codexWeeklyPercentage;
 
-  // 1. Gemini Gauges & Bars
-  if ($("percent-gemini-5h")) $("percent-gemini-5h").textContent = `${Math.round(agy5h)}%`;
-  if ($("gauge-gemini-5h")) $("gauge-gemini-5h").setAttribute("stroke-dasharray", `${Math.round(agy5h)}, 100`);
-  if ($("label-gemini-5h")) $("label-gemini-5h").textContent = `${Math.round(agy5h)}%`;
-  if ($("bar-gemini-5h")) $("bar-gemini-5h").style.width = `${Math.max(0, Math.min(100, agy5h))}%`;
-  if ($("label-gemini-weekly")) $("label-gemini-weekly").textContent = `${Math.round(agyWeekly)}%`;
-  if ($("bar-gemini-weekly")) $("bar-gemini-weekly").style.width = `${Math.max(0, Math.min(100, agyWeekly))}%`;
-  if ($("reset-gemini")) $("reset-gemini").textContent = formatCountdown(ts.antigravityResetTime);
-  if ($("count-gemini")) $("count-gemini").textContent = ts.antigravityTokensLeft ? `${(ts.antigravityTokensLeft / 1000).toFixed(0)}k 토큰 남음` : "용량 가용";
+  // 1. Antigravity IDE - Gemini 3.1 Pro
+  if ($("label-gemini-5h")) $("label-gemini-5h").textContent = agy5h !== undefined ? `${agy5h.toFixed(2)}% remaining` : "Waiting for quota";
+  if ($("reset-gemini-5h")) $("reset-gemini-5h").textContent = formatCountdown(ts.antigravityResetTime);
+  if ($("bar-gemini-5h")) $("bar-gemini-5h").style.width = `${Math.max(0, Math.min(100, agy5h ?? 0))}%`;
 
-  // 2. Opus Gauges & Bars
-  if ($("percent-opus-5h")) $("percent-opus-5h").textContent = `${Math.round(opus5h)}%`;
-  if ($("gauge-opus-5h")) $("gauge-opus-5h").setAttribute("stroke-dasharray", `${Math.round(opus5h)}, 100`);
-  if ($("label-opus-5h")) $("label-opus-5h").textContent = `${Math.round(opus5h)}%`;
-  if ($("bar-opus-5h")) $("bar-opus-5h").style.width = `${Math.max(0, Math.min(100, opus5h))}%`;
-  if ($("label-opus-weekly")) $("label-opus-weekly").textContent = `${Math.round(opusWeekly)}%`;
-  if ($("bar-opus-weekly")) $("bar-opus-weekly").style.width = `${Math.max(0, Math.min(100, opusWeekly))}%`;
-  if ($("reset-opus")) $("reset-opus").textContent = formatCountdown(ts.opusResetTime);
-  if ($("count-opus")) $("count-opus").textContent = ts.opusTokensLeft ? `${(ts.opusTokensLeft / 1000).toFixed(0)}k 토큰 남음` : "용량 가용";
+  if ($("label-gemini-weekly")) $("label-gemini-weekly").textContent = agyWeekly !== undefined ? `${agyWeekly.toFixed(2)}% remaining` : "Waiting for quota";
+  if ($("reset-gemini-weekly")) $("reset-gemini-weekly").textContent = formatCountdown(ts.antigravityWeeklyResetTime);
+  if ($("bar-gemini-weekly")) $("bar-gemini-weekly").style.width = `${Math.max(0, Math.min(100, agyWeekly ?? 0))}%`;
 
-  // 3. Codex Gauges & Bars
-  if ($("percent-codex-5h")) $("percent-codex-5h").textContent = `${Math.round(codex5h)}%`;
-  if ($("gauge-codex-5h")) $("gauge-codex-5h").setAttribute("stroke-dasharray", `${Math.round(codex5h)}, 100`);
-  if ($("label-codex-5h")) $("label-codex-5h").textContent = `${Math.round(codex5h)}%`;
-  if ($("bar-codex-5h")) $("bar-codex-5h").style.width = `${Math.max(0, Math.min(100, codex5h))}%`;
-  if ($("label-codex-weekly")) $("label-codex-weekly").textContent = `${Math.round(codexWeekly)}%`;
-  if ($("bar-codex-weekly")) $("bar-codex-weekly").style.width = `${Math.max(0, Math.min(100, codexWeekly))}%`;
-  if ($("reset-codex")) $("reset-codex").textContent = formatCountdown(ts.codexResetTime);
-  if ($("count-codex")) $("count-codex").textContent = ts.codexTokensLeft ? `${(ts.codexTokensLeft / 1000).toFixed(0)}k 토큰 남음` : "용량 가용";
+  // 2. Antigravity IDE - Opus 4.6 Thinking
+  if ($("label-opus-5h")) $("label-opus-5h").textContent = opus5h !== undefined ? `${opus5h.toFixed(2)}% remaining` : "Waiting for quota";
+  if ($("reset-opus-5h")) $("reset-opus-5h").textContent = formatCountdown(ts.opusResetTime);
+  if ($("bar-opus-5h")) $("bar-opus-5h").style.width = `${Math.max(0, Math.min(100, opus5h ?? 0))}%`;
 
-  // 4. Task Routing recommendation
-  const routing = ts.recommendedTaskWeight || "normal";
+  if ($("label-opus-weekly")) $("label-opus-weekly").textContent = opusWeekly !== undefined ? `${opusWeekly.toFixed(2)}% remaining` : "Waiting for quota";
+  if ($("reset-opus-weekly")) $("reset-opus-weekly").textContent = formatCountdown(ts.opusWeeklyResetTime);
+  if ($("bar-opus-weekly")) $("bar-opus-weekly").style.width = `${Math.max(0, Math.min(100, opusWeekly ?? 0))}%`;
+
+  // 3. Codex - ChatGPT
+  if ($("label-codex-5h")) $("label-codex-5h").textContent = codex5h !== undefined ? `${codex5h.toFixed(2)}% remaining` : "Waiting for quota data";
+  if ($("reset-codex-5h")) $("reset-codex-5h").textContent = formatCountdown(ts.codexResetTime);
+  if ($("bar-codex-5h")) $("bar-codex-5h").style.width = codex5h !== undefined ? `${Math.max(0, Math.min(100, codex5h))}%` : "0%";
+
+  if ($("label-codex-weekly")) $("label-codex-weekly").textContent = codexWeekly !== undefined ? `${codexWeekly.toFixed(2)}% remaining` : "Waiting for quota data";
+  if ($("reset-codex-weekly")) $("reset-codex-weekly").textContent = formatCountdown(ts.codexWeeklyResetTime);
+  if ($("bar-codex-weekly")) {
+    const pct = codexWeekly ?? 0;
+    $("bar-codex-weekly").style.width = codexWeekly !== undefined ? `${Math.max(0, Math.min(100, pct))}%` : "0%";
+    if (codexWeekly !== undefined && pct < 20) $("bar-codex-weekly").classList.add("warning");
+    else $("bar-codex-weekly").classList.remove("warning");
+  }
+
+  // 4. Task Routing & Status Tags
+  const routing = ts.taskRouting || ts.recommendedTaskWeight || "degraded";
   const routingBadge = $("task-routing-badge");
   if (routingBadge) {
     routingBadge.className = `task-routing-pill ${routing}`;
-    routingBadge.textContent = routing === "restricted" ? "Restricted (용량 제한)" : routing === "degraded" ? "Degraded (경고)" : "Normal (최대 용량)";
+    routingBadge.textContent = routing;
   }
 
   // 5. Claude Direct Usage
-  const cdu = ts.claudeDirectUsage;
-  if (cdu && cdu.today) {
-    if ($("claude-today-tokens")) {
-      const el = $("claude-today-tokens");
-      el.textContent = `${(cdu.today.totalTokens || 0).toLocaleString()} `;
-      el.appendChild(node("span", "tokens", "unit"));
-    }
-    if ($("claude-today-billable")) $("claude-today-billable").textContent = (cdu.today.billableTokens || 0).toLocaleString();
-    if ($("claude-today-reasoning")) $("claude-today-reasoning").textContent = (cdu.today.reasoningOutputTokens || 0).toLocaleString();
-    if ($("claude-7d-tokens")) {
-      const el = $("claude-7d-tokens");
-      el.textContent = `${(cdu.sevenDays?.totalTokens || 0).toLocaleString()} `;
-      el.appendChild(node("span", "tokens", "unit"));
-    }
-    if ($("claude-7d-billable")) $("claude-7d-billable").textContent = (cdu.sevenDays?.billableTokens || 0).toLocaleString();
-    if ($("claude-7d-events")) $("claude-7d-events").textContent = `${cdu.sevenDays?.eventCount || 0}건`;
-    if ($("claude-sources")) $("claude-sources").textContent = Array.isArray(cdu.sources) && cdu.sources.length ? cdu.sources.join(", ") : "Claude API, CLI, Cowork";
+  const du = ts.directUsage;
+  if ($("claude-today-tokens")) {
+    const el = $("claude-today-tokens");
+    el.replaceChildren();
+    el.append(
+      document.createTextNode(`${(du?.todayTokens ?? 0).toLocaleString()} `),
+      node("span", "tokens", "unit-label")
+    );
   }
+  if ($("claude-today-billable")) $("claude-today-billable").textContent = (du?.todayPaidTokens ?? 0).toLocaleString();
+  if ($("claude-7d-tokens")) {
+    const el = $("claude-7d-tokens");
+    el.replaceChildren();
+    el.append(
+      document.createTextNode(`${(du?.sevenDaysTokens ?? 0).toLocaleString()} `),
+      node("span", "tokens", "unit-label")
+    );
+  }
+  if ($("claude-7d-events")) $("claude-7d-events").textContent = `${du?.eventCount ?? 0}건`;
 
-  // 6. Local Compute
+  // 6. Local Compute & Multi-GPU
   const lcs = ts.localComputeStatus;
-  if (lcs) {
-    if ($("local-loaded-model")) $("local-loaded-model").textContent = Array.isArray(lcs.loadedModels) && lcs.loadedModels.length ? lcs.loadedModels.join(", ") : "qwen3.6:27b";
-    if ($("local-endpoint-health")) $("local-endpoint-health").textContent = lcs.endpointHealth === "ok" ? "정상 (127.0.0.1:11434)" : "대기중";
-    const gpu = Array.isArray(lcs.gpus) && lcs.gpus[0] ? lcs.gpus[0] : null;
-    if (gpu) {
-      const vramPct = Math.round((gpu.vramUsedMb / Math.max(1, gpu.vramTotalMb)) * 100);
-      if ($("gpu-vram-text")) $("gpu-vram-text").textContent = `${(gpu.vramUsedMb / 1024).toFixed(1)} GB / ${(gpu.vramTotalMb / 1024).toFixed(1)} GB (${vramPct}%)`;
-      if ($("gpu-vram-bar")) $("gpu-vram-bar").style.width = `${vramPct}%`;
-    }
+  const localTag = $("local-llm-status-tag");
+  if (localTag) {
+    const isOnline = lcs?.status === "online" || lcs?.status === "busy";
+    localTag.textContent = isOnline ? (lcs.status === "busy" ? "Busy" : "Online") : "Offline";
+    localTag.className = `provider-state-tag ${isOnline ? "online" : ""}`;
   }
 
-  // 7. Last Updated & Activities
-  if ($("token-last-updated")) $("token-last-updated").textContent = `마지막 동기화: ${new Date().toLocaleTimeString()} · 자동 갱신 중`;
+  const gpuContainer = $("gpu-status-container");
+  if (gpuContainer && lcs && Array.isArray(lcs.gpus) && lcs.gpus.length) {
+    gpuContainer.replaceChildren();
+    lcs.gpus.forEach((gpu) => {
+      const vramPct = gpu.vramTotalMb > 0 ? Math.round((gpu.vramUsedMb / gpu.vramTotalMb) * 1000) / 10 : 0;
+      const card = document.createElement("div");
+      card.className = "gpu-block";
+      card.style.marginTop = "8px";
+      card.style.padding = "8px";
+      card.style.background = "#0f172a";
+      card.style.borderRadius = "8px";
+      card.style.border = "1px solid rgba(255, 255, 255, 0.05)";
+
+      const title = node("div", `GPU ${gpu.id}: ${gpu.name}`);
+      title.style.fontWeight = "700";
+      title.style.fontSize = "12px";
+      title.style.color = "#f8fafc";
+      title.style.marginBottom = "6px";
+      card.append(title);
+
+      const utilBox = node("div");
+      utilBox.style.display = "flex";
+      utilBox.style.flexDirection = "column";
+      utilBox.style.gap = "2px";
+      utilBox.style.marginBottom = "6px";
+
+      const utilRow = node("div");
+      utilRow.style.display = "flex";
+      utilRow.style.justifyContent = "space-between";
+      utilRow.style.fontSize = "11.5px";
+      const utilLabel = node("span", "GPU Utilization");
+      utilLabel.style.color = "#94a3b8";
+      const utilVal = node("span", `${gpu.utilizationPercentage}% current load · `);
+      utilVal.style.color = "#e2e8f0";
+      utilVal.style.fontWeight = "600";
+      const pwr = node("span", `${gpu.powerDrawW !== undefined ? gpu.powerDrawW.toFixed(2) + "W" : "-"} / ${gpu.powerLimitW !== undefined ? gpu.powerLimitW.toFixed(1) + "W" : "-"}`);
+      pwr.style.color = "#38bdf8";
+      utilVal.append(pwr);
+      utilRow.append(utilLabel, utilVal);
+
+      const utilTrack = node("div", undefined, "progress-track");
+      utilTrack.style.height = "5px";
+      const utilFill = node("div", undefined, "progress-fill local");
+      utilFill.style.width = `${Math.max(0, Math.min(100, gpu.utilizationPercentage))}%`;
+      utilTrack.append(utilFill);
+      utilBox.append(utilRow, utilTrack);
+      card.append(utilBox);
+
+      const vramBox = node("div");
+      vramBox.style.display = "flex";
+      vramBox.style.flexDirection = "column";
+      vramBox.style.gap = "2px";
+
+      const vramRow = node("div");
+      vramRow.style.display = "flex";
+      vramRow.style.justifyContent = "space-between";
+      vramRow.style.fontSize = "11.5px";
+      const vramLabel = node("span", "VRAM Usage");
+      vramLabel.style.color = "#94a3b8";
+      const vramVal = node("span", `${vramPct}% used `);
+      vramVal.style.color = "#e2e8f0";
+      vramVal.style.fontWeight = "600";
+      const vramSub = node("span", `(${(gpu.vramUsedMb / 1024).toFixed(1)} GB / ${(gpu.vramTotalMb / 1024).toFixed(1)} GB)`);
+      vramSub.style.color = "#94a3b8";
+      vramSub.style.fontSize = "10.5px";
+      vramVal.append(vramSub);
+      vramRow.append(vramLabel, vramVal);
+
+      const vramTrack = node("div", undefined, "progress-track");
+      vramTrack.style.height = "5px";
+      const vramFill = node("div", undefined, "progress-fill local");
+      vramFill.style.width = `${Math.max(0, Math.min(100, vramPct))}%`;
+      vramTrack.append(vramFill);
+      vramBox.append(vramRow, vramTrack);
+      card.append(vramBox);
+
+      gpuContainer.append(card);
+    });
+  }
+
+  // 7. Activity Log
   const actList = $("token-activity-list");
-  if (actList && Array.isArray(ts.activity) && ts.activity.length) {
+  if (actList) {
     actList.replaceChildren();
-    for (const item of ts.activity.slice(0, 5)) {
-      actList.append(node("li", item));
+    const activities = Array.isArray(ts.activity) && ts.activity.length ? ts.activity : [
+      "Token manager initialized.",
+      `Parsed real-time quota at ${new Date().toLocaleTimeString()}`,
+    ];
+    for (const act of activities) {
+      actList.append(node("li", `• ${act}`));
     }
   }
+  if ($("token-last-updated")) $("token-last-updated").textContent = `마지막 동기화: ${new Date().toLocaleTimeString()} · 실시간 연동됨`;
 }
 
 function renderMainAgent() {
@@ -403,6 +518,139 @@ function renderTasks() {
   }
 }
 
+function renderRuns(runsData) {
+  const listTarget = $("runs-timeline-list");
+  const countBadge = $("runs-active-count");
+  if (!listTarget) return;
+
+  const runs = runsData?.runs || [];
+  const activeCount = runsData?.activeCount || 0;
+  if (countBadge) {
+    countBadge.textContent = `${activeCount}개 실행중`;
+    countBadge.className = `status-pill ${activeCount > 0 ? "status-ok" : "available"}`;
+  }
+
+  listTarget.replaceChildren();
+  if (!runs.length) {
+    listTarget.append(node("div", "기록된 워크스페이스 에이전트 실행이 없습니다.", "empty-card"));
+    return;
+  }
+
+  for (const run of runs.slice(0, 15)) {
+    const itemCard = node("div", undefined, "card task-card");
+    const topRow = node("div", undefined, "agent-heading");
+    topRow.append(node("strong", run.title || run.id));
+    const statusClass = run.status === "completed" ? "available" : run.status === "failed" ? "not-installed" : "waiting";
+    topRow.append(node("span", run.status, `status-pill ${statusClass}`));
+    itemCard.append(topRow);
+
+    const metaParts = [
+      run.model ? `모델: ${run.model}` : undefined,
+      run.taskScale ? `규모: ${run.taskScale}` : undefined,
+      run.elapsedSeconds !== undefined ? `소요: ${run.elapsedSeconds.toFixed(1)}초` : undefined,
+      run.tokensUsed !== undefined ? `토큰: ${run.tokensUsed.toLocaleString()}개` : undefined,
+      run.exitCode !== undefined ? `종료코드: ${run.exitCode}` : undefined,
+    ].filter(Boolean);
+
+    if (metaParts.length) {
+      itemCard.append(node("p", metaParts.join(" · "), "muted"));
+    }
+
+    if (Array.isArray(run.artifacts) && run.artifacts.length) {
+      const artRow = node("div", undefined, "agent-card-meta");
+      artRow.append(node("span", `산출물 (${run.artifacts.length}개): `));
+      run.artifacts.forEach((art) => {
+        const link = node("span", art.path, "code-box");
+        link.style.display = "inline-block";
+        link.style.margin = "2px 4px";
+        link.style.fontSize = "11px";
+        artRow.append(link);
+      });
+      itemCard.append(artRow);
+    }
+
+    listTarget.append(itemCard);
+  }
+}
+
+function renderLocalLlmMetrics(metricsData) {
+  const tbody = $("local-metrics-tbody");
+  const summary = $("local-metrics-summary");
+  if (!tbody) return;
+
+  const metrics = metricsData?.metrics || [];
+  if (summary) {
+    summary.textContent = `총 ${metrics.length}건 기록`;
+  }
+
+  tbody.replaceChildren();
+  if (!metrics.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 8;
+    td.style.padding = "12px";
+    td.style.textAlign = "center";
+    td.style.color = "#64748b";
+    td.textContent = "기록된 로컬 LLM 실행 데이터가 없습니다.";
+    tr.append(td);
+    tbody.append(tr);
+    return;
+  }
+
+  for (const m of metrics.slice(-10).reverse()) {
+    const tr = document.createElement("tr");
+    tr.style.borderBottom = "1px solid #1e293b";
+    const statusColor = m.success ? "#34d399" : "#f43f5e";
+    const statusText = m.success ? "성공" : "실패";
+    const timeStr = m.timestamp ? m.timestamp.split("T")[1]?.slice(0, 8) || m.timestamp : "-";
+
+    const tdTime = document.createElement("td");
+    tdTime.style.padding = "6px 8px";
+    tdTime.style.color = "#94a3b8";
+    tdTime.textContent = timeStr;
+
+    const tdTitle = document.createElement("td");
+    tdTitle.style.padding = "6px 8px";
+    tdTitle.style.fontWeight = "600";
+    tdTitle.style.color = "#e2e8f0";
+    tdTitle.textContent = m.taskTitle || "-";
+
+    const tdModel = document.createElement("td");
+    tdModel.style.padding = "6px 8px";
+    tdModel.style.color = "#38bdf8";
+    tdModel.textContent = m.model || "qwen3.6:27b";
+
+    const tdScale = document.createElement("td");
+    tdScale.style.padding = "6px 8px";
+    tdScale.style.color = "#94a3b8";
+    tdScale.textContent = m.taskScale || "-";
+
+    const tdElapsed = document.createElement("td");
+    tdElapsed.style.padding = "6px 8px";
+    tdElapsed.style.color = "#e2e8f0";
+    tdElapsed.textContent = m.actualElapsedSeconds ? `${m.actualElapsedSeconds.toFixed(1)}초` : "-";
+
+    const tdTokens = document.createElement("td");
+    tdTokens.style.padding = "6px 8px";
+    tdTokens.style.color = "#e2e8f0";
+    tdTokens.textContent = m.totalTokens ? m.totalTokens.toLocaleString() : "-";
+
+    const tdSpeed = document.createElement("td");
+    tdSpeed.style.padding = "6px 8px";
+    tdSpeed.style.color = "#a78bfa";
+    tdSpeed.textContent = m.tokensPerSecond ? `${m.tokensPerSecond.toFixed(1)} t/s` : "-";
+
+    const tdStatus = document.createElement("td");
+    tdStatus.style.padding = "6px 8px";
+    tdStatus.style.fontWeight = "600";
+    tdStatus.style.color = statusColor;
+    tdStatus.textContent = statusText;
+
+    tr.append(tdTime, tdTitle, tdModel, tdScale, tdElapsed, tdTokens, tdSpeed, tdStatus);
+    tbody.append(tr);
+  }
+}
+
 async function refreshLogs() {
   try {
     const res = await api("/v1/logs?lines=160");
@@ -430,11 +678,13 @@ async function refresh() {
     setConnection("online", "브로커 정상 (37241)");
     if ($("status")) $("status").textContent = "브로커 정상 가동 중 (127.0.0.1:37241)";
 
-    const [capRes, taskRes, appRes, tokenRes] = await Promise.all([
+    const [capRes, taskRes, appRes, tokenRes, runsRes, metricsRes] = await Promise.all([
       api("/v1/capabilities").catch(() => ({ capabilities: [] })),
       api("/v1/tasks").catch(() => ({ tasks: [] })),
       api("/v1/approvals").catch(() => ({ approvals: [] })),
       api("/v1/tokens/status").catch(() => ({ tokenStatus: null })),
+      api("/v1/runs").catch(() => ({ runs: [], activeCount: 0 })),
+      api("/v1/metrics/local-llm").catch(() => ({ metrics: [] })),
     ]);
 
     if (Array.isArray(capRes.capabilities)) state.capabilities = capRes.capabilities;
@@ -452,6 +702,8 @@ async function refresh() {
     renderHomeStats();
     renderAgents();
     renderTasks();
+    renderRuns(runsRes);
+    renderLocalLlmMetrics(metricsRes);
     if (state.activeTab === "logs") void refreshLogs();
   } catch (error) {
     setConnection("offline", "브로커 오프라인");
@@ -471,9 +723,45 @@ function bindEvents() {
   });
 
   // Quick nav buttons on home tab
-  document.addEventListener("click", (e) => {
+  document.addEventListener("click", async (e) => {
     const quickBtn = e.target.closest(".quick-nav-btn");
     if (quickBtn && quickBtn.dataset.target) switchTab(quickBtn.dataset.target);
+
+    // Host integrations one-click buttons
+    const claudeBtn = e.target.closest(".register-claude");
+    if (claudeBtn) {
+      try {
+        await api("/v1/integrations/claude/register", { method: "POST", body: JSON.stringify({ confirm: true }) });
+        showToast("⚡ Claude Desktop에 Integrated Power MCP가 등록되었습니다.");
+      } catch (err) {
+        showToast(`Claude 등록 실패: ${err.message}`, true);
+      }
+    }
+
+    const chatgptBtn = e.target.closest(".copy-chatgpt-mcp");
+    if (chatgptBtn) {
+      await copyToClipboard("http://127.0.0.1:37241/mcp", "📋 ChatGPT 맞춤형 MCP SSE URL이 복사되었습니다.");
+    }
+
+    const claudeCopyBtn = e.target.closest(".copy-claude-mcp");
+    if (claudeCopyBtn) {
+      try {
+        const spec = await api("/v1/integrations/claude/spec");
+        await copyToClipboard(spec.snippet || JSON.stringify(spec.spec, null, 2), "📋 Claude 설정 JSON이 복사되었습니다.");
+      } catch (err) {
+        showToast("설정 복사 실패: " + err.message, true);
+      }
+    }
+
+    const genericMcpBtn = e.target.closest(".copy-generic-mcp");
+    if (genericMcpBtn) {
+      try {
+        const spec = await api("/v1/integrations/mcp/spec");
+        await copyToClipboard(spec.snippet || JSON.stringify(spec.spec, null, 2), "📋 MCP 설정 JSON이 복사되었습니다.");
+      } catch (err) {
+        showToast("설정 복사 실패: " + err.message, true);
+      }
+    }
   });
 
   // Refresh buttons
@@ -511,8 +799,9 @@ function bindEvents() {
   if ($("btn-test-notification")) {
     $("btn-test-notification").onclick = () => {
       requestNotificationPermission();
-      showToast("🔔 [테스트 알림] 토큰 100% 완충 알림이 정상적으로 작동합니다.");
-      sendDesktopNotification("🎉 [테스트] Integrated Power 토큰 완충 알림", "AI 모델 토큰이 100% 충전되었을 때 이와 같은 알림이 표시됩니다.");
+      playFullChime();
+      showToast("🔔 [테스트 알림] 토큰 100% 완충 알림 및 차임벨이 정상적으로 작동합니다.");
+      sendDesktopNotification("🎉 [테스트] Integrated Power 토큰 완충 알림", "AI 모델 토큰이 100% 충전되었을 때 이와 같은 알림과 사운드가 재생됩니다.");
     };
   }
 
@@ -531,6 +820,23 @@ function bindEvents() {
         showToast(`자동 실행 설정 실패: ${err.message}`, true);
         e.target.checked = state.autoStartEnabled;
       }
+    };
+  }
+
+  // Settings integration buttons
+  if ($("btn-settings-claude")) {
+    $("btn-settings-claude").onclick = async () => {
+      try {
+        await api("/v1/integrations/claude/register", { method: "POST", body: JSON.stringify({ confirm: true }) });
+        showToast("⚡ Claude Desktop 설정에 Integrated Power MCP가 등록되었습니다.");
+      } catch (err) {
+        showToast("Claude 등록 실패: " + err.message, true);
+      }
+    };
+  }
+  if ($("btn-settings-chatgpt")) {
+    $("btn-settings-chatgpt").onclick = async () => {
+      await copyToClipboard("http://127.0.0.1:37241/mcp", "📋 ChatGPT 맞춤형 MCP SSE URL이 복사되었습니다.");
     };
   }
 
