@@ -83,6 +83,10 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
 ## 주요 기능
 
 - Antigravity IDE, Codex 및 로컬 LLM 상태 영역 선택 표시
+- **순수 Node.js Native HTTP 로컬 실행기 (Cross-Platform / 0-의존성)**: Windows, macOS(Apple Silicon), Linux 완벽 호환 (PowerShell 불필요)
+- **Antigravity IDE 백그라운드 터미널 연동**: Broker, Ollama, Web UI를 IDE 터미널 탭으로 즉시 띄우고 실시간 가시화 및 원클릭 제어
+- **최대 32k (`32,768`) 토큰 로컬 컨텍스트 지원**: RTX 3090/4090 및 대용량 통합 메모리 모델 고속 적재
+- **100% 쿼터 완충 알림 및 Windows 부팅 자동 실행(AutoStart)** 옵션 탑재
 - GPU 사용률, VRAM, 전력 사용량과 현재 전력 제한 표시
 - 작업별 실행 기록, 활성 작업, 결과물과 JSONL 기록 열기
 - provider 실측값, 계산값, 추정값과 미확인 값을 구분하는 사용량 표시
@@ -180,6 +184,10 @@ Developer: Reload Window
 | `Integrated Power: Configure Integrated Orchestrator` | Integrated Orchestrator 설정 영역 열기 |
 | `Integrated Power: Configure Private Git Knowledge` | 사용자 Knowledge 설정 영역 열기 |
 | `Integrated Power: Install or Update Integrated Orchestrator` | 설치 계획과 충돌 상태 확인 |
+| `Integrated Power: Open All Background Terminals in IDE` | IDE 내 백그라운드 터미널(Broker, Ollama, Web UI) 일괄 실행 및 포커스 |
+| `Integrated Power: Show Broker Terminal` | 브로커 서버 터미널 탭 포커스 |
+| `Integrated Power: Show Ollama Local LLM Terminal` | Ollama 로컬 LLM 터미널 탭 포커스 |
+| `Integrated Power: Show Web UI Terminal` | Web UI 대시보드 터미널 탭 포커스 |
 
 명령의 내부 `integratedPower.*` ID와 `ip-orchestrator` 기계 식별자는 호환성을
 위해 유지한다.
