@@ -118,6 +118,32 @@ button:focus-visible {
   font-size: 12px;
 }
 
+.terminal-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.terminal-quick-actions .ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.08));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.15));
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.terminal-quick-actions .ghost-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.18));
+}
+
 .stale-badge {
   color: var(--vscode-errorForeground);
   font-weight: 650;

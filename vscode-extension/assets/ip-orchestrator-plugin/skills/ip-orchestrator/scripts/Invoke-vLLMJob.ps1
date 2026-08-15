@@ -148,7 +148,7 @@ function ConvertTo-LocalMetricRow {
     }
 }
 
-function Ensure-LocalMetricsSchema {
+function Initialize-LocalMetricsSchema {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
@@ -189,7 +189,7 @@ function Write-LocalLlmMetric {
         [string]$ErrorMessage = ""
     )
 
-    Ensure-LocalMetricsSchema -Path $MetricsPath
+    Initialize-LocalMetricsSchema -Path $MetricsPath
     $outputChars = if ($null -ne $Content) { $Content.Length } else { 0 }
     $tokensPerSecond = if ($ElapsedSeconds -gt 0) { [math]::Round($TotalTokens / $ElapsedSeconds, 2) } else { 0 }
     $row = ConvertTo-LocalMetricRow -Source ([pscustomobject]@{
@@ -224,13 +224,13 @@ function Get-FirstModelId {
         [string]$ApiKey = ""
     )
 
-    $args = @("-sS", "--max-time", "5", $ModelsUrl)
+    $curlArgs = @("-sS", "--max-time", "5", $ModelsUrl)
     if (![string]::IsNullOrWhiteSpace($ApiKey)) {
-        $args += @("-H", "Authorization: Bearer $ApiKey")
+        $curlArgs += @("-H", "Authorization: Bearer $ApiKey")
     }
 
     try {
-        $models = Invoke-CurlJson -Arguments $args
+        $models = Invoke-CurlJson -Arguments $curlArgs
         if ($models.data -and $models.data.Count -gt 0 -and $models.data[0].id) {
             return [string]$models.data[0].id
         }

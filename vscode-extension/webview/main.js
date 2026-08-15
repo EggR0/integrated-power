@@ -257,6 +257,20 @@ function render() {
             ${dashboardState.runsFile ? `<span>${escapeHtml(dashboardState.runsFile)}</span>` : ""}
             ${dashboardState.isStale ? `<span class="stale-badge">Stale</span>` : ""}
           </div>
+          <div class="terminal-quick-actions">
+            <button class="ghost-btn" data-command="openTerminals" title="Open Broker, Ollama, and Web UI background terminals in IDE">
+              ⚡ All Terminals
+            </button>
+            <button class="ghost-btn" data-command="showBroker" title="Focus Broker Terminal">
+              🟢 Broker
+            </button>
+            <button class="ghost-btn" data-command="showOllama" title="Focus Ollama Local LLM Terminal">
+              🦙 Ollama
+            </button>
+            <button class="ghost-btn" data-command="showWebUI" title="Focus Web UI Terminal">
+              🌐 Web UI
+            </button>
+          </div>
         </div>
       </header>
 

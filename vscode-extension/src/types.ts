@@ -189,7 +189,11 @@ export type WebviewToExtensionMessage =
   | { type: "ready"; state?: Partial<DashboardState> }
   | { type: "refresh" }
   | { type: "openRunsFile" }
-  | { type: "openArtifact"; artifactId: string };
+  | { type: "openArtifact"; artifactId: string }
+  | { type: "openTerminals" }
+  | { type: "showBroker" }
+  | { type: "showOllama" }
+  | { type: "showWebUI" };
 
 export type ExtensionToWebviewMessage =
   | { type: "state"; state: DashboardState }

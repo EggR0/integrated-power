@@ -36,7 +36,7 @@ export class AgyNotAuthenticatedError extends Error {
 export class AgyQuotaClient {
   private extensionPath: string;
 
-  constructor(extensionPath: string) {
+  constructor(extensionPath: string = __dirname) {
     this.extensionPath = extensionPath;
   }
 

@@ -48,13 +48,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:integratedPower.agentRunsDashboard",
-    "onCommand:integratedPower.eggr.openConfigurationCenter",
-    "onCommand:integratedPower.eggr.installOrUpdateOrchestrator",
-    "onCommand:integratedPower.eggr.runFirstRunSetup",
-    "onCommand:integratedPower.eggr.runDashboardSetup",
-    "onCommand:integratedPower.eggr.runOrchestratorSetup",
-    "onCommand:integratedPower.eggr.runPrivateKnowledgeSetup"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -75,6 +69,16 @@
           "type": "boolean",
           "default": true,
           "description": "Show the Local LLM capacity section in the dashboard."
+        },
+        "integratedPower.notifications.notifyOnFullTokens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send a desktop/VS Code notification when token quotas recharge to 100%."
+        },
+        "integratedPower.system.autoStartOnBoot": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically launch Integrated Power background broker on Windows startup."
         }
       }
     },
@@ -152,15 +156,52 @@
       {
         "command": "integratedPower.local.startDModelServer",
         "title": "Integrated Power: Start D: Local Model Server"
+      },
+      {
+        "command": "integratedPower.terminals.openAll",
+        "title": "Integrated Power: Open All Background Terminals in IDE",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "integratedPower.terminals.showBroker",
+        "title": "Integrated Power: Show Broker Terminal",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "integratedPower.terminals.showOllama",
+        "title": "Integrated Power: Show Ollama Local LLM Terminal",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "integratedPower.terminals.showWebUI",
+        "title": "Integrated Power: Show Web UI Terminal",
+        "icon": "$(browser)"
       }
     ],
     "menus": {
       "commandPalette": [
         {
           "command": "integratedPower.agentRuns.openCompact"
+        },
+        {
+          "command": "integratedPower.terminals.openAll"
+        },
+        {
+          "command": "integratedPower.terminals.showBroker"
+        },
+        {
+          "command": "integratedPower.terminals.showOllama"
+        },
+        {
+          "command": "integratedPower.terminals.showWebUI"
         }
       ],
       "view/title": [
+        {
+          "command": "integratedPower.terminals.openAll",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        },
         {
           "command": "integratedPower.agentRuns.refresh",
           "when": "view == integratedPower.agentRunsDashboard",

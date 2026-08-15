@@ -179,9 +179,31 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       },
     ),
+    vscode.commands.registerCommand(
+      "integratedPower.broker.showLogs",
+      () => brokerController.showLogs(false),
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.terminals.openAll",
+      () => brokerController.spawnBackgroundTerminals(context),
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.terminals.showBroker",
+      () => brokerController.showTerminal("Broker", context),
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.terminals.showOllama",
+      () => brokerController.showTerminal("Ollama", context),
+    ),
+    vscode.commands.registerCommand(
+      "integratedPower.terminals.showWebUI",
+      () => brokerController.showTerminal("Web UI", context),
+    ),
     provider,
     toolbarItem,
   );
+
+  brokerController.spawnBackgroundTerminals(context);
 
   void brokerController.start(context).catch((error) => {
     void vscode.window.showWarningMessage(

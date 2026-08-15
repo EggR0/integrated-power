@@ -51,9 +51,8 @@ function ConvertTo-Number {
 
 function Get-PropertyValue {
     param([object]$Object, [string]$Name, [object]$Fallback = $null)
-    if ($null -ne $Object) {
-        $property = $Object.PSObject.Properties[$Name]
-        if ($null -ne $property) { return $property.Value }
+    if ($null -ne $Object -and $null -ne $Object.PSObject -and $null -ne $Object.PSObject.Properties -and $null -ne $Object.PSObject.Properties[$Name]) {
+        return $Object.$Name
     }
     return $Fallback
 }
@@ -61,24 +60,12 @@ function Get-PropertyValue {
 function Get-Settings {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path)) {
-        $settingsModule = Join-Path $PSScriptRoot "lib\EggR.Settings.psm1"
-        if (Test-Path -LiteralPath $settingsModule -PathType Leaf) {
-            Import-Module $settingsModule -Force -DisableNameChecking
-            $Path = Get-EggROrchestratorSettingsPath
+        $Path = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS)) {
+            $env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS
         } else {
-            $userProfile = [Environment]::GetFolderPath("UserProfile")
-            $preferredSettings = Join-Path $userProfile ".config\integrated-power\orchestrator.json"
-            $previousSettings = Join-Path $userProfile ".config\eggr\orchestrator.json"
-            $legacySettings = Join-Path $userProfile ".gemini\config\codex_plugin_settings.json"
-            $Path = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS)) {
-                $env:INTEGRATED_POWER_ORCHESTRATOR_SETTINGS
-            } elseif (Test-Path -LiteralPath $preferredSettings -PathType Leaf) {
-                $preferredSettings
-            } elseif (Test-Path -LiteralPath $previousSettings -PathType Leaf) {
-                $previousSettings
-            } else {
-                $legacySettings
-            }
+            $preferredSettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".config\integrated-power\orchestrator.json"
+            $legacySettings = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".gemini\config\codex_plugin_settings.json"
+            if (Test-Path -LiteralPath $preferredSettings -PathType Leaf) { $preferredSettings } else { $legacySettings }
         }
     }
     $Path = [Environment]::ExpandEnvironmentVariables($Path)
@@ -93,8 +80,8 @@ function Get-Settings {
 function Get-NvidiaHardware {
     $rows = @()
     try {
-        $lines = @(& nvidia-smi --query-gpu=index,name,memory.total,memory.free,compute_cap,uuid,utilization.gpu --format=csv,noheader,nounits 2>$null)
-        if ($LASTEXITCODE -ne 0) { throw "compute_cap query unavailable" }
+        $lines = @(& nvidia-smi --query-gpu=index,name,memory.total,memory.free,compute_cap,gpu_uuid,utilization.gpu --format=csv,noheader,nounits 2>$null)
+        if ($LASTEXITCODE -ne 0) { throw "extended query unavailable" }
         foreach ($line in $lines) {
             if ([string]$line -match '^\s*(\d+),\s*(.*),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+),\s*([^,]+),\s*([\d.]+)\s*$') {
                 $rows += [pscustomobject]@{
@@ -102,8 +89,8 @@ function Get-NvidiaHardware {
                     Name = $matches[2].Trim()
                     TotalVramGB = [math]::Round((ConvertTo-Number $matches[3]) / 1024.0, 3)
                     AvailableVramGB = [math]::Round((ConvertTo-Number $matches[4]) / 1024.0, 3)
-                    ComputeCapability = $matches[5]
-                    Uuid = $matches[6].Trim()
+                    ComputeCapability = $matches[5].Trim()
+                    GpuUuid = $matches[6].Trim()
                     UtilizationPercent = ConvertTo-Number $matches[7]
                 }
             }
@@ -119,26 +106,35 @@ function Get-NvidiaHardware {
                         TotalVramGB = [math]::Round((ConvertTo-Number $matches[3]) / 1024.0, 3)
                         AvailableVramGB = [math]::Round((ConvertTo-Number $matches[4]) / 1024.0, 3)
                         ComputeCapability = $null
-                        Uuid = $null
-                        UtilizationPercent = $null
+                        GpuUuid = "GPU-$([int]$matches[1])"
+                        UtilizationPercent = 0.0
                     }
                 }
             }
         } catch {}
     }
-    return @($rows | Sort-Object @{ Expression = "AvailableVramGB"; Descending = $true }, @{ Expression = "UtilizationPercent"; Descending = $false })
+    return @($rows | Sort-Object AvailableVramGB -Descending)
 }
 
 function Get-OllamaModels {
     param([string]$Endpoint)
+    if ([string]::IsNullOrWhiteSpace($Endpoint)) { $Endpoint = "http://127.0.0.1:11434" }
     try {
-        $response = Invoke-RestMethod -Uri "$($Endpoint.TrimEnd('/'))/api/tags" -Method Get -TimeoutSec 3
-        return @($response.models | ForEach-Object {
-            [pscustomobject]@{
-                Name = [string]$_.name
-                SizeGB = if ($null -ne $_.size) { [math]::Round(([double]$_.size / 1GB), 3) } else { $null }
+        $uri = "$($Endpoint.TrimEnd('/'))/api/tags"
+        $client = New-Object System.Net.WebClient
+        $client.Encoding = [System.Text.Encoding]::UTF8
+        $json = $client.DownloadString($uri)
+        $parsed = $json | ConvertFrom-Json
+        $models = @()
+        if ($null -ne $parsed -and $null -ne $parsed.models) {
+            foreach ($m in $parsed.models) {
+                $name = [string]$m.name
+                $size = 0.0
+                if ($null -ne $m.size) { $size = [math]::Round(([double]$m.size / 1073741824.0), 3) }
+                $models += [pscustomobject]@{ Name = $name; SizeGB = $size }
             }
-        })
+        }
+        return $models
     } catch {
         return @()
     }
@@ -159,7 +155,7 @@ function Get-TaskScore {
     return ConvertTo-Number (Get-PropertyValue $Row $column 5) 5
 }
 
-function Normalize-Score {
+function ConvertTo-NormalizedScore {
     param([double]$Value)
     return [math]::Min(1.0, [math]::Max(0.0, $Value / 10.0))
 }
@@ -237,10 +233,13 @@ if ([string]::IsNullOrWhiteSpace($Provider)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($HardwareMode)) {
-    $HardwareMode = [string](Get-PropertyValue $policy "Mode" "")
-    if ([string]::IsNullOrWhiteSpace($HardwareMode)) {
-        $configuredModel = [string](Get-PropertyValue $localSettings "Model" "")
-        $HardwareMode = if ([string]::IsNullOrWhiteSpace($configuredModel)) { "auto" } else { "user_default" }
+    $configuredMode = [string](Get-PropertyValue $policy "Mode" "")
+    if (-not [string]::IsNullOrWhiteSpace($configuredMode)) {
+        $HardwareMode = $configuredMode
+    } elseif (-not [string]::IsNullOrWhiteSpace([string](Get-PropertyValue $localSettings "Model" ""))) {
+        $HardwareMode = "user_default"
+    } else {
+        $HardwareMode = "auto"
     }
 }
 if ($HardwareMode -notin @("auto", "user_default")) { $HardwareMode = "auto" }
@@ -272,22 +271,9 @@ if ([string]::IsNullOrWhiteSpace($ComputeCapability) -and $null -ne $selectedGpu
 }
 
 if ([string]::IsNullOrWhiteSpace($RegistryFile)) {
-    $userProfile = [Environment]::GetFolderPath("UserProfile")
-    $preferredUserRegistry = Join-Path $userProfile ".config\integrated-power\local_llm_model_registry.csv"
-    $previousUserRegistry = Join-Path $userProfile ".config\eggr\local_llm_model_registry.csv"
     $workspaceRegistry = Join-Path $repoRoot "config\local_llm_model_registry.csv"
     $bundledRegistry = Join-Path (Split-Path $PSScriptRoot -Parent) "references\local_llm_model_registry.csv"
-    $RegistryFile = if (-not [string]::IsNullOrWhiteSpace($env:INTEGRATED_POWER_LOCAL_LLM_REGISTRY)) {
-        [Environment]::ExpandEnvironmentVariables($env:INTEGRATED_POWER_LOCAL_LLM_REGISTRY)
-    } elseif (Test-Path -LiteralPath $preferredUserRegistry -PathType Leaf) {
-        $preferredUserRegistry
-    } elseif (Test-Path -LiteralPath $previousUserRegistry -PathType Leaf) {
-        $previousUserRegistry
-    } elseif (Test-Path -LiteralPath $workspaceRegistry -PathType Leaf) {
-        $workspaceRegistry
-    } else {
-        $bundledRegistry
-    }
+    $RegistryFile = if (Test-Path -LiteralPath $workspaceRegistry) { $workspaceRegistry } else { $bundledRegistry }
 }
 if ([string]::IsNullOrWhiteSpace($MetricsFile)) {
     $MetricsFile = Join-Path $storagePath "reports\local_llm_metrics.csv"
@@ -308,8 +294,10 @@ $ollamaModels = if ($PSBoundParameters.ContainsKey("InstalledModels")) {
 $installedSet = @{}
 $installedSizeByModel = @{}
 foreach ($entry in $ollamaModels) {
-    $installedSet[[string]$entry.Name] = $true
-    $installedSizeByModel[[string]$entry.Name] = $entry.SizeGB
+    $entryName = [string](Get-PropertyValue $entry "Name" $entry)
+    $entrySize = Get-PropertyValue $entry "SizeGB" $null
+    $installedSet[$entryName] = $true
+    $installedSizeByModel[$entryName] = $entrySize
 }
 
 $cutoff = (Get-Date).AddDays(-1 * [math]::Max($MetricsWindowDays, 1))
@@ -332,6 +320,7 @@ $candidates = foreach ($row in $registry) {
     $model = [string]$row.Model
     if (-not [string]::IsNullOrWhiteSpace($Provider) -and [string]$row.Provider -ne $Provider) { continue }
     $installed = $installedSet.ContainsKey($model)
+    if ($InstalledOnly -and -not $installed) { continue }
 
     $minimumCc = Get-MinimumComputeCapability -Row $row
     $computeFit = Test-ComputeCapability -Detected $ComputeCapability -Required $minimumCc
@@ -349,23 +338,18 @@ $candidates = foreach ($row in $registry) {
         continue
     }
 
-    $taskScore = Normalize-Score (Get-TaskScore -Row $row -Type $TaskType)
-    $speedScore = Normalize-Score (ConvertTo-Number (Get-PropertyValue $row "SpeedScore" 5) 5)
+    $taskScore = ConvertTo-NormalizedScore (Get-TaskScore -Row $row -Type $TaskType)
+    $speedScore = ConvertTo-NormalizedScore (ConvertTo-Number (Get-PropertyValue $row "SpeedScore" 5) 5)
     $reliabilityPrior = ConvertTo-Number (Get-PropertyValue $row "ReliabilityPrior" 0.6) 0.6
-    # Windows PowerShell 5.1 throws "Argument types do not match" when a one-item
-    # Generic.List[object] is wrapped directly in @(...). Pipeline enumeration
-    # keeps the result an object array for the 0/1/N metric cases.
-    $history = if ($historyByModel.ContainsKey($model)) {
-        @($historyByModel[$model] | ForEach-Object { $_ })
-    } else { @() }
-    $historyCount = @($history).Count
+    $history = if ($historyByModel.ContainsKey($model)) { $historyByModel[$model] } else { $null }
+    $historyCount = if ($null -ne $history) { @($history).Count } else { 0 }
     $successRate = $reliabilityPrior
     $avgElapsed = $null
     $tokensPerSecond = 0.0
     if ($historyCount -gt 0) {
         $successRows = @($history | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.Success) })
         if ($successRows.Count -gt 0) {
-            $successRate = @($successRows | Where-Object { [string]$_.Success -match "^(true|1|yes)$" }).Count / [double]$successRows.Count
+            $successRate = @($successRows | Where-Object { [string]$_.Success -match "^(true|1|yes)$" }).Count / [double]@($successRows).Count
         }
         $elapsedValues = @($history | ForEach-Object {
             $value = ConvertTo-Number $_.ActualElapsedSeconds 0
@@ -434,6 +418,9 @@ if ($HardwareMode -eq "user_default" -and -not [string]::IsNullOrWhiteSpace($Pre
         throw "Preferred model '$PreferredModel' violates the configured $($rejectedMatch[0].Reason) constraint."
     }
     $customInstalled = $installedSet.ContainsKey($PreferredModel)
+    if ($InstalledOnly -and -not $customInstalled) {
+        throw "Preferred model '$PreferredModel' is not reported as installed."
+    }
     $customWeights = if ($installedSizeByModel.ContainsKey($PreferredModel) -and $null -ne $installedSizeByModel[$PreferredModel]) {
         [math]::Round(([double]$installedSizeByModel[$PreferredModel]) * 1.10, 3)
     } else { $null }
@@ -468,59 +455,47 @@ if ($HardwareMode -eq "user_default" -and -not [string]::IsNullOrWhiteSpace($Pre
     }
 }
 
-$registryModelsNotInstalled = @($registry | Where-Object {
-    -not $installedSet.ContainsKey([string]$_.Model)
-} | ForEach-Object { [string]$_.Model } | Sort-Object -Unique)
-$eligibleCandidates = if ($InstalledOnly) {
-    @($candidates | Where-Object { $_.Installed })
-} else {
-    @($candidates)
-}
-$ranked = @($eligibleCandidates | Sort-Object -Property Score -Descending)
-$preferredUnavailable = $InstalledOnly -and $HardwareMode -eq "user_default" -and
-    -not [string]::IsNullOrWhiteSpace($PreferredModel) -and
-    @($ranked | Where-Object { $_.Model -eq $PreferredModel }).Count -eq 0
-if ($InstalledOnly -and ($ranked.Count -eq 0 -or $preferredUnavailable)) {
-    $suggestionPool = if ($preferredUnavailable) {
-        @($candidates | Where-Object { -not $_.Installed -and $_.Model -eq $PreferredModel })
-    } else {
-        @($candidates | Where-Object { -not $_.Installed } | Sort-Object -Property Score -Descending | Select-Object -First 3)
-    }
-    $suggestedInstalls = @($suggestionPool | ForEach-Object {
-        [pscustomobject]@{
-            Model = $_.Model
-            Provider = $_.Provider
-            Score = $_.Score
-            EstimatedVramRequiredGB = $_.EstimatedVramRequiredGB
-            VramFit = $_.VramFit
-            PrimaryUse = $_.PrimaryUse
-            ProposedAction = "ollama pull $($_.Model)"
-        }
-    })
-    $confirmationResult = [pscustomobject]@{
-        Status = if ($suggestedInstalls.Count -gt 0) { "needs_user_confirmation" } else { "no_compatible_installed_model" }
-        SelectedModel = $null
-        Provider = if ([string]::IsNullOrWhiteSpace($Provider)) { "ollama" } else { $Provider }
-        TaskType = $TaskType
-        TaskScale = $TaskScale
-        NeedsUserConfirmation = $suggestedInstalls.Count -gt 0
-        AgentPrompt = if ($suggestedInstalls.Count -gt 0) {
-            "No eligible installed model is available. Ask the user which SuggestedInstalls model may be downloaded. Do not run ollama pull before explicit confirmation."
-        } else {
-            "No installed or registry model satisfies the current filters. Report the hardware or policy constraint and ask the user how to proceed."
-        }
-        SuggestedInstalls = $suggestedInstalls
-        RegistryModelsNotInstalled = $registryModelsNotInstalled
-        RejectedCandidates = $rejected
-    }
-    if ($AsJson) {
-        $confirmationResult | ConvertTo-Json -Depth 10
-    } else {
-        $confirmationResult
-    }
-    return
-}
+$ranked = @($candidates | Sort-Object -Property Score -Descending)
 if ($ranked.Count -eq 0) {
+    if ($InstalledOnly) {
+        $suggested = @(foreach ($row in $registry) {
+            $model = [string]$row.Model
+            if (-not [string]::IsNullOrWhiteSpace($Provider) -and [string]$row.Provider -ne $Provider) { continue }
+            $minimumCc = Get-MinimumComputeCapability -Row $row
+            $computeFit = Test-ComputeCapability -Detected $ComputeCapability -Required $minimumCc
+            if ($computeFit -eq $false) { continue }
+            $estimate = Get-EstimatedWeightsGB -Row $row -InstalledSizeByModel $installedSizeByModel
+            $requiredVram = [math]::Round($estimate.GB + $ReserveVramGB, 3)
+            $vramFit = if ($AvailableVramGB -ge 0) { $AvailableVramGB -ge $requiredVram } else { $null }
+            if ($vramFit -eq $false -and -not $AllowCpuOffload) { continue }
+            $row
+        })
+        $result = [pscustomobject]@{
+            Status = "needs_user_confirmation"
+            NeedsUserConfirmation = $true
+            SuggestedInstalls = @($suggested | ForEach-Object { [string]$_.Model })
+            AgentPrompt = "No eligible installed model is available. Ask the user which SuggestedInstalls model may be downloaded. Do not run ollama pull before explicit confirmation."
+            Hardware = [pscustomobject]@{
+                Detection = if ($PSBoundParameters.ContainsKey("AvailableVramGB") -or $PSBoundParameters.ContainsKey("ComputeCapability")) { "override" } elseif ($null -ne $selectedGpu) { "nvidia-smi" } else { "unknown" }
+                GpuIndex = if ($null -ne $selectedGpu) { Get-PropertyValue $selectedGpu "Index" $null } else { $null }
+                GpuUuid = if ($null -ne $selectedGpu) { Get-PropertyValue $selectedGpu "GpuUuid" $null } else { $null }
+                GpuUtilizationPercent = if ($null -ne $selectedGpu) { Get-PropertyValue $selectedGpu "UtilizationPercent" $null } else { $null }
+                GpuName = if ($null -ne $selectedGpu) { Get-PropertyValue $selectedGpu "Name" $null } else { $null }
+                AvailableVramGB = if ($AvailableVramGB -ge 0) { $AvailableVramGB } else { $null }
+                ComputeCapability = if ([string]::IsNullOrWhiteSpace($ComputeCapability)) { $null } else { $ComputeCapability }
+                ReserveVramGB = $ReserveVramGB
+                AllowCpuOffload = $AllowCpuOffload
+            }
+            Candidates = @()
+            RejectedCandidates = $rejected
+        }
+        if ($AsJson) {
+            $result | ConvertTo-Json -Depth 10
+            return
+        } else {
+            return $result
+        }
+    }
     throw "No local LLM candidate matched the filters. TaskType=$TaskType Provider=$Provider InstalledOnly=$InstalledOnly rejected=$($rejected.Count)"
 }
 
@@ -549,20 +524,16 @@ $result = [pscustomobject]@{
     Reason = $reason
     Hardware = [pscustomobject]@{
         Detection = if ($PSBoundParameters.ContainsKey("AvailableVramGB") -or $PSBoundParameters.ContainsKey("ComputeCapability")) { "override" } elseif ($null -ne $selectedGpu) { "nvidia-smi" } else { "unknown" }
-        GpuName = if ($null -ne $selectedGpu) { $selectedGpu.Name } else { $null }
-        GpuIndex = if ($null -ne $selectedGpu) { $selectedGpu.Index } else { $null }
-        GpuUuid = if ($null -ne $selectedGpu) { $selectedGpu.Uuid } else { $null }
-        GpuUtilizationPercent = if ($null -ne $selectedGpu) { $selectedGpu.UtilizationPercent } else { $null }
+        GpuIndex = if ($null -ne $selectedGpu) { Get-PropertyValue $selectedGpu "Index" $null } else { $null }
+        GpuUuid = if ($null -ne $selectedGpu) { Get-PropertyValue $selectedGpu "GpuUuid" $null } else { $null }
+        GpuUtilizationPercent = if ($null -ne $selectedGpu) { Get-PropertyValue $selectedGpu "UtilizationPercent" $null } else { $null }
+        GpuName = if ($null -ne $selectedGpu) { Get-PropertyValue $selectedGpu "Name" $null } else { $null }
         AvailableVramGB = if ($AvailableVramGB -ge 0) { $AvailableVramGB } else { $null }
         ComputeCapability = if ([string]::IsNullOrWhiteSpace($ComputeCapability)) { $null } else { $ComputeCapability }
         ReserveVramGB = $ReserveVramGB
         AllowCpuOffload = $AllowCpuOffload
     }
     PrecisionRule = "Quantization describes stored weights and is used for memory estimation. Native FP8/FP4 is a hard constraint only when RequiredRuntimePrecision/PrecisionBackend or MinimumComputeCapability explicitly declares it."
-    NeedsUserConfirmation = $false
-    AgentPrompt = "Use SelectedModel for this local task. No model installation is required."
-    SuggestedInstalls = @()
-    RegistryModelsNotInstalled = $registryModelsNotInstalled
     Candidates = $ranked
     RejectedCandidates = $rejected
 }

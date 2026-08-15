@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "fs";
 import { DashboardOutboundMessage, DashboardState, RunSummary, WebviewToExtensionMessage, TokenStatus, LocalLlmMetric } from "./types";
 import { RunStore } from "./RunStore";
 import { TokenManager } from "./TokenManager";
 import { WorkspacePaths } from "./WorkspacePaths";
+import { resolveIntegratedPowerStateRoot } from "./storagePath";
 
 type PostMessage = (message: DashboardOutboundMessage) => void;
 
@@ -21,6 +23,7 @@ export class DashboardController implements vscode.Disposable {
   private isRefreshing = false;
   private pendingRefreshForce: boolean | undefined = undefined;
   private tokenRefreshGeneration = 0;
+  private lastFullTokenNotified = false;
   private state: DashboardState = this.emptyState();
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly postMessage: PostMessage) {
@@ -86,6 +89,18 @@ export class DashboardController implements vscode.Disposable {
         return;
       case "openArtifact":
         await this.openArtifact(message.artifactId);
+        return;
+      case "openTerminals":
+        await vscode.commands.executeCommand("integratedPower.terminals.openAll");
+        return;
+      case "showBroker":
+        await vscode.commands.executeCommand("integratedPower.terminals.showBroker");
+        return;
+      case "showOllama":
+        await vscode.commands.executeCommand("integratedPower.terminals.showOllama");
+        return;
+      case "showWebUI":
+        await vscode.commands.executeCommand("integratedPower.terminals.showWebUI");
         return;
     }
   }
@@ -349,6 +364,9 @@ export class DashboardController implements vscode.Disposable {
           activity: []
         };
 
+      this.checkFullTokenNotification(previousTokenStatus, safeTokenStatus);
+      this.persistTokenStatusCache(safeTokenStatus);
+
       this.state = {
         ...this.state,
         tokenStatus: safeTokenStatus,
@@ -373,6 +391,50 @@ export class DashboardController implements vscode.Disposable {
       };
       this.postState();
       this.postError(message);
+    }
+  }
+
+  private checkFullTokenNotification(
+    previous: TokenStatus | undefined,
+    current: TokenStatus | undefined,
+  ): void {
+    if (!current) return;
+    const config = vscode.workspace.getConfiguration("integratedPower");
+    const enabled = config.get<boolean>("notifications.notifyOnFullTokens", true);
+    if (!enabled) return;
+
+    const agyPercent = current.antigravityPercentage ?? 100;
+    const opusPercent = current.opusPercentage ?? 100;
+    const codexPercent = current.codexPercentage ?? 100;
+
+    const isAllFull = agyPercent >= 100 && opusPercent >= 100 && codexPercent >= 100;
+    const wasAnyDepleted = previous
+      ? (previous.antigravityPercentage !== undefined && previous.antigravityPercentage < 100) ||
+        (previous.opusPercentage !== undefined && previous.opusPercentage < 100) ||
+        (previous.codexPercentage !== undefined && previous.codexPercentage < 100)
+      : false;
+
+    if (isAllFull) {
+      if (wasAnyDepleted && !this.lastFullTokenNotified) {
+        this.lastFullTokenNotified = true;
+        void vscode.window.showInformationMessage(
+          "🎉 [Integrated Power] 모든 AI 모델 쿼터가 100%로 완충되었습니다! 작업을 최대 용량으로 시작할 수 있습니다.",
+        );
+      }
+    } else {
+      this.lastFullTokenNotified = false;
+    }
+  }
+
+  private persistTokenStatusCache(status: TokenStatus | undefined): void {
+    if (!status) return;
+    try {
+      const stateRoot = resolveIntegratedPowerStateRoot();
+      fs.mkdirSync(stateRoot, { recursive: true });
+      const cachePath = path.join(stateRoot, "token_status.json");
+      fs.writeFileSync(cachePath, JSON.stringify(status, null, 2), "utf8");
+    } catch {
+      // Non-blocking telemetry cache write
     }
   }
 

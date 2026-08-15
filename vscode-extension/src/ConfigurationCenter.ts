@@ -530,6 +530,8 @@ export class ConfigurationCenter implements vscode.Disposable {
         <label class="check"><input id="show-antigravity" type="checkbox"><span>Antigravity IDE 사용량 표시</span></label>
         <label class="check"><input id="show-codex" type="checkbox"><span>Codex 사용량 표시</span></label>
         <label class="check"><input id="show-local-llm" type="checkbox"><span>로컬 LLM·GPU 상태 표시</span></label>
+        <label class="check"><input id="notify-full-tokens" type="checkbox"><span>토큰 100% 완충 시 알림 발송</span></label>
+        <label class="check"><input id="auto-start-boot" type="checkbox"><span>Windows 부팅 시 자동 시작</span></label>
         <div class="field">
           <label for="dashboard-state-root">Integrated Power 상태 경로</label>
           <div class="inline"><input id="dashboard-state-root" type="text"><button type="button" class="secondary" data-action="chooseStateRoot">찾기</button></div>
@@ -683,6 +685,8 @@ export class ConfigurationCenter implements vscode.Disposable {
       setChecked("show-antigravity", snapshot.dashboard.showAntigravity);
       setChecked("show-codex", snapshot.dashboard.showCodex);
       setChecked("show-local-llm", snapshot.dashboard.showLocalLlm);
+      setChecked("notify-full-tokens", snapshot.dashboard.notifyOnFullTokens ?? true);
+      setChecked("auto-start-boot", snapshot.dashboard.autoStartOnBoot ?? false);
       setValue("dashboard-state-root", snapshot.dashboard.stateRoot);
 
       setChecked("enable-codex", snapshot.orchestrator.enableCodex);
@@ -813,6 +817,8 @@ export class ConfigurationCenter implements vscode.Disposable {
         showAntigravity: bool("show-antigravity"),
         showCodex: bool("show-codex"),
         showLocalLlm: bool("show-local-llm"),
+        notifyOnFullTokens: bool("notify-full-tokens"),
+        autoStartOnBoot: bool("auto-start-boot"),
         stateRoot: value("dashboard-state-root")
       };
     }
@@ -919,6 +925,8 @@ function parseDashboardConfiguration(value: unknown): DashboardConfiguration {
     showAntigravity: value.showAntigravity === true,
     showCodex: value.showCodex === true,
     showLocalLlm: value.showLocalLlm === true,
+    notifyOnFullTokens: value.notifyOnFullTokens === true,
+    autoStartOnBoot: value.autoStartOnBoot === true,
     stateRoot: requireString(value.stateRoot, "Integrated Power 상태 경로"),
   };
 }

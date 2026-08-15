@@ -13,3 +13,6 @@ export * from "./keyStore";
 export * from "./hostIntegrations";
 export * from "./installation";
 export * from "./registration";
+export * from "./localRunner";
+export * from "./autostart";
+export * from "./tokenScanner";

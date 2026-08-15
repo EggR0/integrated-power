@@ -31,6 +31,8 @@ export interface DashboardConfiguration {
   showAntigravity: boolean;
   showCodex: boolean;
   showLocalLlm: boolean;
+  notifyOnFullTokens?: boolean;
+  autoStartOnBoot?: boolean;
   stateRoot: string;
 }
 
@@ -227,6 +229,12 @@ export function loadConfigurationCenterSnapshot(
       showAntigravity: viewConfig.get<boolean>("showAntigravity", true),
       showCodex: viewConfig.get<boolean>("showCodex", true),
       showLocalLlm: viewConfig.get<boolean>("showLocalLlm", true),
+      notifyOnFullTokens: vscode.workspace
+        .getConfiguration("integratedPower.notifications")
+        .get<boolean>("notifyOnFullTokens", true),
+      autoStartOnBoot: vscode.workspace
+        .getConfiguration("integratedPower.system")
+        .get<boolean>("autoStartOnBoot", false),
       stateRoot: resolveIntegratedPowerStateRoot(),
     },
     orchestrator: {
@@ -341,6 +349,22 @@ export async function saveDashboardConfiguration(
     input.showLocalLlm === true,
     vscode.ConfigurationTarget.Global,
   );
+  if (typeof input.notifyOnFullTokens === "boolean") {
+    const notifyConfig = vscode.workspace.getConfiguration("integratedPower.notifications");
+    await notifyConfig.update(
+      "notifyOnFullTokens",
+      input.notifyOnFullTokens,
+      vscode.ConfigurationTarget.Global,
+    );
+  }
+  if (typeof input.autoStartOnBoot === "boolean") {
+    const systemConfig = vscode.workspace.getConfiguration("integratedPower.system");
+    await systemConfig.update(
+      "autoStartOnBoot",
+      input.autoStartOnBoot,
+      vscode.ConfigurationTarget.Global,
+    );
+  }
   updateRootsConfig({ state_root: stateRoot });
   await context.globalState.update(DASHBOARD_SETUP_KEY, {
     completedAt: new Date().toISOString(),

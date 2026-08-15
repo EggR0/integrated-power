@@ -230,6 +230,10 @@ test("package commands exclude removed Athena workflow", () => {
     "integratedPower.eggr.runOrchestratorSetup",
     "integratedPower.eggr.runPrivateKnowledgeSetup",
     "integratedPower.local.startDModelServer",
+    "integratedPower.terminals.openAll",
+    "integratedPower.terminals.showBroker",
+    "integratedPower.terminals.showOllama",
+    "integratedPower.terminals.showWebUI",
   ]);
 });
 
