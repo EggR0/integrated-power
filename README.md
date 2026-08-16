@@ -77,10 +77,12 @@ Antigravity·Codex·Claude·로컬 LLM·GPU 상태를 나눠 보여 주고, 다�
 
 ## 주요 기능 (v0.9.0)
 
+- **4대 Provider 전면 Bar UI 통일 및 개별 표시 제어**: Antigravity IDE(Gemini/Opus), OpenAI(ChatGPT·Codex), Anthropic Claude, Local LLM(GPU) 4개 영역 모두 동일한 고품질 프로그레스 바 형태 및 개별 표시/숨김(`showAntigravity`, `showCodex`, `showClaude`, `showLocalLlm`) 지원
 - **Qwen 3.8 27B 및 멀티 GPU 전담 오케스트레이션**: 연산 전용 보조 GPU(GPU 1번, RTX 3090 24GB)를 메인 디바이스로 자동 바인딩하여 쾌적한 로컬 LLM 추론 지원
 - **스마트 무음 비동기 갱신 & 수동 새로고침 피드백**: 5초 주기 백그라운드 무음 갱신으로 깜빡임을 제거하고, 수동 새로고침 시에만 명확한 프로그레스 바 UI 제공
-- **Anthropic Claude 진단 및 통합**: Claude Desktop & Claude Code CLI 환경 진단 및 토큰 서브메뉴 통합
-- **레거시 마이그레이션 코드 전면 정리**: 순수 단일 공식 스토리지 루트 기반의 가볍고 빠른 v0.9.0 런타임
+- **Anthropic Claude 진단 및 통합**: Claude Desktop & Claude Code CLI 환경 진단 및 표준 대화·API 예산 Bar 렌더링
+- **레거시 마이그레이션 및 데드 코드 전면 정리**: 미사용 데드 코드 및 하드코딩 경로 제거, 순수 단일 공식 스토리지 루트 기반의 가볍고 빠른 v0.9.0 런타임
+- **동적 로컬 모델 경로 탐색**: `$env:OLLAMA_MODELS`, `D:\AI_Models`, `~/.ollama/models`를 자동 감지하여 모든 PC 환경에서 무결점 실행
 - **Node.js Native HTTP 로컬 실행기**: PowerShell 스크립트 프로세스 의존성을 최소화하고 HTTP REST 통신 기반 처리
 - **최대 32k (`32,768`) 토큰 로컬 컨텍스트 지원**: RTX 3090/4090 등 고용량 VRAM 환경 모델 적재 지원
 - **100% 쿼터 완충 알림 및 Windows 부팅 자동 실행(AutoStart)** 옵션 탑재

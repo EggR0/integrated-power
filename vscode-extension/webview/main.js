@@ -355,9 +355,10 @@ function renderTokenStatus(tokenStatus) {
 
   // Section 1: Antigravity IDE (Gemini + Opus)
   if (dashboardState.viewConfig?.showAntigravity !== false) {
+    const hasAntigravity = Boolean(antigravity?.percentage !== undefined || antigravityWeekly?.percentage !== undefined);
     sections.push(`
       <details class="token-section" data-section="antigravity" ${sectionStates.antigravity !== false ? "open" : ""}>
-        <summary>Antigravity IDE</summary>
+        <summary><span class="section-title">Antigravity IDE</span><span class="status-pill ${hasAntigravity ? "status-ok" : "status-neutral"}">${hasAntigravity ? "Connected" : "Idle"}</span></summary>
         <div class="capacity-groups">
           ${renderCapacityGroup("Gemini 3.1 Pro", [antigravity, antigravityWeekly])}
           ${renderCapacityGroup("Opus 4.6 Thinking", [opus, opusWeekly])}
@@ -368,9 +369,10 @@ function renderTokenStatus(tokenStatus) {
 
   // Section 2: OpenAI (ChatGPT + Codex)
   if (dashboardState.viewConfig?.showCodex !== false) {
+    const hasCodex = Boolean(codex?.percentage !== undefined || codexWeekly?.percentage !== undefined);
     sections.push(`
       <details class="token-section" data-section="openai" ${sectionStates.openai !== false && sectionStates.codex !== false ? "open" : ""}>
-        <summary>OpenAI (ChatGPT · Codex)</summary>
+        <summary><span class="section-title">OpenAI (ChatGPT · Codex)</span><span class="status-pill ${hasCodex ? "status-ok" : "status-neutral"}">${hasCodex ? "Connected" : "Idle"}</span></summary>
         <div class="capacity-groups">
           ${renderCapacityGroup("ChatGPT (대화 예산)", [codex, codexWeekly])}
         </div>
@@ -380,8 +382,7 @@ function renderTokenStatus(tokenStatus) {
 
   // Section 3: Anthropic Claude (API · CLI · Cowork) - Token Status Submenu
   if (dashboardState.viewConfig?.showClaude !== false) {
-    const claudeUsage = status.claudeDirectUsage || status.directUsage;
-    sections.push(renderClaudeTokenSection(claudeUsage, sectionStates.claude !== false));
+    sections.push(renderClaudeTokenSection(status, sectionStates.claude !== false));
   }
 
   return `
@@ -414,54 +415,65 @@ function renderTokenStatus(tokenStatus) {
   `;
 }
 
-function renderClaudeTokenSection(usage, isOpen) {
-  const safeUsage = usage || {
-    status: "no-data",
-    today: normalizeUsageSummary(),
-    sevenDays: normalizeUsageSummary(),
-    sources: [],
-    lastMeasuredAt: new Date().toISOString(),
-    errors: [],
-  };
-  const hasUsage = (safeUsage.status === "measured" && safeUsage.sevenDays?.eventCount > 0) || (safeUsage.todayTokens > 0) || (safeUsage.sevenDaysTokens > 0);
-  const sourceText = safeUsage.sources?.length ? safeUsage.sources.join(", ") : "No Claude API, CLI, or Cowork events found";
-  const todayTotal = safeUsage.today?.totalTokens ?? safeUsage.todayTokens ?? 0;
-  const sevenDaysTotal = safeUsage.sevenDays?.totalTokens ?? safeUsage.sevenDaysTokens ?? 0;
+function renderClaudeTokenSection(status, isOpen) {
+  const claude5Hours = buildTokenMetric("5Hours", status, "claude", "Claude 5Hours");
+  const claudeWeekly = buildTokenMetric("Weekly", status, "claudeWeekly", "Claude Weekly");
+  const hasQuota = claude5Hours.percentage > 0 || claudeWeekly.percentage > 0 || status.claudePercentage !== undefined;
+
+  const claudeUsage = status.claudeDirectUsage || status.directUsage || {};
+  const todayTotal = claudeUsage.today?.totalTokens ?? claudeUsage.todayTokens ?? 0;
+  const sevenDaysTotal = claudeUsage.sevenDays?.totalTokens ?? claudeUsage.sevenDaysTokens ?? 0;
+  const hasDirectUsage = (claudeUsage.status === "measured" && claudeUsage.sevenDays?.eventCount > 0) || todayTotal > 0 || sevenDaysTotal > 0;
+
+  let metrics;
+  if (hasQuota) {
+    metrics = [claude5Hours, claudeWeekly];
+  } else if (hasDirectUsage) {
+    metrics = [
+      buildClaudeMetric("Today", claudeUsage.today, todayTotal),
+      buildClaudeMetric("Weekly", claudeUsage.sevenDays, sevenDaysTotal),
+    ];
+  } else {
+    metrics = [
+      buildTokenMetric("5Hours", status, "claude", "Claude 5Hours"),
+      buildTokenMetric("Weekly", status, "claudeWeekly", "Claude Weekly"),
+    ];
+  }
+
+  const isConnected = hasQuota || hasDirectUsage;
 
   return `
     <details class="token-section" data-section="claude" ${isOpen ? "open" : ""}>
-      <summary style="display:flex; align-items:center; cursor:pointer;">
-        <span>Anthropic Claude</span>
-        <span class="status-pill ${hasUsage ? "status-ok" : "status-neutral"}" style="font-size:10px; margin-left:auto; margin-right:4px;">${hasUsage ? "Measured" : "No data"}</span>
-      </summary>
-      <div class="capacity-groups" style="margin-top:4px; display:grid; gap:4px;">
-        <div class="usage-window-list" style="display:grid; grid-template-columns: 1fr 1fr; gap:4px; margin-top:0;">
-          <div class="usage-window" style="background:var(--vscode-input-background); padding:4px 6px; border-radius:4px; border:1px solid var(--vscode-input-border, rgba(255,255,255,0.06));">
-            <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600;">
-              <span>Today</span>
-              <strong>${escapeHtml(formatTokenCount(todayTotal))}</strong>
-            </div>
-            <p style="margin:2px 0 0; font-size:10px; color:var(--vscode-descriptionForeground);">${escapeHtml(formatTokenBreakdown(safeUsage.today || {}))}</p>
-          </div>
-          <div class="usage-window" style="background:var(--vscode-input-background); padding:4px 6px; border-radius:4px; border:1px solid var(--vscode-input-border, rgba(255,255,255,0.06));">
-            <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600;">
-              <span>7Days</span>
-              <strong>${escapeHtml(formatTokenCount(sevenDaysTotal))}</strong>
-            </div>
-            <p style="margin:2px 0 0; font-size:10px; color:var(--vscode-descriptionForeground);">${escapeHtml(formatTokenBreakdown(safeUsage.sevenDays || {}))}</p>
-          </div>
-        </div>
-        <div class="usage-source-row" style="font-size:11px; display:flex; justify-content:space-between; margin-top:2px; color:var(--vscode-descriptionForeground);" title="${escapeAttr(sourceText)}">
-          <span>Sources</span>
-          <strong style="color:var(--vscode-foreground); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${escapeHtml(sourceText)}</strong>
-        </div>
-        <div class="usage-source-row" style="font-size:11px; display:flex; justify-content:space-between; margin-top:2px; color:var(--vscode-descriptionForeground);">
-          <span>Last used</span>
-          <strong style="color:var(--vscode-foreground); font-weight:500;">${safeUsage.lastUsedAt ? escapeHtml(formatDateTime(safeUsage.lastUsedAt)) : (safeUsage.lastMeasuredAt ? escapeHtml(formatDateTime(safeUsage.lastMeasuredAt)) : "Waiting for data")}</strong>
-        </div>
+      <summary><span class="section-title">Anthropic Claude</span><span class="status-pill ${isConnected ? "status-ok" : "status-neutral"}">${isConnected ? "Connected" : "Idle"}</span></summary>
+      <div class="capacity-groups">
+        ${renderCapacityGroup("Claude (대화 · API 예산)", metrics)}
       </div>
     </details>
   `;
+}
+
+function buildClaudeMetric(label, summary, totalTokens) {
+  const tokens = Number(totalTokens || summary?.totalTokens || 0);
+  const events = Number(summary?.eventCount || 0);
+  const hasData = tokens > 0 || events > 0;
+  
+  const percentage = hasData ? clamp(100 - (tokens / 500000) * 100, 0, 100) : 0;
+  const subtext = hasData ? `${formatTokenCount(tokens)} used` : "Waiting for quota data";
+  const refreshText = hasData ? `· ${formatNumber(events)} events` : "";
+  const tone = hasData ? capacityTone(percentage) : "healthy";
+  const tooltip = `Claude ${label}: ${subtext}${refreshText}.`;
+
+  return {
+    label,
+    ariaLabel: `Claude ${label}`,
+    mainText: hasData ? `${formatTokenCount(tokens)}` : "Unavailable",
+    subtext,
+    refreshText,
+    percentage: hasData ? percentage : 0,
+    unavailable: !hasData,
+    tone: hasData ? tone : "healthy",
+    tooltip,
+  };
 }
 
 function formatTokenBreakdown(summary) {
@@ -496,7 +508,7 @@ function renderLocalComputeStatus(tokenStatus) {
       </div>
 
       <details class="token-section" data-section="localLlm" ${sectionStates.localLlm ? "open" : ""}>
-        <summary>GPU Capacity <span>${escapeHtml(status.llmStatus || "Unknown")}</span></summary>
+        <summary><span class="section-title">GPU Capacity</span><span class="status-pill ${statusClass(status.llmStatus || localProgramName)}">${escapeHtml(status.llmStatus || "Unknown")}</span></summary>
         <div class="capacity-groups">
           ${
             localComputeStatus.gpus?.length

@@ -65,6 +65,11 @@
           "default": true,
           "description": "Show the Codex capacity section in the dashboard."
         },
+        "integratedPower.view.showClaude": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Anthropic Claude capacity section in the dashboard."
+        },
         "integratedPower.view.showLocalLlm": {
           "type": "boolean",
           "default": true,

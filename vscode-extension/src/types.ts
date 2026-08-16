@@ -155,6 +155,7 @@ export interface TokenStatus {
   codexWeeklyResetTime?: string;
   codexStatus: string;
   llmStatus: string;
+  
   recommendedTaskWeight: "unknown" | "normal" | "degraded" | "restricted";
   activity: string[];
   errors?: string[];
@@ -181,6 +182,7 @@ export interface DashboardState {
   viewConfig?: {
     showAntigravity: boolean;
     showCodex: boolean;
+    showClaude?: boolean;
     showLocalLlm: boolean;
   };
 }

@@ -1,12 +1,21 @@
 param(
   [int]$Port = 11435,
-  [string]$ModelsRoot = 'D:\AI_Models'
+  [string]$ModelsRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $ollama = (Get-Command ollama.exe -ErrorAction Stop).Source
-if (-not (Test-Path -LiteralPath $ModelsRoot -PathType Container)) {
-  throw "Local model root does not exist: $ModelsRoot"
+if ([string]::IsNullOrWhiteSpace($ModelsRoot)) {
+  if (-not [string]::IsNullOrWhiteSpace($env:OLLAMA_MODELS) -and (Test-Path -LiteralPath $env:OLLAMA_MODELS -PathType Container)) {
+    $ModelsRoot = $env:OLLAMA_MODELS
+  } elseif (Test-Path -LiteralPath 'D:\AI_Models' -PathType Container) {
+    $ModelsRoot = 'D:\AI_Models'
+  } elseif (Test-Path -LiteralPath "$env:USERPROFILE\.ollama\models" -PathType Container) {
+    $ModelsRoot = "$env:USERPROFILE\.ollama\models"
+  }
+}
+if (-not [string]::IsNullOrWhiteSpace($ModelsRoot) -and (Test-Path -LiteralPath $ModelsRoot -PathType Container)) {
+  $env:OLLAMA_MODELS = $ModelsRoot
 }
 $uri = "http://127.0.0.1:$Port/api/tags"
 try {

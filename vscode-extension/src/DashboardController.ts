@@ -688,6 +688,7 @@ export class DashboardController implements vscode.Disposable {
     return {
       showAntigravity: config.get<boolean>("showAntigravity", true),
       showCodex: config.get<boolean>("showCodex", true),
+      showClaude: config.get<boolean>("showClaude", true),
       showLocalLlm: config.get<boolean>("showLocalLlm", true),
     };
   }

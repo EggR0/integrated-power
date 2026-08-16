@@ -109,19 +109,3 @@ function probeBroker(port: number): Promise<boolean> {
 function isAddressInUse(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "EADDRINUSE");
 }
-
-function resolveControlCenterDir(context?: vscode.ExtensionContext): string {
-  const wsFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const extPath = context?.extensionPath;
-  const candidates = [
-    wsFolder ? path.join(wsFolder, "control-center") : undefined,
-    wsFolder ? path.join(wsFolder, "..", "integrated-power-control-center") : undefined,
-    extPath ? path.join(extPath, "control-center") : undefined,
-    process.platform === "win32" ? "d:\\Workspace\\integrated-power-control-center" : undefined,
-  ].filter(Boolean) as string[];
-
-  for (const dir of candidates) {
-    if (fs.existsSync(dir)) return dir;
-  }
-  return wsFolder || (extPath ?? process.cwd());
-}
