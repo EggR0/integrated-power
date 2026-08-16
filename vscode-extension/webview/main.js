@@ -276,7 +276,6 @@ function render() {
 
       <section class="dashboard-grid">
         ${renderTokenStatus(dashboardState.tokenStatus)}
-        ${renderClaudeDirectUsage(dashboardState.tokenStatus?.claudeDirectUsage)}
         ${dashboardState.viewConfig?.showLocalLlm !== false ? renderLocalComputeStatus(dashboardState.tokenStatus) : ""}
       </section>
 
@@ -360,9 +359,10 @@ function renderTokenStatus(tokenStatus) {
 
   const sections = [];
 
+  // Section 1: Antigravity IDE (Gemini + Opus)
   if (dashboardState.viewConfig?.showAntigravity !== false) {
     sections.push(`
-      <details class="token-section" data-section="antigravity" ${sectionStates.antigravity ? "open" : ""}>
+      <details class="token-section" data-section="antigravity" ${sectionStates.antigravity !== false ? "open" : ""}>
         <summary>Antigravity IDE</summary>
         <div class="capacity-groups">
           ${renderCapacityGroup("Gemini 3.1 Pro", [antigravity, antigravityWeekly])}
@@ -372,15 +372,22 @@ function renderTokenStatus(tokenStatus) {
     `);
   }
 
+  // Section 2: OpenAI (ChatGPT + Codex)
   if (dashboardState.viewConfig?.showCodex !== false) {
     sections.push(`
-      <details class="token-section" data-section="codex" ${sectionStates.codex ? "open" : ""}>
-        <summary>Codex</summary>
+      <details class="token-section" data-section="openai" ${sectionStates.openai !== false && sectionStates.codex !== false ? "open" : ""}>
+        <summary>OpenAI (ChatGPT · Codex)</summary>
         <div class="capacity-groups">
-          ${renderCapacityGroup("ChatGPT", [codex, codexWeekly])}
+          ${renderCapacityGroup("ChatGPT (대화 예산)", [codex, codexWeekly])}
         </div>
       </details>
     `);
+  }
+
+  // Section 3: Anthropic Claude (API · CLI · Cowork) - Token Status Submenu
+  if (dashboardState.viewConfig?.showClaude !== false) {
+    const claudeUsage = status.claudeDirectUsage || status.directUsage;
+    sections.push(renderClaudeTokenSection(claudeUsage, sectionStates.claude !== false));
   }
 
   return `
@@ -398,7 +405,7 @@ function renderTokenStatus(tokenStatus) {
       ${sections.join('\n      <hr class="section-divider" />\n')}
 
       <div class="token-footer">
-        ${dashboardState.viewConfig?.showCodex !== false ? `<span>Codex: ${escapeHtml(status.codexStatus || "Unknown")}</span>` : ""}
+        ${dashboardState.viewConfig?.showCodex !== false ? `<span>Codex: ${escapeHtml(status.codexStatus || "Idle")}</span>` : ""}
         <span class="task-routing-pill task-routing-${escapeAttr(taskWeight)}">
           Task Routing: ${escapeHtml(taskWeight)}
         </span>
@@ -413,11 +420,7 @@ function renderTokenStatus(tokenStatus) {
   `;
 }
 
-function renderClaudeDirectUsage(usage) {
-  if (!usage && dashboardState.isTokenLoading) {
-    return "";
-  }
-
+function renderClaudeTokenSection(usage, isOpen) {
   const safeUsage = usage || {
     status: "no-data",
     today: normalizeUsageSummary(),
@@ -426,49 +429,44 @@ function renderClaudeDirectUsage(usage) {
     lastMeasuredAt: new Date().toISOString(),
     errors: [],
   };
-  const hasUsage = safeUsage.status === "measured" && safeUsage.sevenDays.eventCount > 0;
-  const sourceText = safeUsage.sources.length ? safeUsage.sources.join(", ") : "No Claude API, CLI, or Cowork usage events found";
+  const hasUsage = (safeUsage.status === "measured" && safeUsage.sevenDays?.eventCount > 0) || (safeUsage.todayTokens > 0) || (safeUsage.sevenDaysTokens > 0);
+  const sourceText = safeUsage.sources?.length ? safeUsage.sources.join(", ") : "No Claude API, CLI, or Cowork events found";
+  const todayTotal = safeUsage.today?.totalTokens ?? safeUsage.todayTokens ?? 0;
+  const sevenDaysTotal = safeUsage.sevenDays?.totalTokens ?? safeUsage.sevenDaysTokens ?? 0;
 
   return `
-    <article class="panel token-panel claude-direct-panel">
-      <div class="panel-heading">
-        <div>
-          <p class="eyebrow">Direct Usage</p>
-          <h2>Claude Direct</h2>
-          <p class="panel-caption">Claude API, Claude CLI, and Cowork usage measured from local metadata logs.</p>
+    <details class="token-section" data-section="claude" ${isOpen ? "open" : ""}>
+      <summary style="display:flex; align-items:center; cursor:pointer;">
+        <span>Anthropic Claude</span>
+        <span class="status-pill ${hasUsage ? "status-ok" : "status-neutral"}" style="font-size:10px; margin-left:auto; margin-right:6px;">${hasUsage ? "Measured" : "No data"}</span>
+      </summary>
+      <div class="capacity-groups" style="margin-top:8px; display:grid; gap:8px;">
+        <div class="usage-window-list" style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+          <div class="usage-window" style="background:var(--vscode-input-background); padding:6px 8px; border-radius:6px; border:1px solid var(--vscode-input-border, rgba(255,255,255,0.06));">
+            <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600;">
+              <span>Today</span>
+              <strong>${escapeHtml(formatTokenCount(todayTotal))}</strong>
+            </div>
+            <p style="margin:3px 0 0; font-size:10px; color:var(--vscode-descriptionForeground);">${escapeHtml(formatTokenBreakdown(safeUsage.today || {}))}</p>
+          </div>
+          <div class="usage-window" style="background:var(--vscode-input-background); padding:6px 8px; border-radius:6px; border:1px solid var(--vscode-input-border, rgba(255,255,255,0.06));">
+            <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600;">
+              <span>7Days</span>
+              <strong>${escapeHtml(formatTokenCount(sevenDaysTotal))}</strong>
+            </div>
+            <p style="margin:3px 0 0; font-size:10px; color:var(--vscode-descriptionForeground);">${escapeHtml(formatTokenBreakdown(safeUsage.sevenDays || {}))}</p>
+          </div>
         </div>
-        <span class="status-pill ${hasUsage ? "status-ok" : "status-neutral"}">${hasUsage ? "Measured" : "No data"}</span>
+        <div class="usage-source-row" style="font-size:11px; display:flex; justify-content:space-between; color:var(--vscode-descriptionForeground);" title="${escapeAttr(sourceText)}">
+          <span>Sources</span>
+          <strong style="color:var(--vscode-foreground); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${escapeHtml(sourceText)}</strong>
+        </div>
+        <div class="usage-source-row" style="font-size:11px; display:flex; justify-content:space-between; color:var(--vscode-descriptionForeground);">
+          <span>Last used</span>
+          <strong style="color:var(--vscode-foreground); font-weight:500;">${safeUsage.lastUsedAt ? escapeHtml(formatDateTime(safeUsage.lastUsedAt)) : (safeUsage.lastMeasuredAt ? escapeHtml(formatDateTime(safeUsage.lastMeasuredAt)) : "Waiting for data")}</strong>
+        </div>
       </div>
-      <div class="usage-window-list">
-        ${renderClaudeUsageWindow("Today", safeUsage.today)}
-        ${renderClaudeUsageWindow("7Days", safeUsage.sevenDays)}
-      </div>
-      <div class="usage-source-row" title="${escapeAttr(sourceText)}">
-        <span>Sources</span>
-        <strong>${escapeHtml(sourceText)}</strong>
-      </div>
-      <div class="usage-source-row">
-        <span>Last used</span>
-        <strong>${safeUsage.lastUsedAt ? escapeHtml(formatDateTime(safeUsage.lastUsedAt)) : "Waiting for Claude usage data"}</strong>
-      </div>
-      ${
-        safeUsage.errors?.length
-          ? `<ul class="activity-list">${safeUsage.errors.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
-          : ""
-      }
-    </article>
-  `;
-}
-
-function renderClaudeUsageWindow(label, summary) {
-  return `
-    <div class="usage-window">
-      <div>
-        <span>${escapeHtml(label)}</span>
-        <strong>${escapeHtml(formatTokenCount(summary.totalTokens))}</strong>
-      </div>
-      <p>${escapeHtml(formatTokenBreakdown(summary))}</p>
-    </div>
+    </details>
   `;
 }
 

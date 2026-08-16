@@ -509,6 +509,7 @@ export class ConfigurationCenter implements vscode.Disposable {
           <li><strong>Git for Windows</strong> — Private Git Knowledge에 필요합니다. 확장이 자동 설치하지 않습니다.</li>
           <li><strong>GitHub CLI</strong> — GitHub 저장소 생성·로그인에 선택적으로 사용합니다. 기존 private remote가 있으면 필수가 아닙니다.</li>
           <li><strong>Codex CLI</strong> — Codex 위임 경로를 켤 때만 필요합니다.</li>
+          <li><strong>Anthropic Claude (Desktop & CLI)</strong> — Claude Desktop MCP 연동 및 <code>@anthropic-ai/claude-code</code> CLI에 필요합니다. <code>ANTHROPIC_API_KEY</code> 환경변수 설정 시 API 사용량이 자동 집계됩니다.</li>
           <li><strong>Ollama 또는 vLLM</strong> — 로컬 LLM 경로를 켤 때만 필요합니다. GPU driver와 모델은 묵시적으로 설치하지 않습니다.</li>
           <li><strong>Agy</strong> — Agy 사용량을 표시할 때만 필요합니다.</li>
         </ul>
@@ -528,7 +529,8 @@ export class ConfigurationCenter implements vscode.Disposable {
         <h2>Dashboard 설정</h2>
         <p class="hint">표시 영역과 Integrated Power 상태 저장 위치만 변경합니다. 프로젝트 파일은 이동하지 않습니다. 기존 <code>EggR\state</code> 데이터는 최초 전환 때 새 경로로 누락 파일만 복사하고 원본을 남깁니다.</p>
         <label class="check"><input id="show-antigravity" type="checkbox"><span>Antigravity IDE 사용량 표시</span></label>
-        <label class="check"><input id="show-codex" type="checkbox"><span>Codex 사용량 표시</span></label>
+        <label class="check"><input id="show-codex" type="checkbox"><span>OpenAI (ChatGPT · Codex) 사용량 표시</span></label>
+        <label class="check"><input id="show-claude" type="checkbox"><span>Anthropic Claude (API · CLI) 사용량 표시</span></label>
         <label class="check"><input id="show-local-llm" type="checkbox"><span>로컬 LLM·GPU 상태 표시</span></label>
         <label class="check"><input id="notify-full-tokens" type="checkbox"><span>토큰 100% 완충 시 알림 발송</span></label>
         <label class="check"><input id="auto-start-boot" type="checkbox"><span>Windows 부팅 시 자동 시작</span></label>
@@ -684,6 +686,7 @@ export class ConfigurationCenter implements vscode.Disposable {
 
       setChecked("show-antigravity", snapshot.dashboard.showAntigravity);
       setChecked("show-codex", snapshot.dashboard.showCodex);
+      setChecked("show-claude", snapshot.dashboard.showClaude ?? true);
       setChecked("show-local-llm", snapshot.dashboard.showLocalLlm);
       setChecked("notify-full-tokens", snapshot.dashboard.notifyOnFullTokens ?? true);
       setChecked("auto-start-boot", snapshot.dashboard.autoStartOnBoot ?? false);
@@ -816,6 +819,7 @@ export class ConfigurationCenter implements vscode.Disposable {
       return {
         showAntigravity: bool("show-antigravity"),
         showCodex: bool("show-codex"),
+        showClaude: bool("show-claude"),
         showLocalLlm: bool("show-local-llm"),
         notifyOnFullTokens: bool("notify-full-tokens"),
         autoStartOnBoot: bool("auto-start-boot"),
@@ -924,6 +928,7 @@ function parseDashboardConfiguration(value: unknown): DashboardConfiguration {
   return {
     showAntigravity: value.showAntigravity === true,
     showCodex: value.showCodex === true,
+    showClaude: value.showClaude !== false,
     showLocalLlm: value.showLocalLlm === true,
     notifyOnFullTokens: value.notifyOnFullTokens === true,
     autoStartOnBoot: value.autoStartOnBoot === true,

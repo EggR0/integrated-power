@@ -30,6 +30,7 @@ export type LocalLlmProvider = "none" | "ollama" | "vllm";
 export interface DashboardConfiguration {
   showAntigravity: boolean;
   showCodex: boolean;
+  showClaude?: boolean;
   showLocalLlm: boolean;
   notifyOnFullTokens?: boolean;
   autoStartOnBoot?: boolean;
@@ -228,6 +229,7 @@ export function loadConfigurationCenterSnapshot(
     dashboard: {
       showAntigravity: viewConfig.get<boolean>("showAntigravity", true),
       showCodex: viewConfig.get<boolean>("showCodex", true),
+      showClaude: viewConfig.get<boolean>("showClaude", true),
       showLocalLlm: viewConfig.get<boolean>("showLocalLlm", true),
       notifyOnFullTokens: vscode.workspace
         .getConfiguration("integratedPower.notifications")
@@ -342,6 +344,11 @@ export async function saveDashboardConfiguration(
   await viewConfig.update(
     "showCodex",
     input.showCodex === true,
+    vscode.ConfigurationTarget.Global,
+  );
+  await viewConfig.update(
+    "showClaude",
+    input.showClaude !== false,
     vscode.ConfigurationTarget.Global,
   );
   await viewConfig.update(

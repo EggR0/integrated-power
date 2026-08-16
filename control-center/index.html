@@ -77,179 +77,188 @@
             </div>
           </div>
 
-          <!-- Model Quota Gauges Grid -->
-          <div class="quota-grid">
-            <!-- Gemini 3.1 Pro -->
-            <div class="card quota-card" id="card-gemini">
-              <div class="quota-card-header">
-                <div>
-                  <span class="model-badge gemini">Gemini 3.1 Pro</span>
-                  <h3 class="model-title">Antigravity IDE</h3>
-                </div>
-                <div class="gauge-wrapper">
-                  <svg class="gauge-ring" viewBox="0 0 36 36">
-                    <path class="gauge-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                    <path id="gauge-gemini-5h" class="gauge-fill gemini" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                  </svg>
-                  <span id="percent-gemini-5h" class="gauge-text">100%</span>
-                </div>
+          <!-- Provider-Grouped Capacity & Token Grid -->
+          <div class="token-providers-grid">
+            <!-- Group 1: Antigravity IDE -->
+            <div class="card provider-card" id="provider-antigravity">
+              <div class="provider-header">
+                <span class="provider-pill">Antigravity IDE</span>
+                <span class="provider-state-tag">Idle</span>
               </div>
-              <div class="quota-bars">
-                <div class="quota-bar-row">
-                  <div class="bar-label-group">
-                    <span>5시간 롤링 윈도우</span>
-                    <strong id="label-gemini-5h">100%</strong>
+              <div class="provider-models">
+                <!-- Gemini 3.1 Pro -->
+                <div class="model-block">
+                  <div class="model-name-row">
+                    <h4>Gemini 3.1 Pro</h4>
                   </div>
-                  <div class="progress-track"><div id="bar-gemini-5h" class="progress-fill gemini" style="width: 100%;"></div></div>
-                </div>
-                <div class="quota-bar-row">
-                  <div class="bar-label-group">
-                    <span>주간 한도</span>
-                    <strong id="label-gemini-weekly">100%</strong>
+                  <div class="quota-window-row">
+                    <div class="window-info">
+                      <span class="window-name">5Hours</span>
+                      <span id="label-gemini-5h" class="window-val">--% remaining</span>
+                    </div>
+                    <p id="reset-gemini-5h" class="window-countdown">· Waiting for quota</p>
+                    <div class="progress-track"><div id="bar-gemini-5h" class="progress-fill gemini" style="width: 0%;"></div></div>
                   </div>
-                  <div class="progress-track"><div id="bar-gemini-weekly" class="progress-fill gemini" style="width: 100%;"></div></div>
+                  <div class="quota-window-row">
+                    <div class="window-info">
+                      <span class="window-name">Weekly</span>
+                      <span id="label-gemini-weekly" class="window-val">--% remaining</span>
+                    </div>
+                    <p id="reset-gemini-weekly" class="window-countdown">· Waiting for quota</p>
+                    <div class="progress-track"><div id="bar-gemini-weekly" class="progress-fill gemini" style="width: 0%;"></div></div>
+                  </div>
                 </div>
-              </div>
-              <div class="quota-footer">
-                <span class="reset-badge" id="reset-gemini">리셋: 5시간 윈도우</span>
-                <span class="token-count" id="count-gemini">용량 정상</span>
+
+                <!-- Opus 4.6 Thinking -->
+                <div class="model-block" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.06);">
+                  <div class="model-name-row">
+                    <h4>Opus 4.6 Thinking</h4>
+                  </div>
+                  <div class="quota-window-row">
+                    <div class="window-info">
+                      <span class="window-name">5Hours</span>
+                      <span id="label-opus-5h" class="window-val">--% remaining</span>
+                    </div>
+                    <p id="reset-opus-5h" class="window-countdown">· Waiting for quota</p>
+                    <div class="progress-track"><div id="bar-opus-5h" class="progress-fill opus" style="width: 0%;"></div></div>
+                  </div>
+                  <div class="quota-window-row">
+                    <div class="window-info">
+                      <span class="window-name">Weekly</span>
+                      <span id="label-opus-weekly" class="window-val">--% remaining</span>
+                    </div>
+                    <p id="reset-opus-weekly" class="window-countdown">· Waiting for quota</p>
+                    <div class="progress-track"><div id="bar-opus-weekly" class="progress-fill opus" style="width: 0%;"></div></div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <!-- Opus 4.6 Thinking -->
-            <div class="card quota-card" id="card-opus">
-              <div class="quota-card-header">
-                <div>
-                  <span class="model-badge opus">Opus 4.6 Thinking</span>
-                  <h3 class="model-title">Claude Thinking via Agy</h3>
-                </div>
-                <div class="gauge-wrapper">
-                  <svg class="gauge-ring" viewBox="0 0 36 36">
-                    <path class="gauge-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                    <path id="gauge-opus-5h" class="gauge-fill opus" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                  </svg>
-                  <span id="percent-opus-5h" class="gauge-text">100%</span>
-                </div>
+            <!-- Group 2: OpenAI (ChatGPT + Codex) -->
+            <div class="card provider-card" id="provider-openai">
+              <div class="provider-header">
+                <span class="provider-pill">OpenAI</span>
+                <span id="openai-status-tag" class="provider-state-tag">구독: Plus</span>
               </div>
-              <div class="quota-bars">
-                <div class="quota-bar-row">
-                  <div class="bar-label-group">
-                    <span>5시간 롤링 윈도우</span>
-                    <strong id="label-opus-5h">100%</strong>
-                  </div>
-                  <div class="progress-track"><div id="bar-opus-5h" class="progress-fill opus" style="width: 100%;"></div></div>
+              <div class="provider-models">
+                <div class="subscription-pool-banner">
+                  <span class="pool-icon">ℹ️</span>
+                  <span>구독 포함 사용량 (ChatGPT · Codex 공유 풀)</span>
                 </div>
-                <div class="quota-bar-row">
-                  <div class="bar-label-group">
-                    <span>주간 한도</span>
-                    <strong id="label-opus-weekly">100%</strong>
+                <!-- ChatGPT (대화 예산) -->
+                <div class="model-block">
+                  <div class="model-name-row">
+                    <h4>ChatGPT (대화 예산)</h4>
                   </div>
-                  <div class="progress-track"><div id="bar-opus-weekly" class="progress-fill opus" style="width: 100%;"></div></div>
+                  <div class="quota-window-row">
+                    <div class="window-info">
+                      <span class="window-name">5Hours</span>
+                      <span id="label-codex-5h" class="window-val">Waiting for quota data</span>
+                    </div>
+                    <div class="progress-track"><div id="bar-codex-5h" class="progress-fill codex" style="width: 0%;"></div></div>
+                  </div>
+                  <div class="quota-window-row">
+                    <div class="window-info">
+                      <span class="window-name">Weekly</span>
+                      <span id="label-codex-weekly" class="window-val">--% remaining</span>
+                    </div>
+                    <p id="reset-codex-weekly" class="window-countdown">· Waiting for quota</p>
+                    <div class="progress-track"><div id="bar-codex-weekly" class="progress-fill codex" style="width: 0%;"></div></div>
+                  </div>
                 </div>
-              </div>
-              <div class="quota-footer">
-                <span class="reset-badge" id="reset-opus">리셋: 5시간 윈도우</span>
-                <span class="token-count" id="count-opus">용량 정상</span>
+
+                <!-- Codex (에이전트 예산) -->
+                <div class="model-block" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);">
+                  <div class="model-name-row flex-between">
+                    <h4>Codex (에이전트 자동화)</h4>
+                    <span id="codex-status-tag" class="provider-state-tag" style="font-size:10px; padding:2px 6px;">Idle</span>
+                  </div>
+                  <p class="muted" style="font-size: 11px; margin-top: 4px;">Codex CLI / App Server 작업 라우팅 상태를 반영합니다.</p>
+                </div>
               </div>
             </div>
 
-            <!-- ChatGPT / Codex -->
-            <div class="card quota-card" id="card-codex">
-              <div class="quota-card-header">
-                <div>
-                  <span class="model-badge codex">ChatGPT / Codex</span>
-                  <h3 class="model-title">OpenAI Codex Server</h3>
-                </div>
-                <div class="gauge-wrapper">
-                  <svg class="gauge-ring" viewBox="0 0 36 36">
-                    <path class="gauge-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                    <path id="gauge-codex-5h" class="gauge-fill codex" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                  </svg>
-                  <span id="percent-codex-5h" class="gauge-text">100%</span>
+            <!-- Group 3: Anthropic Claude -->
+            <div class="card provider-card" id="provider-claude">
+              <div class="provider-header">
+                <span class="provider-pill">Anthropic Claude</span>
+                <span id="claude-status-tag" class="provider-state-tag">No data</span>
+              </div>
+              <div class="provider-models">
+                <div class="model-block">
+                  <div class="model-name-row">
+                    <h4>Claude Usage (API · CLI · Cowork)</h4>
+                  </div>
+                  <p class="panel-caption" style="font-size:11px; color:#94a3b8; margin: 4px 0 8px 0;">로컬 메타데이터 로그 및 API 토큰 사용량</p>
+                  <div class="usage-mini-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                    <div style="background:#0f172a; padding:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.04);">
+                      <span style="font-size:11px; color:#94a3b8;">Today</span>
+                      <div id="claude-today-tokens" style="font-weight:700; font-size:14px; color:#e2e8f0;">0 <span style="font-size:10px; color:#64748b;">tokens</span></div>
+                      <div style="font-size:10px; color:#94a3b8; margin-top:2px;">과금: <span id="claude-today-billable">0</span></div>
+                    </div>
+                    <div style="background:#0f172a; padding:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.04);">
+                      <span style="font-size:11px; color:#94a3b8;">7 Days</span>
+                      <div id="claude-7d-tokens" style="font-weight:700; font-size:14px; color:#e2e8f0;">0 <span style="font-size:10px; color:#64748b;">tokens</span></div>
+                      <div style="font-size:10px; color:#94a3b8; margin-top:2px;">이벤트: <span id="claude-7d-events">0건</span></div>
+                    </div>
+                  </div>
+                  <div class="usage-source-row" style="margin-top:10px; font-size:11px; color:#94a3b8; display:flex; justify-content:space-between;">
+                    <span>Sources:</span>
+                    <strong id="claude-sources-text" style="color:#cbd5e1; font-weight:500;">No Claude events</strong>
+                  </div>
+                  <div class="usage-source-row" style="margin-top:4px; font-size:11px; color:#94a3b8; display:flex; justify-content:space-between;">
+                    <span>Last used:</span>
+                    <strong id="claude-last-used" style="color:#cbd5e1; font-weight:500;">Waiting for data</strong>
+                  </div>
                 </div>
               </div>
-              <div class="quota-bars">
-                <div class="quota-bar-row">
-                  <div class="bar-label-group">
-                    <span>5시간 롤링 윈도우</span>
-                    <strong id="label-codex-5h">100%</strong>
-                  </div>
-                  <div class="progress-track"><div id="bar-codex-5h" class="progress-fill codex" style="width: 100%;"></div></div>
-                </div>
-                <div class="quota-bar-row">
-                  <div class="bar-label-group">
-                    <span>주간 한도</span>
-                    <strong id="label-codex-weekly">100%</strong>
-                  </div>
-                  <div class="progress-track"><div id="bar-codex-weekly" class="progress-fill codex" style="width: 100%;"></div></div>
-                </div>
+            </div>
+
+            <!-- Group 4: Local LLM -->
+            <div class="card provider-card" id="provider-local">
+              <div class="provider-header">
+                <span class="provider-pill">Local LLM</span>
+                <span id="local-llm-status-tag" class="provider-state-tag">Offline</span>
               </div>
-              <div class="quota-footer">
-                <span class="reset-badge" id="reset-codex">리셋: 5시간 윈도우</span>
-                <span class="token-count" id="count-codex">용량 정상</span>
+              <div class="provider-models">
+                <div id="gpu-status-container" class="gpu-status-list">
+                  <!-- Dynamically populated multi-GPU cards -->
+                </div>
+                <div class="local-compute-footer" style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06); font-size:11px; color:#94a3b8;">
+                  <div>가동 모델: <strong id="local-loaded-model" style="color:#38bdf8;">qwen3.6:27b</strong></div>
+                  <div>엔드포인트: <span id="local-endpoint-health">정상 (127.0.0.1:11434)</span></div>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Secondary Grid: Claude Direct Usage & Local Compute -->
-          <div class="tokens-bottom-grid">
-            <!-- Claude Direct Usage -->
-            <div class="card direct-usage-card">
-              <div class="section-heading compact">
-                <div>
-                  <p class="eyebrow">Direct Usage</p>
-                  <h3>Claude Direct 사용량 (API/CLI/Cowork)</h3>
-                </div>
-                <span id="claude-direct-status" class="status-pill status-ok">측정됨</span>
+          <!-- Local LLM Benchmark & Execution History -->
+          <div class="card local-metrics-card" style="margin-top: 16px;">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Execution Benchmarks</p>
+                <h3>로컬 LLM 성능 벤치마크 및 실행 기록 (.agent-runs)</h3>
               </div>
-              <div class="usage-stats-columns">
-                <div class="usage-stat-box">
-                  <span class="stat-sublabel">오늘 (Today)</span>
-                  <div class="stat-main-num" id="claude-today-tokens">0 <span class="unit">tokens</span></div>
-                  <div class="stat-mini-row">
-                    <span>과금 토큰: <strong id="claude-today-billable">0</strong></span>
-                    <span>추론/생각: <strong id="claude-today-reasoning">0</strong></span>
-                  </div>
-                </div>
-                <div class="usage-stat-box">
-                  <span class="stat-sublabel">최근 7일 (7 Days)</span>
-                  <div class="stat-main-num" id="claude-7d-tokens">0 <span class="unit">tokens</span></div>
-                  <div class="stat-mini-row">
-                    <span>과금 토큰: <strong id="claude-7d-billable">0</strong></span>
-                    <span>이벤트 수: <strong id="claude-7d-events">0건</strong></span>
-                  </div>
-                </div>
-              </div>
-              <div class="usage-sources-row">
-                <span>감지된 소스:</span>
-                <strong id="claude-sources">Claude API, Claude CLI, Cowork</strong>
-              </div>
+              <span class="muted" id="local-metrics-summary">기록 확인 중…</span>
             </div>
-
-            <!-- Local Compute & GPU (Zero Token Cost) -->
-            <div class="card local-compute-card">
-              <div class="section-heading compact">
-                <div>
-                  <p class="eyebrow">Zero Cost Compute</p>
-                  <h3>로컬 GPU 및 오프라인 모델</h3>
-                </div>
-                <span id="local-compute-status-pill" class="status-pill status-ok">가동중</span>
-              </div>
-              <div class="local-compute-info">
-                <div class="compute-metric-row">
-                  <span>가동 모델</span>
-                  <strong id="local-loaded-model">Qwen 3.6 27B (qwen3.6:27b)</strong>
-                </div>
-                <div class="compute-metric-row">
-                  <span>엔드포인트 상태</span>
-                  <strong id="local-endpoint-health">정상 (127.0.0.1:11434)</strong>
-                </div>
-                <div class="compute-metric-row">
-                  <span>GPU VRAM 사용량</span>
-                  <strong id="gpu-vram-text">12.4 GB / 24.0 GB (52%)</strong>
-                </div>
-                <div class="progress-track"><div id="gpu-vram-bar" class="progress-fill local" style="width: 52%;"></div></div>
-              </div>
+            <div class="table-responsive" style="max-height: 220px; overflow-y: auto; margin-top: 10px;">
+              <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                <thead>
+                  <tr style="border-bottom: 1px solid #334155; color: #94a3b8;">
+                    <th style="padding: 6px 8px;">시간</th>
+                    <th style="padding: 6px 8px;">작업명</th>
+                    <th style="padding: 6px 8px;">모델</th>
+                    <th style="padding: 6px 8px;">규모</th>
+                    <th style="padding: 6px 8px;">소요 시간</th>
+                    <th style="padding: 6px 8px;">토큰수</th>
+                    <th style="padding: 6px 8px;">처리 속도</th>
+                    <th style="padding: 6px 8px;">상태</th>
+                  </tr>
+                </thead>
+                <tbody id="local-metrics-tbody">
+                  <tr><td colspan="8" style="padding: 12px; text-align: center; color: #64748b;">로컬 실행 기록을 불러오는 중…</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -391,6 +400,20 @@
                   <div class="empty-card">승인 요청을 불러오는 중…</div>
                 </div>
               </div>
+
+              <!-- Workspace Agent Runs Timeline (.agent-runs/runs.jsonl) -->
+              <div class="card sub-panel" style="margin-top: 16px;">
+                <div class="section-heading compact">
+                  <div>
+                    <p class="eyebrow">Execution Logs</p>
+                    <h2>에이전트 실행 기록 (.agent-runs)</h2>
+                  </div>
+                  <span id="runs-active-count" class="status-pill status-ok">0개 실행중</span>
+                </div>
+                <div id="runs-timeline-list" class="scroll-list" style="max-height: 280px; overflow-y: auto;">
+                  <div class="empty-card">에이전트 실행 기록을 불러오는 중…</div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -441,6 +464,22 @@
                   </label>
                 </div>
               </div>
+              <div class="setting-item flex-between">
+                <div>
+                  <span class="setting-label">데이터 자동 갱신 주기</span>
+                  <p class="muted">AI 쿼터 및 상태를 백그라운드에서 주기적으로 동기화하는 간격을 설정합니다.</p>
+                </div>
+                <div class="select-container">
+                  <select id="setting-poll-interval-select" class="input-select" style="background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:6px; padding:6px 10px; font-size:12px;">
+                    <option value="1000">1초 (최고 반응성)</option>
+                    <option value="3000">3초 (권장 실시간)</option>
+                    <option value="5000" selected>5초 (기본값)</option>
+                    <option value="10000">10초 (저전력)</option>
+                    <option value="30000">30초 (절전)</option>
+                    <option value="60000">60초 (최소 트래픽)</option>
+                  </select>
+                </div>
+              </div>
             </div>
 
             <!-- Network Endpoints -->
@@ -466,18 +505,35 @@
 
             <!-- Host AI Integrations -->
             <div class="card settings-card">
-              <h3>🔌 호스트 AI 연동 구성</h3>
+              <h3>🔌 호스트 AI 연동 및 의존성 구성</h3>
+              <!-- Claude Desktop & CLI -->
               <div class="setting-item">
-                <span class="setting-label">Claude Desktop</span>
-                <p class="muted"><code>%APPDATA%\Claude\claude_desktop_config.json</code> 원클릭 자동 등록 지원</p>
-                <button id="btn-settings-claude" class="button secondary register-claude">⚡ Claude MCP 자동 등록</button>
+                <div class="flex-between">
+                  <span class="setting-label">Anthropic Claude (Desktop & CLI)</span>
+                  <span class="status-pill available" style="font-size:10px;">설정 지원</span>
+                </div>
+                <p class="muted" style="margin-top:2px;">Claude Desktop 설정 파일(<code>%APPDATA%\Claude\claude_desktop_config.json</code>)에 MCP를 자동 주입합니다.</p>
+                <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                  <button id="btn-settings-claude" class="button secondary register-claude">⚡ Claude Desktop MCP 자동 등록</button>
+                  <button id="btn-settings-claude-copy" class="button secondary copy-claude-mcp">📋 Claude JSON 복사</button>
+                </div>
+                <div style="margin-top:8px; padding:8px; background:#0f172a; border-radius:6px; font-size:11px; color:#94a3b8;">
+                  <div>💡 <strong>Claude CLI (@anthropic-ai/claude-code) 연동:</strong></div>
+                  <div>터미널에서 <code>claude mcp add integrated-power http://127.0.0.1:37241/mcp</code> 실행</div>
+                  <div style="margin-top:4px;">🔑 <strong>API 키 환경변수:</strong> <code>ANTHROPIC_API_KEY</code> 설정 시 Direct Usage로 자동 측정됩니다.</div>
+                </div>
               </div>
-              <div class="setting-item">
-                <span class="setting-label">ChatGPT Desktop</span>
-                <p class="muted">맞춤형 MCP > <code>스트리밍 가능한 HTTP</code> > <code>http://127.0.0.1:37241/mcp</code></p>
-                <button id="btn-settings-chatgpt" class="button secondary copy-chatgpt-mcp">📋 ChatGPT URL 복사</button>
+              <!-- ChatGPT Desktop -->
+              <div class="setting-item" style="margin-top:14px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.06);">
+                <div class="flex-between">
+                  <span class="setting-label">OpenAI ChatGPT Desktop</span>
+                  <span class="status-pill available" style="font-size:10px;">MCP 지원</span>
+                </div>
+                <p class="muted" style="margin-top:2px;">맞춤형 MCP > <code>스트리밍 가능한 HTTP</code> > <code>http://127.0.0.1:37241/mcp</code></p>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                  <button id="btn-settings-chatgpt" class="button secondary copy-chatgpt-mcp">📋 ChatGPT URL 복사</button>
+                </div>
               </div>
-            </div>
 
             <!-- Storage & Encryption -->
             <div class="card settings-card">
