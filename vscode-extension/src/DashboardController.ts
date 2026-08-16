@@ -44,6 +44,7 @@ export class DashboardController implements vscode.Disposable {
         }
       })
     );
+    this.startTokenPolling();
   }
 
   public dispose(): void {
@@ -194,12 +195,9 @@ export class DashboardController implements vscode.Disposable {
     }, 150);
   }
 
-  private syncTokenPolling(isActive: boolean): void {
-    if (isActive) {
-      this.startTokenPolling();
-    } else {
-      this.stopTokenPolling(true);
-    }
+  private syncTokenPolling(_isActive: boolean): void {
+    // Keep continuous 5s polling active while dashboard is mounted
+    this.startTokenPolling();
   }
 
   private startTokenPolling(): void {
@@ -207,19 +205,27 @@ export class DashboardController implements vscode.Disposable {
       return;
     }
 
-    this.tokenPollingTimer = setInterval(() => {
+    this.tokenPollingTimer = setInterval(async () => {
       void this.refreshTokenStatus(this.tokenRefreshGeneration, true);
+      try {
+        const nextState = await this.readDashboardState();
+        this.state = {
+          ...nextState,
+          isLoading: false,
+          isTokenLoading: false,
+          updatedAt: new Date().toISOString(),
+        };
+        this.postState();
+      } catch {
+        // Silent periodic background refresh
+      }
     }, 5000);
   }
 
-  private stopTokenPolling(triggerFinalRefresh: boolean): void {
+  private stopTokenPolling(_triggerFinalRefresh: boolean): void {
     if (this.tokenPollingTimer) {
       clearInterval(this.tokenPollingTimer);
       this.tokenPollingTimer = undefined;
-
-      if (triggerFinalRefresh) {
-        void this.refreshTokenStatus(this.tokenRefreshGeneration, true);
-      }
     }
   }
 

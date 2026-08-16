@@ -1,6 +1,6 @@
 # Integrated Power
 
-현재 릴리스: `0.8.0`
+현재 릴리스: `0.9.0`
 
 Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Windows 11에서
 에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고,
@@ -21,12 +21,12 @@ Open VSX는 배포 채널이다. Open VSX에 게시되더라도 Visual Studio Co
 다른 VS Code 파생 IDE까지 지원한다는 뜻은 아니다.
 
 > 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
-> Codex, Agy, Ollama와 vLLM은 사용자가 선택할 수 있는 외부 실행 경로다.
+> Codex, Agy, Claude, Ollama(Qwen 3.8 27B)와 vLLM은 사용자가 선택할 수 있는 외부 실행 경로다.
 
 ## 30초 안에 이해하기
 
 작업이 Antigravity quota에서 멈췄을 때, Integrated Power는 남은 사용량만 보여 주는 데서 끝나지 않는다.
-Antigravity·Codex·로컬 LLM·GPU 상태를 나눠 보여 주고, 다음 작업을 어떤 실행 경로로 이어갈지 선택할 수 있게 한다.
+Antigravity·Codex·Claude·로컬 LLM·GPU 상태를 나눠 보여 주고, 다음 작업을 어떤 실행 경로로 이어갈지 선택할 수 있게 한다.
 
 ### 시작하기
 

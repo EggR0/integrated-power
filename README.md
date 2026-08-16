@@ -1,12 +1,12 @@
 
 # Integrated Power
 
-현재 릴리스: `0.8.0`
+현재 릴리스: `0.9.0`
 
 Integrated Power는 AI 엔지니어링 및 멀티 에이전트 작업을 위한 **2-Track 에코시스템**을 제공합니다:
 
 1. **Integrated Power VSX Extension (이 저장소)**: **Antigravity IDE / VS Code 전용 확장 프로그램**. Windows 11에서 에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고, Integrated Orchestrator와 Private Git Knowledge를 이어 주는 IDE 전용 대시보드와 진입점을 제공합니다.
-2. **[Integrated Power Control Center & Multi-AI Broker](https://github.com/EggR0/integrated-power-control-center) (독립 실행 저장소)**: IDE 설치 여부와 상관없이 ChatGPT Desktop, Claude Desktop, Antigravity CLI, Local LLM(Ollama/Qwen), Codex 등 **어떤 AI 환경과도 연결·중계·호환하는 독립형 관제 데스크톱 앱 및 범용 Loopback Broker**.
+2. **[Integrated Power Control Center & Multi-AI Broker](https://github.com/EggR0/integrated-power-control-center) (독립 실행 저장소)**: IDE 설치 여부와 상관없이 ChatGPT Desktop, Claude Desktop, Antigravity CLI, Local LLM(Ollama/Qwen 3.8 27B), Codex 등 **어떤 AI 환경과도 연결·중계·호환하는 독립형 관제 데스크톱 앱 및 범용 Loopback Broker**.
 
 | 항목 | 값 |
 |---|---|
@@ -20,12 +20,12 @@ Open VSX는 배포 채널이다. Open VSX에 게시되더라도 Visual Studio Co
 다른 VS Code 파생 IDE까지 지원한다는 뜻은 아니다.
 
 > 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
-> Codex, Agy, Ollama와 vLLM은 사용자가 선택할 수 있는 외부 실행 경로다.
+> Codex, Agy, Claude, Ollama(Qwen 3.8 27B)와 vLLM은 사용자가 선택할 수 있는 외부 실행 경로다.
 
 ## 30초 안에 이해하기
 
 작업이 Antigravity quota에서 멈췄을 때, Integrated Power는 남은 사용량만 보여 주는 데서 끝나지 않는다.
-Antigravity·Codex·로컬 LLM·GPU 상태를 나눠 보여 주고, 다음 작업을 어떤 실행 경로로 이어갈지 선택할 수 있게 한다.
+Antigravity·Codex·Claude·로컬 LLM·GPU 상태를 나눠 보여 주고, 다음 작업을 어떤 실행 경로로 이어갈지 선택할 수 있게 한다.
 
 ### 시작하기
 
@@ -51,13 +51,8 @@ Antigravity·Codex·로컬 LLM·GPU 상태를 나눠 보여 주고, 다음 작�
 | 구성 | 역할 | 설치·데이터 경계 |
 |---|---|---|
 | Integrated Power Dashboard | 사용량·상태·에이전트 실행 기록 GUI | 이 VSIX가 제공 |
-| Integrated Orchestrator | 주 에이전트, Codex, 로컬 LLM 사이의 작업 경로 선택 | 사용자가 명시적으로 설치·설정 |
+| Integrated Orchestrator | 주 에이전트, Codex, 로컬 LLM(Qwen 3.8 27B) 사이의 작업 경로 선택 | 사용자가 명시적으로 설치·설정 |
 | Private Git Knowledge | 지식, 작업 기록, 오류 이력을 사용자 자신의 Git에 누적 | 별도 Windows 도구가 사용자 선택으로 설정 |
-
-Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이고, 현재
-기계 식별자는 `ip-orchestrator`다. 0.7.2 이하의 `eggr-orchestrator`와 더 이전
-`codex-orchestrator`는 새 설치가 정확한 관리 표식을 확인한 경우에만 백업한 뒤
-전환한다.
 
 세 구성은 설치 수명과 데이터 소유자가 다르다. 안전한 Configuration Center는 세
 상태와 설정 진입점을 한 화면에 보여 주지만, Dashboard 활성화만으로 Orchestrator나
@@ -69,7 +64,7 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
   추정값과 GPU 상태를 구분해 보여 준다. 상태 화면을 여는 행위가 실행 규칙이나
   사용자 파일을 바꾸면 원인 추적이 어려워지므로 관측과 변경을 분리한다.
 - **Integrated Orchestrator는 실행 경로 선택 기능이다.** 현재 에이전트가 직접
-  처리할지, Codex에 맡길지, VRAM·backend 조건에 맞는 로컬 LLM을 전처리에 쓸지를
+  처리할지, Codex에 맡길지, VRAM·backend 조건에 맞는 로컬 LLM(Qwen 3.8 27B)을 전처리에 쓸지를
   설정에 따라 결정한다. 로컬 모델이 없으면 해당 경로만 비활성이고 Dashboard와
   Knowledge는 계속 사용할 수 있다.
 - **Private Git Knowledge는 사용자 소유 기억이다.** 제품 개발자의 저장소를
@@ -80,11 +75,13 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
 배포할 때 각자의 경로·계정·도구 설치 상태를 Configuration Center에서 다시 정할
 수 있게 한다.
 
-## 주요 기능
+## 주요 기능 (v0.9.0)
 
-- Antigravity IDE, Codex 및 로컬 LLM 상태 영역 선택 표시
+- **Qwen 3.8 27B 및 멀티 GPU 전담 오케스트레이션**: 연산 전용 보조 GPU(GPU 1번, RTX 3090 24GB)를 메인 디바이스로 자동 바인딩하여 쾌적한 로컬 LLM 추론 지원
+- **스마트 무음 비동기 갱신 & 수동 새로고침 피드백**: 5초 주기 백그라운드 무음 갱신으로 깜빡임을 제거하고, 수동 새로고침 시에만 명확한 프로그레스 바 UI 제공
+- **Anthropic Claude 진단 및 통합**: Claude Desktop & Claude Code CLI 환경 진단 및 토큰 서브메뉴 통합
+- **레거시 마이그레이션 코드 전면 정리**: 순수 단일 공식 스토리지 루트 기반의 가볍고 빠른 v0.9.0 런타임
 - **Node.js Native HTTP 로컬 실행기**: PowerShell 스크립트 프로세스 의존성을 최소화하고 HTTP REST 통신 기반 처리
-- **Antigravity IDE 백그라운드 터미널 연동**: Broker, Ollama, Web UI를 IDE 터미널 탭으로 즉시 띄우고 실시간 가시화 및 원클릭 제어
 - **최대 32k (`32,768`) 토큰 로컬 컨텍스트 지원**: RTX 3090/4090 등 고용량 VRAM 환경 모델 적재 지원
 - **100% 쿼터 완충 알림 및 Windows 부팅 자동 실행(AutoStart)** 옵션 탑재
 - GPU 사용률, VRAM, 전력 사용량과 현재 전력 제한 표시
@@ -93,9 +90,7 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
 - `auto` 또는 `user_default` 방식의 로컬 LLM 선택 정책
 - VRAM, Compute Capability, backend 요구 조건과 설치 모델 크기를 고려한 후보 평가
 - Ollama 설치 모델 자동 조사와 사용자 전용 로컬 모델 레지스트리 동기화
-- 필요한 모델이 없을 때 사용자 동의 후에만 설치하도록 하는 구조화된 제안
 - Dashboard, Integrated Orchestrator, Private Git Knowledge의 독립 설정 센터
-- Orchestrator 설치 전 계획 표시, 소유권 충돌 차단, backup, rollback과 재실행 안전성
 - 개발자 절대 경로를 내장하지 않는 WorkRoot와 상태 경로 해석
 - Antigravity IDE 작업별 `ip-orchestrator.md` 단일 아티팩트 재사용
 

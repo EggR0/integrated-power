@@ -425,11 +425,15 @@ button:focus-visible {
   transition: width 300ms ease, background-color 300ms ease;
 }
 
-.token-metric.warning .progress-fill {
+.dashboard-shell.is-loading .progress-fill {
+  background: color-mix(in srgb, var(--vscode-descriptionForeground), var(--vscode-foreground) 18%);
+}
+
+.dashboard-shell:not(.is-loading) .token-metric.warning .progress-fill {
   background: var(--vscode-charts-yellow);
 }
 
-.token-metric.critical .progress-fill {
+.dashboard-shell:not(.is-loading) .token-metric.critical .progress-fill {
   background: var(--vscode-charts-red);
 }
 

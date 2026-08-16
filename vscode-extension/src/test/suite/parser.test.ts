@@ -224,7 +224,8 @@ suite('Parser and Store Test Suite', () => {
     assert.match(styles, /\.metric-reset-row\s*\{[\s\S]*grid-template-columns:\s*max-content minmax\(0,\s*1fr\) max-content;/);
     assert.match(styles, /\.token-section summary::before\s*\{[\s\S]*content:\s*"\+";/);
     assert.match(styles, /\.token-section\[open\] summary::before\s*\{[\s\S]*content:\s*"-";/);
-    assert.match(styles, /\.token-metric\.warning \.progress-fill/);
+    assert.match(styles, /\.dashboard-shell\.is-loading \.progress-fill\s*\{[\s\S]*var\(--vscode-descriptionForeground\)/);
+    assert.match(styles, /\.dashboard-shell:not\(\.is-loading\) \.token-metric\.warning \.progress-fill/);
 
     const extensionSource = fs.readFileSync(path.join(extensionRoot, 'src', 'extension.ts'), 'utf8');
     assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));

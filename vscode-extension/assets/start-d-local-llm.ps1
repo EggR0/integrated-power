@@ -27,7 +27,8 @@ try {
     Sort-Object @{ Expression = { [int]$_.free }; Descending = $true }, @{ Expression = { [int]$_.utilization }; Descending = $false } |
     Select-Object -First 1)
   if ($selectedGpu) {
-    $env:CUDA_VISIBLE_DEVICES = ([string]$selectedGpu.index).Trim()
+    $env:CUDA_VISIBLE_DEVICES = ([string]$selectedGpu.uuid).Trim()
+    $env:OLLAMA_CUDA_VISIBLE_DEVICES = ([string]$selectedGpu.uuid).Trim()
     Write-Output "Selected GPU index $($selectedGpu.index.Trim()) UUID $($selectedGpu.uuid.Trim()) free $($selectedGpu.free.Trim()) MiB utilization $($selectedGpu.utilization.Trim())%"
   }
 } catch {
