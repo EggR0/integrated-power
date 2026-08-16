@@ -408,7 +408,10 @@ function renderTokenStatus(tokenStatus) {
     const hasAntigravity = Boolean(antigravity?.percentage !== undefined || antigravityWeekly?.percentage !== undefined);
     sections.push(`
       <details class="token-section" data-section="antigravity" ${sectionStates.antigravity !== false ? "open" : ""}>
-        <summary><span class="section-title">Antigravity IDE</span><span class="status-pill ${hasAntigravity ? "status-ok" : "status-neutral"}">${hasAntigravity ? "Connected" : "Idle"}</span></summary>
+        <summary>
+          <span class="section-title"><span class="text-full">Antigravity IDE</span><span class="text-short">Antigravity</span></span>
+          <span class="status-pill ${hasAntigravity ? "status-ok" : "status-neutral"}"><span class="text-full">${hasAntigravity ? "Connected" : "Idle"}</span><span class="text-short">${hasAntigravity ? "Conn" : "Idle"}</span></span>
+        </summary>
         <div class="capacity-groups">
           ${renderCapacityGroup("Gemini 3.1 Pro", [antigravity, antigravityWeekly])}
           ${renderCapacityGroup("Opus 4.6 Thinking", [opus, opusWeekly])}
@@ -422,7 +425,10 @@ function renderTokenStatus(tokenStatus) {
     const hasCodex = Boolean(codex?.percentage !== undefined || codexWeekly?.percentage !== undefined);
     sections.push(`
       <details class="token-section" data-section="openai" ${sectionStates.openai !== false && sectionStates.codex !== false ? "open" : ""}>
-        <summary><span class="section-title">OpenAI (ChatGPT · Codex)</span><span class="status-pill ${hasCodex ? "status-ok" : "status-neutral"}">${hasCodex ? "Connected" : "Idle"}</span></summary>
+        <summary>
+          <span class="section-title"><span class="text-full">OpenAI (ChatGPT · Codex)</span><span class="text-short">OpenAI</span></span>
+          <span class="status-pill ${hasCodex ? "status-ok" : "status-neutral"}"><span class="text-full">${hasCodex ? "Connected" : "Idle"}</span><span class="text-short">${hasCodex ? "Conn" : "Idle"}</span></span>
+        </summary>
         <div class="capacity-groups">
           ${renderCapacityGroup("ChatGPT", [codex, codexWeekly])}
         </div>
@@ -452,7 +458,8 @@ function renderTokenStatus(tokenStatus) {
       <div class="token-footer">
         ${dashboardState.viewConfig?.showCodex !== false ? `<span>Codex: ${escapeHtml(status.codexStatus || "Idle")}</span>` : ""}
         <span class="task-routing-pill task-routing-${escapeAttr(taskWeight)}">
-          Task Routing: ${escapeHtml(taskWeight)}
+          <span class="text-full">Task Routing: ${escapeHtml(taskWeight)}</span>
+          <span class="text-short">${escapeHtml(taskWeight)}</span>
         </span>
       </div>
     </article>
@@ -488,7 +495,10 @@ function renderClaudeTokenSection(status, isOpen) {
 
   return `
     <details class="token-section" data-section="claude" ${isOpen ? "open" : ""}>
-      <summary><span class="section-title">Anthropic Claude</span><span class="status-pill ${isConnected ? "status-ok" : "status-neutral"}">${isConnected ? "Connected" : "Idle"}</span></summary>
+      <summary>
+        <span class="section-title"><span class="text-full">Anthropic Claude</span><span class="text-short">Claude</span></span>
+        <span class="status-pill ${isConnected ? "status-ok" : "status-neutral"}"><span class="text-full">${isConnected ? "Connected" : "Idle"}</span><span class="text-short">${isConnected ? "Conn" : "Idle"}</span></span>
+      </summary>
       <div class="capacity-groups">
         ${renderCapacityGroup("Claude (API & CLI)", metrics)}
       </div>
@@ -503,16 +513,21 @@ function buildClaudeMetric(label, summary, totalTokens) {
   
   const percentage = hasData ? clamp(100 - (tokens / 500000) * 100, 0, 100) : 0;
   const subtext = hasData ? `${formatTokenCount(tokens)} used` : "Waiting for quota data";
+  const shortSubtext = hasData ? `${formatTokenCount(tokens)}` : "Waiting";
   const refreshText = hasData ? `· ${formatNumber(events)} events` : "";
+  const shortRefreshText = hasData ? `· ${formatNumber(events)} ev` : "";
   const tone = hasData ? capacityTone(percentage) : "healthy";
   const tooltip = `[Local Measured] Claude ${label}: ${subtext}${refreshText}.`;
 
   return {
     label,
+    shortLabel: label === "Today" ? "Today" : "W",
     ariaLabel: `Claude ${label}`,
     mainText: hasData ? `${formatTokenCount(tokens)}` : "Unavailable",
     subtext,
+    shortSubtext,
     refreshText,
+    shortRefreshText,
     percentage: hasData ? percentage : 0,
     unavailable: !hasData,
     tone: hasData ? tone : "healthy",
@@ -552,7 +567,10 @@ function renderLocalComputeStatus(tokenStatus) {
       </div>
 
       <details class="token-section" data-section="localLlm" ${sectionStates.localLlm ? "open" : ""}>
-        <summary><span class="section-title">GPU Capacity</span><span class="status-pill ${statusClass(status.llmStatus || localProgramName)}">${escapeHtml(status.llmStatus || "Unknown")}</span></summary>
+        <summary>
+          <span class="section-title"><span class="text-full">GPU Capacity</span><span class="text-short">GPU</span></span>
+          <span class="status-pill ${statusClass(status.llmStatus || localProgramName)}"><span class="text-full">${escapeHtml(status.llmStatus || "Unknown")}</span><span class="text-short">${escapeHtml((status.llmStatus || "Unknown").replace(/\s*\(.*?\)/, ""))}</span></span>
+        </summary>
         <div class="capacity-groups">
           ${
             localComputeStatus.gpus?.length
@@ -586,12 +604,12 @@ function renderLocalComputeStatus(tokenStatus) {
 
 function renderCapacitySummary(status) {
   const entries = [
-    capacitySummaryEntry("Gemini 5Hours", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
-    capacitySummaryEntry("Gemini Weekly", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
-    capacitySummaryEntry("Opus 5Hours", status.opusPercentage, status.opusTokensLeft, status.opusMax),
-    capacitySummaryEntry("Opus Weekly", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
-    capacitySummaryEntry("ChatGPT 5Hours", status.codexPercentage, status.codexTokensLeft, status.codexMax),
-    capacitySummaryEntry("ChatGPT Weekly", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax),
+    capacitySummaryEntry("Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
+    capacitySummaryEntry("Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
+    capacitySummaryEntry("Opus 5Hours", "Opus 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax),
+    capacitySummaryEntry("Opus Weekly", "Opus W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
+    capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax),
+    capacitySummaryEntry("ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax),
   ].filter(Boolean);
 
   if (!entries.length) {
@@ -604,13 +622,23 @@ function renderCapacitySummary(status) {
 
   return `
     <div class="capacity-summary" title="${escapeAttr("Higher remaining quota is better. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.")}">
-      <span><strong>Best</strong> ${escapeHtml(strongest.label)} ${strongest.percentage.toFixed(0)}%</span>
-      <span class="summary-${escapeAttr(capacityTone(lowest.percentage))}"><strong>Lowest</strong> ${escapeHtml(lowest.label)} ${lowest.percentage.toFixed(0)}%</span>
+      <span>
+        <strong>Best</strong>
+        <span class="text-full">${escapeHtml(strongest.label)}</span>
+        <span class="text-short">${escapeHtml(strongest.shortLabel)}</span>
+        ${strongest.percentage.toFixed(0)}%
+      </span>
+      <span class="summary-${escapeAttr(capacityTone(lowest.percentage))}">
+        <strong>Lowest</strong>
+        <span class="text-full">${escapeHtml(lowest.label)}</span>
+        <span class="text-short">${escapeHtml(lowest.shortLabel)}</span>
+        ${lowest.percentage.toFixed(0)}%
+      </span>
     </div>
   `;
 }
 
-function capacitySummaryEntry(label, exactPercentage, left, max) {
+function capacitySummaryEntry(label, shortLabel, exactPercentage, left, max) {
   let percentage;
   if (typeof exactPercentage === "number" && Number.isFinite(exactPercentage)) {
     percentage = clamp(exactPercentage, 0, 100);
@@ -622,7 +650,7 @@ function capacitySummaryEntry(label, exactPercentage, left, max) {
     }
   }
 
-  return typeof percentage === "number" ? { label, percentage } : undefined;
+  return typeof percentage === "number" ? { label, shortLabel, percentage } : undefined;
 }
 
 function renderTokenPanelStatus(status) {
@@ -675,19 +703,28 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
   const mainText = (hasAbsolute || percentage !== undefined) ? `${displayPercentage.toFixed(2)}%` : "Unavailable";
   
   let subtext = "Waiting for quota data";
+  let shortSubtext = "Waiting";
   if (hasAbsolute || percentage !== undefined) {
     subtext = `${normalizedPercentage.toFixed(2)}% remaining`;
+    shortSubtext = `${normalizedPercentage.toFixed(1)}%`;
   }
 
-  const refreshText = formatRefreshCountdown(rawResetTime);
+  const countdown = formatRefreshCountdown(rawResetTime);
+  const refreshText = countdown ? countdown.full : "";
+  const shortRefreshText = countdown ? countdown.short : "";
   const tooltip = `${ariaLabel || label}: ${subtext}${refreshText ? ` ${refreshText}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+
+  const shortLabel = label === "5Hours" ? "5H" : label === "Weekly" ? "W" : label;
 
   return {
     label,
+    shortLabel,
     ariaLabel: ariaLabel || label,
     mainText,
     subtext,
+    shortSubtext,
     refreshText,
+    shortRefreshText,
     percentage: normalizedPercentage,
     unavailable: percentage === undefined && !hasAbsolute,
     tone: capacityTone(normalizedPercentage),
@@ -696,9 +733,19 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
 }
 
 function renderCapacityGroup(title, metrics) {
+  const shortTitle = title
+    .replace(/NVIDIA GeForce\s*/i, "")
+    .replace(/Thinking\s*via\s*Antigravity/i, "")
+    .replace(/Thinking\s*/i, "")
+    .replace(/Pro\s*/i, "")
+    .trim();
+
   return `
     <div class="capacity-group">
-      <h3>${escapeHtml(title)}</h3>
+      <h3>
+        <span class="text-full">${escapeHtml(title)}</span>
+        <span class="text-short">${escapeHtml(shortTitle)}</span>
+      </h3>
       <div class="capacity-row-list">
         ${metrics.map(renderCapacityMetric).join("")}
       </div>
@@ -710,9 +757,18 @@ function renderCapacityMetric(metric) {
   return `
     <div class="capacity-metric-row token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}" title="${escapeAttr(metric.tooltip || "")}">
       <div class="metric-reset-row">
-        <span class="capacity-metric-label">${escapeHtml(metric.label)}</span>
-        <span class="reset-left">${escapeHtml(metric.subtext)}</span>
-        <span class="reset-right">${metric.refreshText ? escapeHtml(metric.refreshText) : ""}</span>
+        <span class="capacity-metric-label">
+          <span class="text-full">${escapeHtml(metric.label)}</span>
+          <span class="text-short">${escapeHtml(metric.shortLabel || metric.label)}</span>
+        </span>
+        <span class="reset-left">
+          <span class="text-full">${escapeHtml(metric.subtext)}</span>
+          <span class="text-short">${escapeHtml(metric.shortSubtext || metric.subtext)}</span>
+        </span>
+        <span class="reset-right">
+          <span class="text-full">${escapeHtml(metric.refreshText || "")}</span>
+          <span class="text-short">${escapeHtml(metric.shortRefreshText || metric.refreshText || "")}</span>
+        </span>
       </div>
       <div class="progress-track" aria-label="${escapeHtml(metric.ariaLabel)} usage">
         <div class="progress-fill" data-progress="${escapeAttr(metric.percentage.toFixed(1))}"></div>
@@ -737,15 +793,23 @@ function buildHardwareMetric(label, used, total, unit, extraRightText = "") {
       ? `${percentage.toFixed(0)}% current load`
       : `${percentage.toFixed(1)}% used`
     : "Waiting for hardware data";
+  const shortSubtext = hasMetric
+    ? isPercentMetric
+      ? `${percentage.toFixed(0)}% load`
+      : `${percentage.toFixed(1)}%`
+    : "Waiting";
   const tone = percentage >= 90 ? "critical" : percentage >= 75 ? "warning" : "healthy";
   const tooltip = `${label}: ${subtext}${extraRightText ? ` ${extraRightText}` : ""}. Healthy: under 75%. Caution: 75-89%. Limited: 90% or higher.`;
 
   return {
     label,
+    shortLabel: label,
     ariaLabel: label,
     mainText,
     subtext,
+    shortSubtext,
     refreshText: extraRightText,
+    shortRefreshText: extraRightText.replace(/\s+/g, ""),
     percentage,
     unavailable: !hasMetric,
     tone,
@@ -1132,13 +1196,21 @@ function formatRefreshCountdown(value) {
   if (Number.isNaN(date.getTime())) return undefined;
   
   const diffMs = date.getTime() - Date.now();
-  if (diffMs <= 0) return "Refreshes soon";
+  if (diffMs <= 0) return { full: "\u00B7 Refreshes soon", short: "\u00B7 Soon" };
   
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
   
-  if (diffHours > 0) return `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`;
-  return `\u00B7 Refreshes in ${diffMins}m`;
+  if (diffHours > 0) {
+    return {
+      full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
+      short: `\u00B7 ${diffHours}h ${diffMins}m`,
+    };
+  }
+  return {
+    full: `\u00B7 Refreshes in ${diffMins}m`,
+    short: `\u00B7 ${diffMins}m`,
+  };
 }
 
 function escapeAttr(value) {

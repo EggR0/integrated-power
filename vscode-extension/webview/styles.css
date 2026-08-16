@@ -293,9 +293,11 @@ button:focus-visible {
 
 .capacity-summary {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   margin: 0 0 10px;
+  min-width: 0;
+  width: 100%;
 }
 
 .capacity-summary span {
@@ -309,6 +311,12 @@ button:focus-visible {
   background: color-mix(in srgb, var(--vscode-focusBorder), transparent 90%);
   font-size: 11px;
   font-weight: 600;
+  min-width: 0;
+  flex: 1 1 0;
+  justify-content: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .capacity-summary strong {
@@ -871,61 +879,72 @@ button:focus-visible {
 
 @media (max-width: 420px) {
   .dashboard-shell {
-    padding: 12px;
+    padding: 10px;
   }
 
   .dashboard-header h1 {
-    font-size: 22px;
+    font-size: 18px;
     overflow-wrap: anywhere;
   }
 
   .token-panel,
   .list-panel {
-    padding: 12px;
+    padding: 10px;
   }
 
   .capacity-groups {
-    gap: 10px;
+    gap: 8px;
   }
 
   .usage-window-list {
     grid-template-columns: minmax(0, 1fr);
   }
-
-  .metric-reset-row {
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: 6px 10px;
-  }
-
-  .reset-right {
-    grid-column: 2;
-    text-align: left;
-  }
-
-  .capacity-metric-label,
-  .reset-left,
-  .reset-right {
-    font-size: 11px;
-  }
 }
 
-/* Compact toolbar panel: the dashboard is intentionally sized like a small
- * Windows flyout while retaining the full state and accessible details. */
+/* Responsive Text Truncation */
+.text-short {
+  display: none;
+}
+
+.text-full {
+  display: inline;
+}
+
+/* Compact toolbar panel: the dashboard is sized to fill the viewport
+ * while retaining the full state and accessible details. */
 html,
 body {
+  width: 100%;
   min-width: 0;
   overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 .dashboard-shell {
-  max-width: 390px;
+  width: 100%;
+  max-width: 100%;
   padding: 10px;
+  box-sizing: border-box;
+}
+
+.dashboard-shell.compact-mode {
+  max-width: 390px;
 }
 
 .dashboard-header {
-  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 8px;
   margin-bottom: 10px;
+  min-width: 0;
+  width: 100%;
 }
 
 .dashboard-header h1 {
@@ -943,6 +962,8 @@ body {
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin-bottom: 8px;
+  min-width: 0;
+  width: 100%;
 }
 
 .panel,
@@ -951,6 +972,8 @@ body {
 .summary-card {
   border-radius: 7px;
   padding: 9px;
+  min-width: 0;
+  width: 100%;
 }
 
 .panel-heading {
@@ -1008,23 +1031,57 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-@container (max-width: 220px) {
+@container (max-width: 340px) {
+  .text-full {
+    display: none !important;
+  }
+  .text-short {
+    display: inline !important;
+  }
   .metric-reset-row {
     gap: 4px;
   }
+  .capacity-summary {
+    gap: 4px;
+  }
+  .capacity-summary span {
+    padding: 2px 6px;
+    font-size: 10.5px;
+  }
+  .status-pill {
+    padding: 1px 5px;
+    font-size: 10px;
+  }
+  .token-section summary {
+    font-size: 11.5px;
+    padding: 2px 4px;
+  }
+  .capacity-group h3 {
+    font-size: 12px;
+  }
+}
+
+@container (max-width: 220px) {
+  .metric-reset-row {
+    gap: 2px;
+  }
   .capacity-metric-label {
-    font-size: 11px;
+    font-size: 10.5px;
   }
   .reset-left,
   .reset-right {
-    font-size: 10px;
+    font-size: 9.5px;
+  }
+  .capacity-summary span {
+    font-size: 9px;
+    padding: 1px 4px;
   }
   .status-pill {
-    padding: 1px 4px;
+    padding: 1px 3px;
     font-size: 9px;
   }
   .token-section summary {
-    font-size: 11px;
-    padding: 2px 4px;
+    font-size: 10.5px;
+    padding: 2px 3px;
   }
 }
