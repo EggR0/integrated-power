@@ -33,18 +33,24 @@ export class BrokerController implements vscode.Disposable {
 
   public initTerminalWatcher(): void {
     if (this.terminalWatcherDisposable) return;
+    this.cleanupTerminals();
     this.terminalWatcherDisposable = vscode.window.onDidOpenTerminal((term) => {
       const name = term.name;
-      // Skip internal Integrated Power background terminals
       if (name.startsWith("Integrated Power:")) return;
-      
-      this.log(`[Agent Terminal Watcher] Detected active terminal opened: "${name}". Auto-focusing for user visibility.`);
-      try {
-        term.show(true);
-      } catch (err) {
-        this.log(`[Agent Terminal Watcher] Could not focus terminal "${name}": ${err}`);
-      }
+      this.log(`[Agent Terminal Watcher] Detected active agent terminal: "${name}"`);
     });
+  }
+
+  public cleanupTerminals(): void {
+    for (const term of vscode.window.terminals) {
+      if (term.name.startsWith("Integrated Power:")) {
+        try {
+          term.dispose();
+        } catch {
+          // best effort
+        }
+      }
+    }
   }
 
   public getActiveAgentTerminals(): { name: string; isIntegratedPower: boolean }[] {
@@ -55,7 +61,6 @@ export class BrokerController implements vscode.Disposable {
   }
 
   public spawnBackgroundTerminals(context: vscode.ExtensionContext): void {
-    this.initTerminalWatcher();
     const existing = vscode.window.terminals;
     const ccDir = resolveControlCenterDir(context);
     const isWin = process.platform === "win32";
@@ -70,33 +75,6 @@ export class BrokerController implements vscode.Disposable {
       this.spawnedTerminals.push(brokerTerm);
       brokerTerm.sendText(isWin ? `cd '${ccDir}'; node broker-server.js` : `cd "${ccDir}" && node broker-server.js`);
     }
-
-    // 2. Integrated Power: Ollama
-    let ollamaTerm = existing.find((t) => t.name === "Integrated Power: Ollama");
-    if (!ollamaTerm || ollamaTerm.exitStatus !== undefined) {
-      ollamaTerm = vscode.window.createTerminal({
-        name: "Integrated Power: Ollama",
-        iconPath: new vscode.ThemeIcon("server-process"),
-      });
-      this.spawnedTerminals.push(ollamaTerm);
-      if (isWin) {
-        ollamaTerm.sendText("& \"$env:LOCALAPPDATA\\Programs\\Ollama\\ollama.exe\" serve");
-      } else {
-        ollamaTerm.sendText("ollama serve");
-      }
-    }
-
-    // 3. Integrated Power: Web UI
-    let uiTerm = existing.find((t) => t.name === "Integrated Power: Web UI");
-    if (!uiTerm || uiTerm.exitStatus !== undefined) {
-      uiTerm = vscode.window.createTerminal({
-        name: "Integrated Power: Web UI",
-        iconPath: new vscode.ThemeIcon("browser"),
-      });
-      this.spawnedTerminals.push(uiTerm);
-      uiTerm.sendText(isWin ? `cd '${ccDir}'; npx vite --host 127.0.0.1 --port 5173` : `cd "${ccDir}" && npx vite --host 127.0.0.1 --port 5173`);
-    }
-
     brokerTerm.show(true);
   }
 
