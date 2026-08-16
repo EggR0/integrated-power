@@ -438,30 +438,30 @@ function renderClaudeTokenSection(usage, isOpen) {
     <details class="token-section" data-section="claude" ${isOpen ? "open" : ""}>
       <summary style="display:flex; align-items:center; cursor:pointer;">
         <span>Anthropic Claude</span>
-        <span class="status-pill ${hasUsage ? "status-ok" : "status-neutral"}" style="font-size:10px; margin-left:auto; margin-right:6px;">${hasUsage ? "Measured" : "No data"}</span>
+        <span class="status-pill ${hasUsage ? "status-ok" : "status-neutral"}" style="font-size:10px; margin-left:auto; margin-right:4px;">${hasUsage ? "Measured" : "No data"}</span>
       </summary>
-      <div class="capacity-groups" style="margin-top:8px; display:grid; gap:8px;">
-        <div class="usage-window-list" style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
-          <div class="usage-window" style="background:var(--vscode-input-background); padding:6px 8px; border-radius:6px; border:1px solid var(--vscode-input-border, rgba(255,255,255,0.06));">
+      <div class="capacity-groups" style="margin-top:4px; display:grid; gap:4px;">
+        <div class="usage-window-list" style="display:grid; grid-template-columns: 1fr 1fr; gap:4px; margin-top:0;">
+          <div class="usage-window" style="background:var(--vscode-input-background); padding:4px 6px; border-radius:4px; border:1px solid var(--vscode-input-border, rgba(255,255,255,0.06));">
             <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600;">
               <span>Today</span>
               <strong>${escapeHtml(formatTokenCount(todayTotal))}</strong>
             </div>
-            <p style="margin:3px 0 0; font-size:10px; color:var(--vscode-descriptionForeground);">${escapeHtml(formatTokenBreakdown(safeUsage.today || {}))}</p>
+            <p style="margin:2px 0 0; font-size:10px; color:var(--vscode-descriptionForeground);">${escapeHtml(formatTokenBreakdown(safeUsage.today || {}))}</p>
           </div>
-          <div class="usage-window" style="background:var(--vscode-input-background); padding:6px 8px; border-radius:6px; border:1px solid var(--vscode-input-border, rgba(255,255,255,0.06));">
+          <div class="usage-window" style="background:var(--vscode-input-background); padding:4px 6px; border-radius:4px; border:1px solid var(--vscode-input-border, rgba(255,255,255,0.06));">
             <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600;">
               <span>7Days</span>
               <strong>${escapeHtml(formatTokenCount(sevenDaysTotal))}</strong>
             </div>
-            <p style="margin:3px 0 0; font-size:10px; color:var(--vscode-descriptionForeground);">${escapeHtml(formatTokenBreakdown(safeUsage.sevenDays || {}))}</p>
+            <p style="margin:2px 0 0; font-size:10px; color:var(--vscode-descriptionForeground);">${escapeHtml(formatTokenBreakdown(safeUsage.sevenDays || {}))}</p>
           </div>
         </div>
-        <div class="usage-source-row" style="font-size:11px; display:flex; justify-content:space-between; color:var(--vscode-descriptionForeground);" title="${escapeAttr(sourceText)}">
+        <div class="usage-source-row" style="font-size:11px; display:flex; justify-content:space-between; margin-top:2px; color:var(--vscode-descriptionForeground);" title="${escapeAttr(sourceText)}">
           <span>Sources</span>
           <strong style="color:var(--vscode-foreground); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${escapeHtml(sourceText)}</strong>
         </div>
-        <div class="usage-source-row" style="font-size:11px; display:flex; justify-content:space-between; color:var(--vscode-descriptionForeground);">
+        <div class="usage-source-row" style="font-size:11px; display:flex; justify-content:space-between; margin-top:2px; color:var(--vscode-descriptionForeground);">
           <span>Last used</span>
           <strong style="color:var(--vscode-foreground); font-weight:500;">${safeUsage.lastUsedAt ? escapeHtml(formatDateTime(safeUsage.lastUsedAt)) : (safeUsage.lastMeasuredAt ? escapeHtml(formatDateTime(safeUsage.lastMeasuredAt)) : "Waiting for data")}</strong>
         </div>

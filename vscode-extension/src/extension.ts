@@ -204,8 +204,6 @@ export function activate(context: vscode.ExtensionContext): void {
     toolbarItem,
   );
 
-  brokerController.spawnBackgroundTerminals(context);
-
   void brokerController.start(context).catch((error) => {
     void vscode.window.showWarningMessage(
       `Integrated Power broker could not start: ${error instanceof Error ? error.message : String(error)}`,
