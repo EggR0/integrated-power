@@ -149,6 +149,8 @@ function Write-LocalLlmMetric {
         [Parameter(Mandatory = $true)]
         [int]$TotalTokens,
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [AllowNull()]
         [string]$Content,
         [Parameter(Mandatory = $true)]
         [bool]$Success,
