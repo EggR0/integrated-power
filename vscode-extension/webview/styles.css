@@ -422,22 +422,14 @@ button:focus-visible {
   min-width: 2px;
   border-radius: inherit;
   background: var(--vscode-charts-green);
-  transition: width 180ms ease;
+  transition: width 300ms ease, background-color 300ms ease;
 }
 
-.dashboard-shell.is-refreshing .progress-track {
-  background: color-mix(in srgb, var(--vscode-input-background), var(--vscode-descriptionForeground) 10%);
-}
-
-.dashboard-shell.is-refreshing .progress-fill {
-  background: color-mix(in srgb, var(--vscode-descriptionForeground), var(--vscode-foreground) 18%);
-}
-
-.dashboard-shell:not(.is-refreshing) .token-metric.warning .progress-fill {
+.token-metric.warning .progress-fill {
   background: var(--vscode-charts-yellow);
 }
 
-.dashboard-shell:not(.is-refreshing) .token-metric.critical .progress-fill {
+.token-metric.critical .progress-fill {
   background: var(--vscode-charts-red);
 }
 

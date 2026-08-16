@@ -317,8 +317,7 @@ test("webview preserves token status and integrates Anthropic Claude submenu", (
   assert.ok(webview.includes("Opus 4.6 Thinking via Antigravity"));
   assert.ok(!styles.includes(".loading-strip"));
   assert.match(styles, /body\s*\{[\s\S]*min-width:\s*0;/);
-  assert.match(styles, /\.dashboard-shell\.is-refreshing \.progress-fill\s*\{[\s\S]*var\(--vscode-descriptionForeground\)/);
-  assert.match(styles, /\.dashboard-shell:not\(\.is-refreshing\) \.token-metric\.warning \.progress-fill/);
+  assert.match(styles, /\.token-metric\.warning \.progress-fill/);
   assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));
 });
 

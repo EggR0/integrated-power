@@ -239,15 +239,17 @@ function normalizeUsageSummary(value) {
   };
 }
 
+let lastRenderedHtml = "";
+
 function render() {
-  const isRefreshing = dashboardState.isLoading || dashboardState.isTokenLoading;
+  const isRefreshing = dashboardState.isLoading;
   if (refreshRenderTimer) {
     clearTimeout(refreshRenderTimer);
     refreshRenderTimer = undefined;
   }
 
-  root.innerHTML = `
-    <main class="dashboard-shell ${dashboardState.isLoading ? "is-loading" : ""} ${isRefreshing ? "is-refreshing" : ""}">
+  const nextHtml = `
+    <main class="dashboard-shell ${dashboardState.isLoading ? "is-loading" : ""}">
       <header class="dashboard-header">
         <div>
           <p class="eyebrow">AI Workflow</p>
@@ -273,6 +275,12 @@ function render() {
       </section>
     </main>
   `;
+
+  if (nextHtml === lastRenderedHtml) {
+    return;
+  }
+  lastRenderedHtml = nextHtml;
+  root.innerHTML = nextHtml;
 
   root.querySelectorAll("[data-command]").forEach((button) => {
     button.addEventListener("click", () => postCommand(button.dataset.command));
