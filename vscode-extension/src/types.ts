@@ -184,12 +184,17 @@ export interface DashboardState {
     showCodex: boolean;
     showClaude?: boolean;
     showLocalLlm: boolean;
+    showQueue?: boolean;
+    showMetrics?: boolean;
+    showErrors?: boolean;
   };
 }
 
 export type WebviewToExtensionMessage =
   | { type: "ready"; state?: Partial<DashboardState> }
   | { type: "refresh" }
+  | { type: "configureViews" }
+  | { type: "openConfigurationCenter" }
   | { type: "openRunsFile" }
   | { type: "openArtifact"; artifactId: string }
   | { type: "openTerminals" }

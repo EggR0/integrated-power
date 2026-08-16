@@ -85,6 +85,12 @@ export class DashboardController implements vscode.Disposable {
       case "refresh":
         await this.refresh(true);
         return;
+      case "configureViews":
+        await vscode.commands.executeCommand("integratedPower.agentRuns.configureViews");
+        return;
+      case "openConfigurationCenter":
+        await vscode.commands.executeCommand("integratedPower.eggr.openConfigurationCenter");
+        return;
       case "openRunsFile":
         await this.openRunsFile();
         return;
@@ -210,7 +216,7 @@ export class DashboardController implements vscode.Disposable {
         return;
       }
       const pollGeneration = this.tokenRefreshGeneration;
-      void this.refreshTokenStatus(pollGeneration, true);
+      void this.refreshTokenStatus(pollGeneration, false);
       try {
         const nextState = await this.readDashboardState();
         if (pollGeneration !== this.tokenRefreshGeneration) {
@@ -218,6 +224,7 @@ export class DashboardController implements vscode.Disposable {
         }
         this.state = {
           ...nextState,
+          tokenStatus: this.mergeTokenStatus(this.state.tokenStatus, nextState.tokenStatus),
           isLoading: false,
           isTokenLoading: false,
           updatedAt: new Date().toISOString(),
@@ -295,17 +302,7 @@ export class DashboardController implements vscode.Disposable {
       }
     }
 
-    let resolvedTokenStatus: TokenStatus | undefined = tokenStatus;
-    const previousTokenStatus = this.state.tokenStatus;
-    if (tokenStatus && previousTokenStatus && this.hasUsableTokenStatus(previousTokenStatus)) {
-      // If the newly fetched tokenStatus is empty, keep the previous visible data while refresh continues.
-      if (!this.hasUsableTokenStatus(tokenStatus)) {
-        resolvedTokenStatus = {
-          ...previousTokenStatus,
-          activity: tokenStatus.activity,
-        };
-      }
-    }
+    let resolvedTokenStatus = this.mergeTokenStatus(this.state.tokenStatus, tokenStatus);
 
     // On first load, show the skeleton only when there is truly no prior or newly fetched quota data.
     if (resolvedTokenStatus && !this.hasUsableTokenStatus(resolvedTokenStatus)) {
@@ -354,28 +351,7 @@ export class DashboardController implements vscode.Disposable {
       }
 
       const previousTokenStatus = this.state.tokenStatus;
-      const safeTokenStatus: TokenStatus | undefined = this.hasUsableTokenStatus(tokenStatus)
-        ? tokenStatus
-        : previousTokenStatus && this.hasUsableTokenStatus(previousTokenStatus)
-          ? previousTokenStatus
-          : tokenStatus || {
-          antigravityTokensLeft: 0,
-          antigravityMax: 0,
-          antigravityWeeklyTokensLeft: 0,
-          antigravityWeeklyMax: 0,
-          opusTokensLeft: 0,
-          opusMax: 0,
-          opusWeeklyTokensLeft: 0,
-          opusWeeklyMax: 0,
-          codexTokensLeft: 0,
-          codexMax: 0,
-          codexWeeklyTokensLeft: 0,
-          codexWeeklyMax: 0,
-          codexStatus: "offline",
-          llmStatus: "offline",
-          recommendedTaskWeight: "unknown",
-          activity: []
-        };
+      const safeTokenStatus: TokenStatus | undefined = this.mergeTokenStatus(previousTokenStatus, tokenStatus);
 
       this.checkFullTokenNotification(previousTokenStatus, safeTokenStatus);
       this.persistTokenStatusCache(safeTokenStatus);
@@ -449,6 +425,63 @@ export class DashboardController implements vscode.Disposable {
     } catch {
       // Non-blocking telemetry cache write
     }
+  }
+
+  private mergeTokenStatus(
+    previous: TokenStatus | undefined,
+    current: TokenStatus | undefined,
+  ): TokenStatus | undefined {
+    if (!previous) return current;
+    if (!current) return previous;
+
+    return {
+      ...previous,
+      ...current,
+      antigravityPercentage: current.antigravityPercentage ?? previous.antigravityPercentage,
+      antigravityResetTime: current.antigravityResetTime ?? previous.antigravityResetTime,
+      antigravityEstimatedAbsolute: current.antigravityEstimatedAbsolute ?? previous.antigravityEstimatedAbsolute,
+      antigravityTokensLeft: current.antigravityTokensLeft || previous.antigravityTokensLeft,
+      antigravityMax: current.antigravityMax || previous.antigravityMax,
+
+      antigravityWeeklyPercentage: current.antigravityWeeklyPercentage ?? previous.antigravityWeeklyPercentage,
+      antigravityWeeklyResetTime: current.antigravityWeeklyResetTime ?? previous.antigravityWeeklyResetTime,
+      antigravityWeeklyTokensLeft: current.antigravityWeeklyTokensLeft || previous.antigravityWeeklyTokensLeft,
+      antigravityWeeklyMax: current.antigravityWeeklyMax || previous.antigravityWeeklyMax,
+
+      opusPercentage: current.opusPercentage ?? previous.opusPercentage,
+      opusResetTime: current.opusResetTime ?? previous.opusResetTime,
+      opusEstimatedAbsolute: current.opusEstimatedAbsolute ?? previous.opusEstimatedAbsolute,
+      opusTokensLeft: current.opusTokensLeft || previous.opusTokensLeft,
+      opusMax: current.opusMax || previous.opusMax,
+
+      opusWeeklyPercentage: current.opusWeeklyPercentage ?? previous.opusWeeklyPercentage,
+      opusWeeklyResetTime: current.opusWeeklyResetTime ?? previous.opusWeeklyResetTime,
+      opusWeeklyEstimatedAbsolute: current.opusWeeklyEstimatedAbsolute ?? previous.opusWeeklyEstimatedAbsolute,
+      opusWeeklyTokensLeft: current.opusWeeklyTokensLeft || previous.opusWeeklyTokensLeft,
+      opusWeeklyMax: current.opusWeeklyMax || previous.opusWeeklyMax,
+
+      codexPercentage: current.codexPercentage ?? previous.codexPercentage,
+      codexResetTime: current.codexResetTime ?? previous.codexResetTime,
+      codexEstimatedAbsolute: current.codexEstimatedAbsolute ?? previous.codexEstimatedAbsolute,
+      codexTokensLeft: current.codexTokensLeft || previous.codexTokensLeft,
+      codexMax: current.codexMax || previous.codexMax,
+
+      codexWeeklyPercentage: current.codexWeeklyPercentage ?? previous.codexWeeklyPercentage,
+      codexWeeklyResetTime: current.codexWeeklyResetTime ?? previous.codexWeeklyResetTime,
+      codexWeeklyEstimatedAbsolute: current.codexWeeklyEstimatedAbsolute ?? previous.codexWeeklyEstimatedAbsolute,
+      codexWeeklyTokensLeft: current.codexWeeklyTokensLeft || previous.codexWeeklyTokensLeft,
+      codexWeeklyMax: current.codexWeeklyMax || previous.codexWeeklyMax,
+
+      claudeDirectUsage: current.claudeDirectUsage ?? previous.claudeDirectUsage,
+      localComputeStatus: current.localComputeStatus ?? previous.localComputeStatus,
+      codexStatus: (current.codexStatus && current.codexStatus !== "offline") ? current.codexStatus : previous.codexStatus || "offline",
+      llmStatus: (current.llmStatus && current.llmStatus !== "offline") ? current.llmStatus : previous.llmStatus || "offline",
+      recommendedTaskWeight: (current.recommendedTaskWeight && current.recommendedTaskWeight !== "unknown")
+        ? current.recommendedTaskWeight
+        : previous.recommendedTaskWeight || "unknown",
+      activity: (current.activity && current.activity.length) ? current.activity : previous.activity || [],
+      errors: current.errors ?? previous.errors,
+    };
   }
 
   private hasUsableTokenStatus(status: TokenStatus | undefined): boolean {
@@ -647,6 +680,8 @@ export class DashboardController implements vscode.Disposable {
     if (
       typed.type === "ready" ||
       typed.type === "refresh" ||
+      typed.type === "configureViews" ||
+      typed.type === "openConfigurationCenter" ||
       typed.type === "openRunsFile"
     ) {
       return true;
@@ -697,6 +732,9 @@ export class DashboardController implements vscode.Disposable {
       showCodex: config.get<boolean>("showCodex", true),
       showClaude: config.get<boolean>("showClaude", true),
       showLocalLlm: config.get<boolean>("showLocalLlm", true),
+      showQueue: config.get<boolean>("showQueue", true),
+      showMetrics: config.get<boolean>("showMetrics", true),
+      showErrors: config.get<boolean>("showErrors", true),
     };
   }
 

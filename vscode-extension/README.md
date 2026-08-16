@@ -81,11 +81,12 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
 배포할 때 각자의 경로·계정·도구 설치 상태를 Configuration Center에서 다시 정할
 수 있게 한다.
 
-## 주요 기능
+## 주요 기능 (v0.9.0)
  
-- **4대 Provider 전면 Bar UI 통일 및 개별 표시 제어**: Antigravity IDE(Gemini/Opus), OpenAI(ChatGPT·Codex), Anthropic Claude, Local LLM(GPU) 4개 영역 모두 동일한 고품질 프로그레스 바 형태 및 개별 표시/숨김(`showAntigravity`, `showCodex`, `showClaude`, `showLocalLlm`) 지원
+- **대시보드 뷰 설정(View Settings) 및 개별 패널 토글**: 대시보드 상단 View Settings 버튼 및 확장 설정을 통해 4대 Provider(Antigravity, OpenAI/Codex, Claude, Local LLM) 및 큐(Queue), 메트릭스(Metrics), 에러(Errors) 패널의 표시/숨김을 완벽히 커스터마이징
+- **UI 레이아웃 안정화 & 무음 비동기 갱신**: 5초 주기 백그라운드 쿼터 폴링 시 불필요한 내부 텔레메트리 텍스트로 인한 UI 흔들림(Layout Shift)을 완전히 제거하고 매끄러운 갱신 경험 제공
+- **4대 Provider 전면 Bar UI 통일**: Antigravity IDE(Gemini/Opus), OpenAI(ChatGPT·Codex), Anthropic Claude, Local LLM(GPU) 4개 영역 모두 동일한 고품질 프로그레스 바 형태 제공
 - **Qwen 3.8 27B 및 멀티 GPU 전담 오케스트레이션**: 연산 전용 보조 GPU(GPU 1번, RTX 3090 24GB)를 메인 디바이스로 자동 바인딩하여 쾌적한 로컬 LLM 추론 지원
-- **스마트 무음 비동기 갱신 & 수동 새로고침 피드백**: 5초 주기 백그라운드 무음 갱신으로 깜빡임을 제거하고, 수동 새로고침 시에만 명확한 프로그레스 바 UI 제공
 - **Anthropic Claude 진단 및 통합**: Claude Desktop & Claude Code CLI 환경 진단 및 표준 대화·API 예산 Bar 렌더링
 - **동적 로컬 모델 경로 탐색**: `$env:OLLAMA_MODELS`, `D:\AI_Models`, `~/.ollama/models`를 자동 감지하여 모든 PC 환경에서 무결점 실행
 - **Node.js Native HTTP 로컬 실행기**: PowerShell 스크립트 프로세스 의존성을 최소화하고 HTTP REST 통신 기반 처리

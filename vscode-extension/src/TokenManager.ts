@@ -606,7 +606,7 @@ export class TokenManager {
           return;
         }
         try {
-          const codexQuota = await this.withTimeout(this.fetchCodexQuota(forceRefresh), 3000, {});
+          const codexQuota = await this.withTimeout(this.fetchCodexQuota(forceRefresh), 5000, {});
           this.recordProviderSuccess("codex");
           data.codexPercentage = codexQuota.codexPercentage;
           data.codexResetTime = codexQuota.codexResetTime;
@@ -1307,17 +1307,10 @@ export class TokenManager {
       | "codexWeeklyEstimatedAbsolute"
     >
   > {
-    if (forceRefresh) {
-      await this.triggerCodexLiveRefresh();
-    }
-
     const sessionsDir = path.join(os.homedir(), ".codex", "sessions");
-    const files = await this.walkJsonlFiles(sessionsDir);
+    let files = await this.walkJsonlFiles(sessionsDir);
 
-    if (files.length === 0) {
-      throw new Error("No Codex session files found");
-    }
-
+    // 1. Fast scan existing session files first
     for (const file of files) {
       const content = await this.readFileTail(file.fullPath, MAX_SESSION_FILE_BYTES);
       const lines = content.split(/\r?\n/).reverse().slice(0, MAX_SESSION_LINES_PER_FILE);
@@ -1330,11 +1323,37 @@ export class TokenManager {
         try {
           const event = JSON.parse(line) as JsonObject;
           const quota = this.codexQuotaFromEvent(event);
-          if (quota) {
+          if (quota && (quota.codexPercentage !== undefined || quota.codexWeeklyPercentage !== undefined)) {
             return quota;
           }
         } catch {
           // Ignore malformed or partial JSONL lines and keep scanning older events.
+        }
+      }
+    }
+
+    // 2. If no quota found and forceRefresh is requested, trigger live refresh
+    if (forceRefresh) {
+      await this.triggerCodexLiveRefresh();
+      files = await this.walkJsonlFiles(sessionsDir);
+      for (const file of files) {
+        const content = await this.readFileTail(file.fullPath, MAX_SESSION_FILE_BYTES);
+        const lines = content.split(/\r?\n/).reverse().slice(0, MAX_SESSION_LINES_PER_FILE);
+
+        for (const line of lines) {
+          if (!line.trim()) {
+            continue;
+          }
+
+          try {
+            const event = JSON.parse(line) as JsonObject;
+            const quota = this.codexQuotaFromEvent(event);
+            if (quota && (quota.codexPercentage !== undefined || quota.codexWeeklyPercentage !== undefined)) {
+              return quota;
+            }
+          } catch {
+            // Ignore
+          }
         }
       }
     }

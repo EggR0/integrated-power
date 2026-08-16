@@ -13,9 +13,15 @@ window.addEventListener("message", (event) => {
   }
 
   if (message.type === "state") {
+    captureDomSectionStates();
+    const incomingSectionStates = message.state?.sectionStates;
+    const mergedSectionStates = {
+      ...normalizeSectionStates(dashboardState.sectionStates),
+      ...(incomingSectionStates && typeof incomingSectionStates === "object" ? incomingSectionStates : {}),
+    };
     dashboardState = normalizeState({
       ...(message.state || {}),
-      sectionStates: message.state?.sectionStates || dashboardState.sectionStates,
+      sectionStates: mergedSectionStates,
     });
     persistState();
     render();
@@ -89,7 +95,7 @@ function emptyState() {
     isLoading: true,
     isTokenLoading: true,
     isStale: false,
-    sectionStates: { antigravity: true, codex: true, localLlm: true },
+    sectionStates: { antigravity: true, codex: true, openai: true, claude: true, localLlm: true },
     viewConfig: undefined,
     updatedAt: new Date().toISOString(),
     refreshStartedAt: undefined,
@@ -128,11 +134,35 @@ function normalizeState(state) {
 
 function normalizeSectionStates(sectionStates) {
   const safeSectionStates = sectionStates && typeof sectionStates === "object" ? sectionStates : {};
-  return {
-    antigravity: typeof safeSectionStates.antigravity === "boolean" ? safeSectionStates.antigravity : true,
-    codex: typeof safeSectionStates.codex === "boolean" ? safeSectionStates.codex : true,
-    localLlm: typeof safeSectionStates.localLlm === "boolean" ? safeSectionStates.localLlm : true,
+  const defaults = {
+    antigravity: true,
+    codex: true,
+    openai: true,
+    claude: true,
+    localLlm: true,
   };
+  const result = { ...defaults };
+  for (const [key, val] of Object.entries(safeSectionStates)) {
+    if (typeof val === "boolean") {
+      result[key] = val;
+    }
+  }
+  return result;
+}
+
+function captureDomSectionStates() {
+  if (!root) return;
+  const elements = root.querySelectorAll("details[data-section]");
+  if (elements.length > 0) {
+    const states = { ...normalizeSectionStates(dashboardState.sectionStates) };
+    elements.forEach((el) => {
+      const sec = el.dataset.section;
+      if (sec) {
+        states[sec] = el.open;
+      }
+    });
+    dashboardState.sectionStates = states;
+  }
 }
 
 function normalizeRun(run) {
@@ -242,6 +272,7 @@ function normalizeUsageSummary(value) {
 let lastRenderedHtml = "";
 
 function render() {
+  captureDomSectionStates();
   const isRefreshing = dashboardState.isLoading;
   if (refreshRenderTimer) {
     clearTimeout(refreshRenderTimer);
@@ -260,6 +291,11 @@ function render() {
             ${dashboardState.isStale ? `<span class="stale-badge">Stale</span>` : ""}
           </div>
         </div>
+        <div class="header-actions">
+          <button type="button" class="header-settings-btn" data-command="configureViews" title="Configure Dashboard Views and Panel Visibility">
+            ⚙️ View Settings
+          </button>
+        </div>
       </header>
 
       <section class="dashboard-grid">
@@ -269,9 +305,9 @@ function render() {
 
       <section class="content-grid">
         ${dashboardState.viewConfig?.showLocalLlm !== false && dashboardState.localLlmMetrics?.length ? renderLocalLlmMetricsPanel(dashboardState.localLlmMetrics) : ""}
-        ${dashboardState.queueContent ? renderQueuePanel(dashboardState.queueContent) : ""}
-        ${dashboardState.viewConfig?.showCodex !== false && dashboardState.metricsCsv ? renderMetricsPanel(dashboardState.metricsCsv) : ""}
-        ${renderErrorsPanel(dashboardState.parseErrors, dashboardState.systemErrors)}
+        ${dashboardState.viewConfig?.showQueue !== false && dashboardState.queueContent ? renderQueuePanel(dashboardState.queueContent) : ""}
+        ${dashboardState.viewConfig?.showCodex !== false && dashboardState.viewConfig?.showMetrics !== false && dashboardState.metricsCsv ? renderMetricsPanel(dashboardState.metricsCsv) : ""}
+        ${dashboardState.viewConfig?.showErrors !== false ? renderErrorsPanel(dashboardState.parseErrors, dashboardState.systemErrors) : ""}
       </section>
     </main>
   `;
@@ -314,7 +350,7 @@ function render() {
     });
 
     root.addEventListener("toggle", (e) => {
-      const details = e.target.closest("details.token-section");
+      const details = e.target.closest("details[data-section]");
       if (details && details.dataset.section) {
         dashboardState = {
           ...dashboardState,
@@ -364,7 +400,6 @@ function renderTokenStatus(tokenStatus) {
   const codexWeekly = buildTokenMetric("Weekly", status, "codexWeekly", "ChatGPT Weekly");
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
   const taskWeight = normalizeTaskWeight(status.recommendedTaskWeight);
-  const activity = Array.isArray(status.activity) ? status.activity.slice(0, 4) : [];
 
   const sections = [];
 
@@ -389,7 +424,7 @@ function renderTokenStatus(tokenStatus) {
       <details class="token-section" data-section="openai" ${sectionStates.openai !== false && sectionStates.codex !== false ? "open" : ""}>
         <summary><span class="section-title">OpenAI (ChatGPT · Codex)</span><span class="status-pill ${hasCodex ? "status-ok" : "status-neutral"}">${hasCodex ? "Connected" : "Idle"}</span></summary>
         <div class="capacity-groups">
-          ${renderCapacityGroup("ChatGPT (대화 예산)", [codex, codexWeekly])}
+          ${renderCapacityGroup("ChatGPT", [codex, codexWeekly])}
         </div>
       </details>
     `);
@@ -420,12 +455,6 @@ function renderTokenStatus(tokenStatus) {
           Task Routing: ${escapeHtml(taskWeight)}
         </span>
       </div>
-
-      ${
-        activity.length
-          ? `<ul class="activity-list">${activity.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
-          : ""
-      }
     </article>
   `;
 }
@@ -461,7 +490,7 @@ function renderClaudeTokenSection(status, isOpen) {
     <details class="token-section" data-section="claude" ${isOpen ? "open" : ""}>
       <summary><span class="section-title">Anthropic Claude</span><span class="status-pill ${isConnected ? "status-ok" : "status-neutral"}">${isConnected ? "Connected" : "Idle"}</span></summary>
       <div class="capacity-groups">
-        ${renderCapacityGroup("Claude (대화 · API 예산)", metrics)}
+        ${renderCapacityGroup("Claude (API & CLI)", metrics)}
       </div>
     </details>
   `;

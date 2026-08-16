@@ -532,6 +532,9 @@ export class ConfigurationCenter implements vscode.Disposable {
         <label class="check"><input id="show-codex" type="checkbox"><span>OpenAI (ChatGPT · Codex) 사용량 표시</span></label>
         <label class="check"><input id="show-claude" type="checkbox"><span>Anthropic Claude (API · CLI) 사용량 표시</span></label>
         <label class="check"><input id="show-local-llm" type="checkbox"><span>로컬 LLM·GPU 상태 표시</span></label>
+        <label class="check"><input id="show-queue" type="checkbox"><span>AI Work Queue 패널 표시</span></label>
+        <label class="check"><input id="show-metrics" type="checkbox"><span>최근 토큰/시간 측정 메트릭(Metrics) 패널 표시</span></label>
+        <label class="check"><input id="show-errors" type="checkbox"><span>에러(Errors) 패널 표시</span></label>
         <label class="check"><input id="notify-full-tokens" type="checkbox"><span>토큰 100% 완충 시 알림 발송</span></label>
         <label class="check"><input id="auto-start-boot" type="checkbox"><span>Windows 부팅 시 자동 시작</span></label>
         <div class="field">
@@ -688,6 +691,9 @@ export class ConfigurationCenter implements vscode.Disposable {
       setChecked("show-codex", snapshot.dashboard.showCodex);
       setChecked("show-claude", snapshot.dashboard.showClaude ?? true);
       setChecked("show-local-llm", snapshot.dashboard.showLocalLlm);
+      setChecked("show-queue", snapshot.dashboard.showQueue ?? true);
+      setChecked("show-metrics", snapshot.dashboard.showMetrics ?? true);
+      setChecked("show-errors", snapshot.dashboard.showErrors ?? true);
       setChecked("notify-full-tokens", snapshot.dashboard.notifyOnFullTokens ?? true);
       setChecked("auto-start-boot", snapshot.dashboard.autoStartOnBoot ?? false);
       setValue("dashboard-state-root", snapshot.dashboard.stateRoot);
@@ -821,6 +827,9 @@ export class ConfigurationCenter implements vscode.Disposable {
         showCodex: bool("show-codex"),
         showClaude: bool("show-claude"),
         showLocalLlm: bool("show-local-llm"),
+        showQueue: bool("show-queue"),
+        showMetrics: bool("show-metrics"),
+        showErrors: bool("show-errors"),
         notifyOnFullTokens: bool("notify-full-tokens"),
         autoStartOnBoot: bool("auto-start-boot"),
         stateRoot: value("dashboard-state-root")
@@ -930,6 +939,9 @@ function parseDashboardConfiguration(value: unknown): DashboardConfiguration {
     showCodex: value.showCodex === true,
     showClaude: value.showClaude !== false,
     showLocalLlm: value.showLocalLlm === true,
+    showQueue: value.showQueue !== false,
+    showMetrics: value.showMetrics !== false,
+    showErrors: value.showErrors !== false,
     notifyOnFullTokens: value.notifyOnFullTokens === true,
     autoStartOnBoot: value.autoStartOnBoot === true,
     stateRoot: requireString(value.stateRoot, "Integrated Power 상태 경로"),

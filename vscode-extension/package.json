@@ -75,6 +75,21 @@
           "default": true,
           "description": "Show the Local LLM capacity section in the dashboard."
         },
+        "integratedPower.view.showQueue": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the AI Work Queue panel in the dashboard."
+        },
+        "integratedPower.view.showMetrics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Recent Metrics panel in the dashboard."
+        },
+        "integratedPower.view.showErrors": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Errors panel in the dashboard."
+        },
         "integratedPower.notifications.notifyOnFullTokens": {
           "type": "boolean",
           "default": true,

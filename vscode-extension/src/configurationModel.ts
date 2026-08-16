@@ -31,6 +31,9 @@ export interface DashboardConfiguration {
   showCodex: boolean;
   showClaude?: boolean;
   showLocalLlm: boolean;
+  showQueue?: boolean;
+  showMetrics?: boolean;
+  showErrors?: boolean;
   notifyOnFullTokens?: boolean;
   autoStartOnBoot?: boolean;
   stateRoot: string;
@@ -231,6 +234,9 @@ export function loadConfigurationCenterSnapshot(
       showCodex: viewConfig.get<boolean>("showCodex", true),
       showClaude: viewConfig.get<boolean>("showClaude", true),
       showLocalLlm: viewConfig.get<boolean>("showLocalLlm", true),
+      showQueue: viewConfig.get<boolean>("showQueue", true),
+      showMetrics: viewConfig.get<boolean>("showMetrics", true),
+      showErrors: viewConfig.get<boolean>("showErrors", true),
       notifyOnFullTokens: vscode.workspace
         .getConfiguration("integratedPower.notifications")
         .get<boolean>("notifyOnFullTokens", true),
@@ -355,6 +361,21 @@ export async function saveDashboardConfiguration(
   await viewConfig.update(
     "showLocalLlm",
     input.showLocalLlm === true,
+    vscode.ConfigurationTarget.Global,
+  );
+  await viewConfig.update(
+    "showQueue",
+    input.showQueue !== false,
+    vscode.ConfigurationTarget.Global,
+  );
+  await viewConfig.update(
+    "showMetrics",
+    input.showMetrics !== false,
+    vscode.ConfigurationTarget.Global,
+  );
+  await viewConfig.update(
+    "showErrors",
+    input.showErrors !== false,
     vscode.ConfigurationTarget.Global,
   );
   if (typeof input.notifyOnFullTokens === "boolean") {
