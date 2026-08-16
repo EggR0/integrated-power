@@ -537,9 +537,10 @@ button:focus-visible {
 .metric-reset-row {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
-  gap: 10px;
+  gap: 8px;
   align-items: baseline;
   margin-top: 0;
+  width: 100%;
 }
 
 .reset-left,
@@ -552,6 +553,8 @@ button:focus-visible {
 
 .reset-right {
   text-align: right;
+  white-space: nowrap;
+  padding-right: 2px;
 }
 
 .capacity-metric-label,
@@ -1035,8 +1038,8 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* Stage 2: Medium Compact (175px ~ 270px) */
-@container (max-width: 270px) {
+/* Stage 2: Medium Compact (215px ~ 290px) */
+@container (max-width: 290px) {
   .text-full {
     display: none !important;
   }
@@ -1047,30 +1050,30 @@ button {
     display: none !important;
   }
   .metric-reset-row {
-    gap: 6px;
+    gap: 4px;
   }
   .capacity-summary {
-    gap: 5px;
+    gap: 4px;
   }
   .capacity-summary .summary-pill {
-    padding: 2px 7px;
-    font-size: 10.5px;
-  }
-  .status-pill {
     padding: 2px 6px;
     font-size: 10.5px;
   }
-  .token-section summary {
-    font-size: 12px;
+  .status-pill {
     padding: 2px 5px;
+    font-size: 10px;
+  }
+  .token-section summary {
+    font-size: 11.5px;
+    padding: 2px 4px;
   }
   .capacity-group h3 {
     font-size: 12px;
   }
 }
 
-/* Stage 3: Minimal Compact (< 175px) */
-@container (max-width: 175px) {
+/* Stage 3: Minimal Compact (< 215px) */
+@container (max-width: 215px) {
   .text-full {
     display: none !important;
   }
@@ -1091,18 +1094,18 @@ button {
     font-size: 10px;
   }
   .capacity-summary {
-    gap: 4px;
+    gap: 3px;
   }
   .capacity-summary .summary-pill {
     font-size: 9px;
     padding: 1px 4px;
   }
   .status-pill {
-    padding: 1px 4px;
+    padding: 1px 3px;
     font-size: 9px;
   }
   .token-section summary {
-    font-size: 10.5px;
+    font-size: 10px;
     padding: 2px 3px;
   }
   .capacity-group h3 {

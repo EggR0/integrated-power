@@ -765,7 +765,7 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
 
   const countdown = formatRefreshCountdown(rawResetTime);
   const refreshFull = countdown ? countdown.full : "";
-  const refreshMedium = countdown ? countdown.short : "";
+  const refreshMedium = countdown ? (countdown.medium || countdown.short) : "";
   const refreshShort = countdown ? countdown.short : "";
   const tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
 
@@ -1278,19 +1278,28 @@ function formatRefreshCountdown(value) {
   if (Number.isNaN(date.getTime())) return undefined;
   
   const diffMs = date.getTime() - Date.now();
-  if (diffMs <= 0) return { full: "\u00B7 Refreshes soon", short: "\u00B7 Soon" };
+  if (diffMs <= 0) return { full: "\u00B7 Refreshes soon", medium: "\u00B7 Soon", short: "\u00B7 Soon" };
   
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
   
+  if (diffHours >= 24) {
+    return {
+      full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
+      medium: `\u00B7 ${diffHours}h`,
+      short: `\u00B7 ${diffHours}h`,
+    };
+  }
   if (diffHours > 0) {
     return {
       full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
-      short: `\u00B7 ${diffHours}h ${diffMins}m`,
+      medium: `\u00B7 ${diffHours}h ${diffMins}m`,
+      short: `\u00B7 ${diffHours}h`,
     };
   }
   return {
     full: `\u00B7 Refreshes in ${diffMins}m`,
+    medium: `\u00B7 ${diffMins}m`,
     short: `\u00B7 ${diffMins}m`,
   };
 }
