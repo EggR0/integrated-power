@@ -29,8 +29,33 @@ export class BrokerController implements vscode.Disposable {
   }
 
   private spawnedTerminals: vscode.Terminal[] = [];
+  private terminalWatcherDisposable: vscode.Disposable | undefined;
+
+  public initTerminalWatcher(): void {
+    if (this.terminalWatcherDisposable) return;
+    this.terminalWatcherDisposable = vscode.window.onDidOpenTerminal((term) => {
+      const name = term.name;
+      // Skip internal Integrated Power background terminals
+      if (name.startsWith("Integrated Power:")) return;
+      
+      this.log(`[Agent Terminal Watcher] Detected active terminal opened: "${name}". Auto-focusing for user visibility.`);
+      try {
+        term.show(true);
+      } catch (err) {
+        this.log(`[Agent Terminal Watcher] Could not focus terminal "${name}": ${err}`);
+      }
+    });
+  }
+
+  public getActiveAgentTerminals(): { name: string; isIntegratedPower: boolean }[] {
+    return vscode.window.terminals.map((t) => ({
+      name: t.name,
+      isIntegratedPower: t.name.startsWith("Integrated Power:"),
+    }));
+  }
 
   public spawnBackgroundTerminals(context: vscode.ExtensionContext): void {
+    this.initTerminalWatcher();
     const existing = vscode.window.terminals;
     const ccDir = resolveControlCenterDir(context);
     const isWin = process.platform === "win32";
@@ -138,6 +163,10 @@ export class BrokerController implements vscode.Disposable {
   }
 
   public dispose(): void {
+    if (this.terminalWatcherDisposable) {
+      this.terminalWatcherDisposable.dispose();
+      this.terminalWatcherDisposable = undefined;
+    }
     if (this.server) void this.server.close();
     this.server = undefined;
     this.broker = undefined;

@@ -98,6 +98,7 @@ export function activate(context: vscode.ExtensionContext): void {
   ensureIntegratedPowerStorageMigration();
   const provider = new DashboardProvider(context);
   const brokerController = new BrokerController();
+  brokerController.initTerminalWatcher();
   context.subscriptions.push(brokerController);
   const openConfigurationCenter = (section: ConfigurationSection = "overview") =>
     ConfigurationCenter.open(
