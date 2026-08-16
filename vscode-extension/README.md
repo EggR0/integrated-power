@@ -83,6 +83,10 @@ Integrated Orchestrator의 사용자 표시명은 `Integrated Orchestrator`이�
 
 ## 주요 기능 (v0.9.0)
  
+- **3단계 점진적 반응형 UI (Progressive 3-Stage Truncation)**: 사이드바 폭에 맞춰 Full (> 290px), Medium (215px ~ 290px), Short (< 215px) 3단계로 텍스트와 라벨이 짝짝이 없이 균일하게 축약되며, 170px 이하의 극단적인 슬림 사이드바에서도 가로 스크롤 및 우측 글자 잘림 없는 무결점 레이아웃 제공
+- **100% 대칭형 메트릭 & 하드웨어 레이아웃**: 모든 Provider의 `5Hours` / `Weekly` 시간창 지표와 GPU / VRAM 하드웨어 행(`[GPU] 35% load | 170.8W / 370W`, `[VRAM] 32.8% used | 7.9GB / 24GB`)의 좌우 구조, 프로그레스 바, 리셋 타이머 서식이 완벽한 시각적 대칭을 이룸
+- **우측 경계선 클리핑 방지 & 방어적 텍스트 보호**: 24시간 초과 주간 리셋 타이머 간소화(`· 151h`) 및 `text-overflow: ellipsis`, 패딩 안전 여백을 통해 우측 테두리에 텍스트가 닿거나 잘리는 현상 원천 차단
+- **기본 로컬 LLM Qwen 3.8 27B 탑재**: 레지스트리 및 브로커 전반의 최우선 선호 모델을 `qwen3.8:27b`로 갱신하여 고품질 로컬 추론 및 오케스트레이션 지원
 - **대시보드 뷰 설정(View Settings) 및 개별 패널 토글**: 대시보드 상단 View Settings 버튼 및 확장 설정을 통해 4대 Provider(Antigravity, OpenAI/Codex, Claude, Local LLM) 및 큐(Queue), 메트릭스(Metrics), 에러(Errors) 패널의 표시/숨김을 완벽히 커스터마이징
 - **UI 레이아웃 안정화 & 무음 비동기 갱신**: 5초 주기 백그라운드 쿼터 폴링 시 불필요한 내부 텔레메트리 텍스트로 인한 UI 흔들림(Layout Shift)을 완전히 제거하고 매끄러운 갱신 경험 제공
 - **4대 Provider 전면 Bar UI 통일**: Antigravity IDE(Gemini/Opus), OpenAI(ChatGPT·Codex), Anthropic Claude, Local LLM(GPU) 4개 영역 모두 동일한 고품질 프로그레스 바 형태 제공
