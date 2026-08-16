@@ -934,6 +934,7 @@ body {
   max-width: 100%;
   padding: 10px;
   box-sizing: border-box;
+  container-type: inline-size;
 }
 
 .dashboard-shell.compact-mode {
@@ -1034,8 +1035,8 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* Stage 2: Medium Compact (240px ~ 330px) */
-@container (max-width: 330px) {
+/* Stage 2: Medium Compact (175px ~ 270px) */
+@container (max-width: 270px) {
   .text-full {
     display: none !important;
   }
@@ -1068,8 +1069,8 @@ button {
   }
 }
 
-/* Stage 3: Minimal Compact (< 240px) */
-@container (max-width: 240px) {
+/* Stage 3: Minimal Compact (< 175px) */
+@container (max-width: 175px) {
   .text-full {
     display: none !important;
   }

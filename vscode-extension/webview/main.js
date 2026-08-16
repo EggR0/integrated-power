@@ -411,8 +411,8 @@ function renderTokenStatus(tokenStatus) {
         <summary>
           <span class="section-title">
             <span class="text-full">Antigravity IDE</span>
-            <span class="text-medium">Antigravity</span>
-            <span class="text-short">Agy</span>
+            <span class="text-medium">Antigravity IDE</span>
+            <span class="text-short">Antigravity</span>
           </span>
           <span class="status-pill ${hasAntigravity ? "status-ok" : "status-neutral"}">
             <span class="text-full">${hasAntigravity ? "Connected" : "Idle"}</span>
@@ -436,7 +436,7 @@ function renderTokenStatus(tokenStatus) {
         <summary>
           <span class="section-title">
             <span class="text-full">OpenAI (ChatGPT · Codex)</span>
-            <span class="text-medium">OpenAI (ChatGPT)</span>
+            <span class="text-medium">OpenAI (ChatGPT · Codex)</span>
             <span class="text-short">OpenAI</span>
           </span>
           <span class="status-pill ${hasCodex ? "status-ok" : "status-neutral"}">
@@ -475,7 +475,7 @@ function renderTokenStatus(tokenStatus) {
         ${dashboardState.viewConfig?.showCodex !== false ? `<span>Codex: ${escapeHtml(status.codexStatus || "Idle")}</span>` : ""}
         <span class="task-routing-pill task-routing-${escapeAttr(taskWeight)}">
           <span class="text-full">Task Routing: ${escapeHtml(taskWeight)}</span>
-          <span class="text-medium">Routing: ${escapeHtml(taskWeight)}</span>
+          <span class="text-medium">Task Routing: ${escapeHtml(taskWeight)}</span>
           <span class="text-short">${escapeHtml(taskWeight)}</span>
         </span>
       </div>
@@ -515,7 +515,7 @@ function renderClaudeTokenSection(status, isOpen) {
       <summary>
         <span class="section-title">
           <span class="text-full">Anthropic Claude</span>
-          <span class="text-medium">Claude</span>
+          <span class="text-medium">Anthropic Claude</span>
           <span class="text-short">Claude</span>
         </span>
         <span class="status-pill ${isConnected ? "status-ok" : "status-neutral"}">
@@ -650,11 +650,11 @@ function renderLocalComputeStatus(tokenStatus) {
 function renderCapacitySummary(status) {
   const entries = [
     capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
-    capacitySummaryEntry("Gemini Weekly", "Gemini Week", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
+    capacitySummaryEntry("Gemini Weekly", "Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
     capacitySummaryEntry("Opus 5Hours", "Opus 5Hours", "Opus 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax),
-    capacitySummaryEntry("Opus Weekly", "Opus Week", "Opus W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
+    capacitySummaryEntry("Opus Weekly", "Opus Weekly", "Opus W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
     capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax),
-    capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Week", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax),
+    capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax),
   ].filter(Boolean);
 
   if (!entries.length) {
