@@ -6,6 +6,7 @@ param(
     [string]$SystemPrompt = "You are a helpful AI coding assistant.",
     [switch]$ForceRestart,
     [int]$NumCtx = 4096,
+    [int]$MaxTokens = 0,
     [string]$TaskTitle = "Local LLM Inference",
     [string]$TaskScale = "Medium",
     [ValidateSet("summarization", "extraction", "coding", "reasoning", "korean", "long_context", "routing_review", "general")]
@@ -324,6 +325,9 @@ $bodyObject = [pscustomobject]@{
         num_ctx = [int]$NumCtx
     }
 }
+if ($MaxTokens -gt 0) {
+    $bodyObject.options | Add-Member -NotePropertyName "num_predict" -NotePropertyValue [int]$MaxTokens -Force
+}
 $body = $bodyObject | ConvertTo-Json -Depth 10
 
 if ([string]::IsNullOrWhiteSpace($ollamaUrl)) {
@@ -345,11 +349,23 @@ try {
     $endedAt = Get-Date
     $elapsed = ($endedAt - $startedAt).TotalSeconds
 
-    $content = if ($response.response) { [string]$response.response } else { "" }
-    if ($content) {
-        Write-IntegratedPowerArtifact -Path $outputPath -Content $content -Mode $ArtifactMode -TaskTitle $TaskTitle -Route "local_llm"
-        Write-Host "Output saved to $outputPath"
+    $content = ""
+    if ($null -ne $response.response -and -not [string]::IsNullOrWhiteSpace([string]$response.response)) {
+        $content = [string]$response.response
+    } elseif ($null -ne $response.message -and -not [string]::IsNullOrWhiteSpace([string]$response.message.content)) {
+        $content = [string]$response.message.content
+    } elseif ($null -ne $response.thinking -and -not [string]::IsNullOrWhiteSpace([string]$response.thinking)) {
+        $content = [string]$response.thinking
+    } elseif ($null -ne $response.message -and -not [string]::IsNullOrWhiteSpace([string]$response.message.thinking)) {
+        $content = [string]$response.message.thinking
     }
+
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        throw "Ollama returned empty content for model $Model. Response: $($response | ConvertTo-Json -Depth 2 -Compress)"
+    }
+
+    Write-IntegratedPowerArtifact -Path $outputPath -Content $content -Mode $ArtifactMode -TaskTitle $TaskTitle -Route "local_llm"
+    Write-Host "Output saved to $outputPath"
 
     # Record Metrics
     $evalCount = if ($response.eval_count) { $response.eval_count } else { 0 }

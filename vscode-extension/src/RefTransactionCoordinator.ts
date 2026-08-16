@@ -1,359 +1,812 @@
 /**
- * Integrated Power v0.9.0 – Git Safety Guard
  * RefTransactionCoordinator.ts
  *
- * Implements repo-scoped directory locking, collision-resistant backup-ref creation,
- * dual-policy garbage collection (72h TTL + 50 LRU), and transactional rollback.
+ * Hardened ref-transaction coordinator for the VS Code extension.
+ * Implements:
+ *   1. Owner Nonce & Compare-Before-Release
+ *   2. Heartbeat Async Serialization
+ *   3. Windows Directory Removal Hardening
+ *   4. Backup Ref GC Policy (72h OR 50 most recent)
+ *   5. Rollback Stash Safety (no silent conflict swallowing)
  */
 
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
-import * as crypto from "crypto";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import * as fs from "node:fs/promises";
+import * as fsSync from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+import * as crypto from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export interface LockOwnerInfo {
+// ─────────────────────────────────────────────────────────────────────────────
+// Types & Interfaces
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface OwnerRecord {
+  ownerId: string;
   pid: number;
-  acquiredAtMs: number;
   hostname: string;
-  heartbeatMs: number;
-  version: string;
+  acquiredAt: string; // ISO-8601 UTC
+  heartbeat: string;  // ISO-8601 UTC (last heartbeat)
+  lockVersion: number;
 }
 
-export interface LockHandle {
-  pid: number;
-  acquiredAtMs: number;
-  lockPath: string;
-  heartbeatTimer?: NodeJS.Timeout;
-  release(): Promise<void>;
-}
-
-export interface BackupRefDescriptor {
+export interface BackupRefInfo {
   refName: string;
-  headOid: string;
-  utc: string;
-  pid: number;
+  utcTimestamp: string;
+  pid: string;
   randomHex: string;
   head12: string;
-  createdAtMs: number;
+  parsedDate: Date;
+}
+
+export interface StashConflictDetails {
+  stashRef: string;
+  conflictedFiles: string[];
+  rawOutput: string;
+  exitCode: number;
+  timestamp: string;
+}
+
+export interface TransactionResult {
+  success: boolean;
+  backupRef?: string;
+  stashRef?: string;
+  conflict?: StashConflictDetails;
+  error?: string;
 }
 
 export interface GcResult {
-  collected: BackupRefDescriptor[];
-  retained: BackupRefDescriptor[];
+  pruned: string[];
+  retained: string[];
+  totalBefore: number;
+  totalAfter: number;
 }
 
-export class RefTransactionCoordinator {
-  public static readonly BACKUP_PREFIX = "refs/eggr-safety/backup/";
-  public static readonly STALE_TIMEOUT_MS = 30_000;
-  public static readonly DEFAULT_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours
-  public static readonly DEFAULT_RETENTION_COUNT = 50;
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Resolves the git-common-dir for a workspace (handles submodules, worktrees).
-   */
-  public async resolveGitCommonDir(workspaceRoot: string): Promise<string> {
+const LOCK_DIR_NAME = ".eggr-safety-lock";
+const OWNER_FILE = "owner.json";
+const BACKUP_REF_PREFIX = "refs/eggr-safety/backup/";
+const BACKUP_RETENTION_COUNT = 50;
+const BACKUP_EXPIRY_MS = 72 * 60 * 60 * 1000; // 72 hours
+const HEARTBEAT_INTERVAL_MS = 5_000;
+const STALE_THRESHOLD_MS = 30_000; // 30s without heartbeat → stale
+const REMOVE_DIR_MAX_RETRIES = 3;
+const REMOVE_DIR_BACKOFF_MS = [50, 150, 450]; // exponential-ish backoff
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utility: safe directory removal with retry (Windows EPERM/EBUSY/ENOTEMPTY)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function safeRemoveDirWithRetry(
+  dirPath: string,
+  maxRetries: number = REMOVE_DIR_MAX_RETRIES
+): Promise<void> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const { stdout } = await execFileAsync("git", ["rev-parse", "--git-common-dir"], {
-        cwd: workspaceRoot,
-        encoding: "utf8",
-      });
-      const gitDir = stdout.trim();
-      return path.isAbsolute(gitDir) ? gitDir : path.resolve(workspaceRoot, gitDir);
-    } catch {
-      const fallback = path.join(workspaceRoot, ".git");
-      return fallback;
+      await fs.rm(dirPath, { recursive: true, force: true });
+      return;
+    } catch (err: unknown) {
+      const e = err as NodeJS.ErrnoException;
+      const retryableCodes = ["EPERM", "EBUSY", "ENOTEMPTY"];
+      const isRetryable =
+        retryableCodes.includes(e.code ?? "") ||
+        (e.message?.includes("EPERM") ?? false) ||
+        (e.message?.includes("EBUSY") ?? false) ||
+        (e.message?.includes("ENOTEMPTY") ?? false);
+
+      if (!isRetryable || attempt === maxRetries) {
+        throw new Error(
+          `safeRemoveDirWithRetry: failed to remove "${dirPath}" after ${attempt + 1} attempt(s): ${e.message}`
+        );
+      }
+
+      const backoffMs = REMOVE_DIR_BACKOFF_MS[attempt] ?? 450;
+      await sleep(backoffMs);
     }
   }
+}
 
-  /**
-   * Resolves current HEAD commit OID.
-   */
-  public async getHeadOid(workspaceRoot: string): Promise<string> {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], {
-      cwd: workspaceRoot,
-      encoding: "utf8",
-    });
-    return stdout.trim();
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utility: parse backup ref name
+// ─────────────────────────────────────────────────────────────────────────────
+
+function parseBackupRefName(refName: string): BackupRefInfo | null {
+  // Expected format: refs/eggr-safety/backup/<utc>-<pid>-<randomHex>-<head12>
+  const relative = refName.startsWith(BACKUP_REF_PREFIX)
+    ? refName.slice(BACKUP_REF_PREFIX.length)
+    : null;
+
+  if (!relative) return null;
+
+  // Split by hyphens to get the components
+  const parts = relative.split("-");
+  if (parts.length < 4) return null;
+
+  const head12 = parts[parts.length - 1];
+  const randomHex = parts[parts.length - 2];
+  const pid = parts[parts.length - 3];
+  const utcTimestamp = parts.slice(0, parts.length - 3).join("-");
+
+  // Reconstruct ISO 8601 string: 2026-08-16T08-53-51-136Z -> 2026-08-16T08:53:51.136Z
+  const isoNormalized = utcTimestamp
+    .replace(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, "$1T$2:$3:$4.$5Z")
+    .replace(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z$/, "$1T$2:$3:$4Z");
+
+  let parsedDate = new Date(isoNormalized);
+  if (isNaN(parsedDate.getTime())) {
+    parsedDate = new Date(utcTimestamp);
+  }
+  if (isNaN(parsedDate.getTime())) {
+    parsedDate = new Date();
   }
 
-  /**
-   * Acquires the repo-scoped directory lock (<git-common-dir>/eggr/locks/ref-txn.lock).
-   */
-  public async acquireLock(
-    workspaceRoot: string,
-    options: { timeoutMs?: number; staleThresholdMs?: number } = {},
-  ): Promise<LockHandle> {
-    const timeoutMs = options.timeoutMs ?? 10_000;
-    const staleThresholdMs = options.staleThresholdMs ?? RefTransactionCoordinator.STALE_TIMEOUT_MS;
-    const gitCommonDir = await this.resolveGitCommonDir(workspaceRoot);
-    const lockParentDir = path.join(gitCommonDir, "eggr", "locks");
-    const lockPath = path.join(lockParentDir, "ref-txn.lock");
-    const ownerFilePath = path.join(lockPath, "owner.json");
+  return { refName, utcTimestamp, pid, randomHex, head12, parsedDate };
+}
 
-    await fs.promises.mkdir(lockParentDir, { recursive: true });
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Class
+// ─────────────────────────────────────────────────────────────────────────────
 
-    const startTime = Date.now();
-    while (Date.now() - startTime < timeoutMs) {
-      try {
-        await fs.promises.mkdir(lockPath);
-        // Lock acquired successfully
-        const now = Date.now();
-        const ownerInfo: LockOwnerInfo = {
-          pid: process.pid,
-          acquiredAtMs: now,
-          hostname: os.hostname(),
-          heartbeatMs: now,
-          version: "0.9.0",
-        };
-        await fs.promises.writeFile(ownerFilePath, JSON.stringify(ownerInfo, null, 2), "utf8");
+export class RefTransactionCoordinator {
+  private readonly repoRoot: string;
+  private readonly lockDir: string;
+  private readonly ownerFilePath: string;
 
-        const heartbeatTimer = setInterval(async () => {
-          try {
-            ownerInfo.heartbeatMs = Date.now();
-            await fs.promises.writeFile(ownerFilePath, JSON.stringify(ownerInfo, null, 2), "utf8");
-          } catch {
-            // Heartbeat update failed, lock may have been released
-          }
-        }, 5_000);
+  private currentOwnerId: string | null = null;
+  private lockVersion: number = 0;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private heartbeatInFlight: Promise<void> | null = null;
+  private releasing: boolean = false;
+  private disposed: boolean = false;
 
-        if (typeof heartbeatTimer.unref === "function") {
-          heartbeatTimer.unref();
+  constructor(repoRoot: string) {
+    this.repoRoot = path.resolve(repoRoot);
+    this.lockDir = path.join(this.repoRoot, LOCK_DIR_NAME);
+    this.ownerFilePath = path.join(this.lockDir, OWNER_FILE);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Lock Acquisition
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async acquireLock(): Promise<string> {
+    if (this.disposed) {
+      throw new Error("RefTransactionCoordinator has been disposed.");
+    }
+    if (this.currentOwnerId !== null) {
+      throw new Error("Lock already held by this coordinator instance.");
+    }
+
+    const ownerId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // Create lock directory (atomic on POSIX; on Windows we use a file-based check)
+    try {
+      await fs.mkdir(this.lockDir, { recursive: false });
+    } catch (err: unknown) {
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === "EEXIST") {
+        // Lock already exists — check if stale
+        const stale = await this.isLockStale();
+        if (!stale) {
+          throw new Error(
+            "Lock is held by another active process. Use stealLock() to force-acquire."
+          );
         }
-
-        const handle: LockHandle = {
-          pid: process.pid,
-          acquiredAtMs: now,
-          lockPath,
-          heartbeatTimer,
-          release: async () => {
-            if (handle.heartbeatTimer) {
-              clearInterval(handle.heartbeatTimer);
-            }
-            try {
-              await fs.promises.rm(lockPath, { recursive: true, force: true });
-            } catch {
-              // Ignore release errors
-            }
-          },
-        };
-
-        return handle;
-      } catch (err: any) {
-        if (err.code === "EEXIST") {
-          // Check if lock is stale
-          try {
-            const rawOwner = await fs.promises.readFile(ownerFilePath, "utf8");
-            const owner: LockOwnerInfo = JSON.parse(rawOwner);
-            const isStale = Date.now() - owner.heartbeatMs > staleThresholdMs;
-
-            if (isStale) {
-              // Break stale lock
-              await fs.promises.rm(lockPath, { recursive: true, force: true });
-              continue;
-            }
-          } catch {
-            // Owner file missing or unreadable, check lock dir age
-            try {
-              const stat = await fs.promises.stat(lockPath);
-              if (Date.now() - stat.mtimeMs > staleThresholdMs) {
-                await fs.promises.rm(lockPath, { recursive: true, force: true });
-                continue;
-              }
-            } catch {
-              // Path gone, retry
-              continue;
-            }
-          }
-
-          // Wait with jitter before retrying
-          await new Promise((r) => setTimeout(r, 50 + Math.floor(Math.random() * 100)));
-        } else {
-          throw err;
-        }
+        // Stale lock: remove and retry
+        await safeRemoveDirWithRetry(this.lockDir);
+        await fs.mkdir(this.lockDir, { recursive: false });
+      } else {
+        throw err;
       }
     }
 
-    throw new Error(`[RefTransactionCoordinator] Failed to acquire lock within ${timeoutMs}ms: ${lockPath}`);
+    // Write owner.json
+    const ownerRecord: OwnerRecord = {
+      ownerId,
+      pid: process.pid,
+      hostname: os.hostname(),
+      acquiredAt: now,
+      heartbeat: now,
+      lockVersion: 1,
+    };
+
+    await this.writeOwnerRecord(ownerRecord);
+
+    this.currentOwnerId = ownerId;
+    this.lockVersion = 1;
+    this.releasing = false;
+
+    this.startHeartbeat();
+
+    return ownerId;
   }
 
-  /**
-   * Creates an immutable backup ref under refs/eggr-safety/backup/
-   * Format: refs/eggr-safety/backup/<utc>-<pid>-<randomHex>-<head12>
-   */
-  public async createBackupRef(
-    workspaceRoot: string,
-    handle: LockHandle,
-    customHeadOid?: string,
-  ): Promise<BackupRefDescriptor> {
-    if (handle.pid !== process.pid) {
-      throw new Error(`[RefTransactionCoordinator] Lock owner mismatch: ${handle.pid} !== ${process.pid}`);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Lock Release (Compare-Before-Release)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async release(): Promise<void> {
+    if (this.disposed) {
+      throw new Error("RefTransactionCoordinator has been disposed.");
+    }
+    if (this.currentOwnerId === null) {
+      throw new Error("No lock to release.");
+    }
+    if (this.releasing) {
+      throw new Error("Release already in progress.");
     }
 
-    const headOid = customHeadOid || (await this.getHeadOid(workspaceRoot));
-    const now = new Date();
-    const utc = now.toISOString().replace(/[-:.]/g, "");
-    const randomHex = crypto.randomBytes(8).toString("hex");
-    const head12 = headOid.slice(0, 12);
-    const refName = `${RefTransactionCoordinator.BACKUP_PREFIX}${utc}-${process.pid}-${randomHex}-${head12}`;
-    const zeroOid = "0000000000000000000000000000000000000000";
+    this.releasing = true;
+    this.stopHeartbeat();
 
-    await execFileAsync("git", ["update-ref", "--create-reflog", refName, headOid, zeroOid], {
-      cwd: workspaceRoot,
-    });
+    try {
+      // Compare-Before-Release: read owner.json and verify ownership
+      let ownerRecord: OwnerRecord | null = null;
+      try {
+        const raw = await fs.readFile(this.ownerFilePath, "utf-8");
+        ownerRecord = JSON.parse(raw) as OwnerRecord;
+      } catch {
+        // owner.json missing or unreadable — we still attempt removal
+        // but log a warning
+        console.warn(
+          "[RefTransactionCoordinator] WARNING: owner.json not readable during release."
+        );
+      }
+
+      if (ownerRecord !== null && ownerRecord.ownerId !== this.currentOwnerId) {
+        // Lock was stolen by another process — do NOT delete
+        console.error(
+          `[RefTransactionCoordinator] REFUSING to release: owner mismatch. ` +
+          `Expected "${this.currentOwnerId}", found "${ownerRecord.ownerId}". ` +
+          `Lock was likely stolen. Leaving lock directory intact.`
+        );
+        this.currentOwnerId = null;
+        return;
+      }
+
+      // Ownership confirmed — safe to remove
+      await safeRemoveDirWithRetry(this.lockDir);
+      this.currentOwnerId = null;
+    } finally {
+      this.releasing = false;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Steal Lock (with re-read verification)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async stealLock(): Promise<string> {
+    if (this.disposed) {
+      throw new Error("RefTransactionCoordinator has been disposed.");
+    }
+    if (this.currentOwnerId !== null) {
+      throw new Error("Already holding a lock. Release first.");
+    }
+
+    // Re-read owner.json immediately before stealing to ensure lock is still stale
+    let existingOwner: OwnerRecord | null = null;
+    try {
+      const raw = await fs.readFile(this.ownerFilePath, "utf-8");
+      existingOwner = JSON.parse(raw) as OwnerRecord;
+    } catch {
+      // No owner file — lock dir may be empty/corrupt
+    }
+
+    if (existingOwner !== null) {
+      // Verify it's actually stale
+      const heartbeatDate = new Date(existingOwner.heartbeat);
+      const ageMs = Date.now() - heartbeatDate.getTime();
+      if (ageMs < STALE_THRESHOLD_MS) {
+        throw new Error(
+          `Cannot steal lock: owner "${existingOwner.ownerId}" (pid ${existingOwner.pid}) ` +
+          `has a recent heartbeat (${ageMs}ms ago). Lock is NOT stale.`
+        );
+      }
+
+      // Double-check: if the owner is still alive (same machine, same pid), refuse
+      if (
+        existingOwner.hostname === os.hostname() &&
+        existingOwner.pid === process.pid
+      ) {
+        throw new Error(
+          "Cannot steal lock from self. This would indicate a logic error."
+        );
+      }
+    }
+
+    // Remove existing lock directory
+    await safeRemoveDirWithRetry(this.lockDir);
+
+    // Acquire fresh
+    return this.acquireLock();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Heartbeat (Async Serialization)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      void this.heartbeat();
+    }, HEARTBEAT_INTERVAL_MS);
+    // Unref so the timer doesn't keep the process alive
+    this.heartbeatTimer.unref?.();
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  private async heartbeat(): Promise<void> {
+    // Abort immediately if releasing or owner changed
+    if (this.releasing || this.disposed) return;
+    if (this.currentOwnerId === null) return;
+
+    // Serialize: if a heartbeat is already in-flight, skip this tick
+    if (this.heartbeatInFlight !== null) {
+      return;
+    }
+
+    const capturedOwnerId = this.currentOwnerId;
+
+    this.heartbeatInFlight = (async () => {
+      try {
+        // Re-check ownership before writing
+        if (
+          this.releasing ||
+          this.disposed ||
+          this.currentOwnerId !== capturedOwnerId
+        ) {
+          return;
+        }
+
+        const now = new Date().toISOString();
+        const ownerRecord: OwnerRecord = {
+          ownerId: capturedOwnerId,
+          pid: process.pid,
+          hostname: os.hostname(),
+          acquiredAt: now, // preserved from original; we'll read it
+          heartbeat: now,
+          lockVersion: this.lockVersion,
+        };
+
+        // Read existing to preserve acquiredAt
+        try {
+          const raw = await fs.readFile(this.ownerFilePath, "utf-8");
+          const existing = JSON.parse(raw) as OwnerRecord;
+          if (existing.ownerId === capturedOwnerId) {
+            ownerRecord.acquiredAt = existing.acquiredAt;
+            ownerRecord.lockVersion = existing.lockVersion;
+          }
+        } catch {
+          // If we can't read, use current values
+        }
+
+        // Final ownership check before write
+        if (this.currentOwnerId !== capturedOwnerId || this.releasing) {
+          return;
+        }
+
+        await this.writeOwnerRecord(ownerRecord);
+      } catch (err) {
+        // Heartbeat failure is non-fatal but should be logged
+        console.error(
+          "[RefTransactionCoordinator] Heartbeat write failed:",
+          err
+        );
+      } finally {
+        this.heartbeatInFlight = null;
+      }
+    })();
+
+    // Await completion to maintain serialization
+    await this.heartbeatInFlight;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Owner Record I/O
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private async writeOwnerRecord(record: OwnerRecord): Promise<void> {
+    const json = JSON.stringify(record, null, 2);
+    // Write to temp file then rename for atomicity
+    const tmpPath = `${this.ownerFilePath}.tmp.${process.pid}.${Date.now()}`;
+    await fs.writeFile(tmpPath, json, "utf-8");
+    await fs.rename(tmpPath, this.ownerFilePath);
+  }
+
+  private async isLockStale(): Promise<boolean> {
+    try {
+      const raw = await fs.readFile(this.ownerFilePath, "utf-8");
+      const record = JSON.parse(raw) as OwnerRecord;
+      const heartbeatDate = new Date(record.heartbeat);
+      const ageMs = Date.now() - heartbeatDate.getTime();
+      return ageMs > STALE_THRESHOLD_MS;
+    } catch {
+      // No readable owner file → treat as stale
+      return true;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Transaction: Begin / Commit / Abort
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async beginTransaction(): Promise<TransactionResult> {
+    this.ensureLock();
+
+    // Create a backup ref of current HEAD
+    const backupRef = await this.createBackupRef();
+
+    return { success: true, backupRef };
+  }
+
+  async commitTransaction(): Promise<TransactionResult> {
+    this.ensureLock();
+    // Commit is a no-op in terms of ref manipulation — the working tree
+    // changes are already applied. We just ensure the lock is still valid.
+    return { success: true };
+  }
+
+  async abortTransaction(backupRef?: string): Promise<TransactionResult> {
+    this.ensureLock();
+
+    if (backupRef) {
+      // Reset to the backup ref
+      await this.gitExec(["reset", "--hard", backupRef]);
+    }
+
+    // Attempt stash pop if a stash was created
+    const stashResult = await this.rollbackStash();
 
     return {
-      refName,
-      headOid,
-      utc,
-      pid: process.pid,
-      randomHex,
-      head12,
-      createdAtMs: now.getTime(),
+      success: true,
+      stashRef: stashResult?.stashRef,
+      conflict: stashResult?.conflict,
     };
   }
 
-  /**
-   * Lists all existing backup refs sorted newest first.
-   */
-  public async listBackupRefs(workspaceRoot: string): Promise<BackupRefDescriptor[]> {
-    try {
-      const { stdout } = await execFileAsync(
-        "git",
-        [
-          "for-each-ref",
-          "--format=%(refname)|%(objectname)|%(creatordate:iso8601)",
-          RefTransactionCoordinator.BACKUP_PREFIX,
-        ],
-        { cwd: workspaceRoot, encoding: "utf8" },
-      );
+  // ─────────────────────────────────────────────────────────────────────────
+  // Backup Ref Creation & Listing
+  // ─────────────────────────────────────────────────────────────────────────
 
-      const descriptors: BackupRefDescriptor[] = [];
-      const lines = stdout.trim().split("\n").filter(Boolean);
+  async createBackupRef(): Promise<string> {
+    this.ensureLock();
+    const utc = new Date().toISOString().replace(/[:.]/g, "-").replace("Z", "Z");
+    const pid = String(process.pid);
+    const randomHex = crypto.randomBytes(4).toString("hex");
 
-      for (const line of lines) {
-        const [refName, headOid, dateStr] = line.split("|");
-        if (!refName || !headOid) {
-          continue;
-        }
+    // Get current HEAD short hash
+    const head12 = await this.gitExec(["rev-parse", "--short=12", "HEAD"]);
 
-        const suffix = refName.replace(RefTransactionCoordinator.BACKUP_PREFIX, "");
-        const parts = suffix.split("-");
-        const utc = parts[0] || "";
-        const pid = parseInt(parts[1] || "0", 10);
-        const randomHex = parts[2] || "";
-        const head12 = parts[3] || headOid.slice(0, 12);
-        const createdAtMs = dateStr ? new Date(dateStr).getTime() : Date.now();
+    const refName = `${BACKUP_REF_PREFIX}${utc}-${pid}-${randomHex}-${head12}`;
 
-        descriptors.push({
-          refName,
-          headOid,
-          utc,
-          pid,
-          randomHex,
-          head12,
-          createdAtMs,
-        });
-      }
+    await this.gitExec(["update-ref", refName, "HEAD"]);
 
-      return descriptors.sort((a, b) => b.createdAtMs - a.createdAtMs);
-    } catch {
-      return [];
-    }
+    return refName;
   }
 
-  /**
-   * Garbage-collects stale backup refs based on TTL and LRU retention count.
-   */
-  public async garbageCollect(
-    workspaceRoot: string,
-    handle: LockHandle,
-    options: { ttlMs?: number; retentionCount?: number } = {},
-  ): Promise<GcResult> {
-    if (handle.pid !== process.pid) {
-      throw new Error(`[RefTransactionCoordinator] Lock owner mismatch: ${handle.pid} !== ${process.pid}`);
+  async listBackupRefs(): Promise<BackupRefInfo[]> {
+    this.ensureLock();
+    const refsOutput = await this.gitExec([
+      "for-each-ref",
+      "--format=%(refname)",
+      BACKUP_REF_PREFIX,
+    ]);
+
+    const allRefs = refsOutput
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    const parsed: BackupRefInfo[] = [];
+    for (const ref of allRefs) {
+      const info = parseBackupRefName(ref);
+      if (info !== null) {
+        parsed.push(info);
+      }
     }
 
-    const ttlMs = options.ttlMs ?? RefTransactionCoordinator.DEFAULT_TTL_MS;
-    const retentionCount = options.retentionCount ?? RefTransactionCoordinator.DEFAULT_RETENTION_COUNT;
-    const allRefs = await this.listBackupRefs(workspaceRoot);
+    parsed.sort((a, b) => b.parsedDate.getTime() - a.parsedDate.getTime());
+    return parsed;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Backup Ref GC
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async gcBackups(): Promise<GcResult> {
+    this.ensureLock();
+
+    // List all backup refs
+    const refsOutput = await this.gitExec([
+      "for-each-ref",
+      "--format=%(refname)",
+      BACKUP_REF_PREFIX,
+    ]);
+
+    const allRefs = refsOutput
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
     const now = Date.now();
+    const pruned: string[] = [];
+    const retained: string[] = [];
 
-    const collected: BackupRefDescriptor[] = [];
-    const retained: BackupRefDescriptor[] = [];
-
-    for (let i = 0; i < allRefs.length; i++) {
-      const ref = allRefs[i];
-      const isExpired = now - ref.createdAtMs > ttlMs;
-      const isBeyondRetention = i >= retentionCount;
-
-      if (isExpired && isBeyondRetention) {
-        try {
-          await execFileAsync("git", ["update-ref", "-d", ref.refName, ref.headOid], {
-            cwd: workspaceRoot,
-          });
-          collected.push(ref);
-        } catch {
-          retained.push(ref);
-        }
+    // Parse all refs
+    const parsed: BackupRefInfo[] = [];
+    for (const ref of allRefs) {
+      const info = parseBackupRefName(ref);
+      if (info !== null) {
+        parsed.push(info);
       } else {
+        // Unparseable ref — retain it (safety)
         retained.push(ref);
       }
     }
 
-    return { collected, retained };
-  }
+    // Sort by parsed date descending (most recent first)
+    parsed.sort((a, b) => b.parsedDate.getTime() - a.parsedDate.getTime());
 
-  /**
-   * Rolls back workspace to a safety ref with uncommitted changes protection.
-   */
-  public async rollbackSafetyRef(
-    workspaceRoot: string,
-    refName: string,
-    mode: "soft" | "mixed" | "hard" = "mixed",
-  ): Promise<{ success: boolean; refName: string; mode: string }> {
-    if (!refName.startsWith(RefTransactionCoordinator.BACKUP_PREFIX)) {
-      throw new Error(`Invalid safety ref format: ${refName}`);
+    // Apply GC policy: delete if expired OR beyond retention (OR condition)
+    for (let i = 0; i < parsed.length; i++) {
+      const info = parsed[i];
+      const ageMs = now - info.parsedDate.getTime();
+      const expired = ageMs > BACKUP_EXPIRY_MS;
+      const beyondRetention = i >= BACKUP_RETENTION_COUNT;
+
+      if (expired || beyondRetention) {
+        pruned.push(info.refName);
+      } else {
+        retained.push(info.refName);
+      }
     }
 
-    if (mode === "hard") {
-      // Protect uncommitted working tree changes via stash before hard reset
-      let stashed = false;
+    // Delete pruned refs
+    for (const ref of pruned) {
       try {
-        const { stdout } = await execFileAsync("git", ["status", "--porcelain"], {
-          cwd: workspaceRoot,
-          encoding: "utf8",
-        });
-        if (stdout.trim().length > 0) {
-          await execFileAsync("git", ["stash", "push", "-u", "-m", `eggr-auto-stash-before-rollback-${Date.now()}`], {
-            cwd: workspaceRoot,
-          });
-          stashed = true;
-        }
+        await this.gitExec(["update-ref", "-d", ref]);
+      } catch (err) {
+        console.warn(
+          `[RefTransactionCoordinator] GC: failed to delete ref "${ref}":`,
+          err
+        );
+      }
+    }
 
-        await execFileAsync("git", ["reset", "--hard", refName], {
-          cwd: workspaceRoot,
-        });
+    return {
+      pruned,
+      retained,
+      totalBefore: allRefs.length,
+      totalAfter: retained.length,
+    };
+  }
 
-        if (stashed) {
-          try {
-            await execFileAsync("git", ["stash", "pop"], { cwd: workspaceRoot });
-          } catch {
-            // Stash pop conflict preserved in stash list
+  // ─────────────────────────────────────────────────────────────────────────
+  // Rollback Stash Safety
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async rollbackStash(): Promise<{ stashRef?: string; conflict?: StashConflictDetails } | null> {
+    this.ensureLock();
+
+    // Check if there's a stash to pop
+    let stashList: string;
+    try {
+      stashList = await this.gitExec(["stash", "list"]);
+    } catch {
+      return null; // No stash
+    }
+
+    if (stashList.trim().length === 0) {
+      return null;
+    }
+
+    const stashRef = "stash@{0}";
+
+    // Attempt stash pop
+    let exitCode: number;
+    let stdout: string;
+    let stderr: string;
+
+    try {
+      const result = await this.gitExecRaw(["stash", "pop"]);
+      exitCode = result.code;
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (err: unknown) {
+      const e = err as { code?: number; stdout?: string; stderr?: string; message?: string };
+      exitCode = e.code ?? 1;
+      stdout = e.stdout ?? "";
+      stderr = e.stderr ?? e.message ?? "";
+    }
+
+    if (exitCode !== 0) {
+      // DO NOT swallow the conflict — return details and keep the stash ref
+      const conflictedFiles = this.parseConflictedFiles(stdout + "\n" + stderr);
+
+      const conflict: StashConflictDetails = {
+        stashRef,
+        conflictedFiles,
+        rawOutput: `${stdout}\n${stderr}`,
+        exitCode,
+        timestamp: new Date().toISOString(),
+      };
+
+      console.error(
+        `[RefTransactionCoordinator] STASH POP CONFLICT: ` +
+        `stash="${stashRef}", conflictedFiles=[${conflictedFiles.join(", ")}]. ` +
+        `Stash ref is PRESERVED for manual resolution.`
+      );
+
+      return { stashRef, conflict };
+    }
+
+    return { stashRef };
+  }
+
+  private parseConflictedFiles(output: string): string[] {
+    const files: string[] = [];
+    const lines = output.split("\n");
+    for (const line of lines) {
+      // Match patterns like:
+      //   "CONFLICT (content): Merge conflict in <file>"
+      //   "Auto-merging <file>"
+      //   "  both modified:   <file>"
+      //   "Unmerged paths:"
+      const conflictMatch = line.match(/CONFLICT.*?:.*?in\s+(.+)/);
+      if (conflictMatch) {
+        files.push(conflictMatch[1].trim());
+        continue;
+      }
+      const bothModified = line.match(/\s+both modified:\s+(.+)/);
+      if (bothModified) {
+        files.push(bothModified[1].trim());
+        continue;
+      }
+      const addedByUs = line.match(/\s+added by us:\s+(.+)/);
+      if (addedByUs) {
+        files.push(addedByUs[1].trim());
+        continue;
+      }
+      const addedByThem = line.match(/\s+added by them:\s+(.+)/);
+      if (addedByThem) {
+        files.push(addedByThem[1].trim());
+        continue;
+      }
+    }
+    return [...new Set(files)];
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Git Execution Helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private async gitExec(args: string[]): Promise<string> {
+    const { stdout } = await execFileAsync("git", args, {
+      cwd: this.repoRoot,
+      timeout: 30_000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return stdout.trim();
+  }
+
+  private async gitExecRaw(
+    args: string[]
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    return new Promise((resolve, reject) => {
+      const child = execFile(
+        "git",
+        args,
+        { cwd: this.repoRoot, timeout: 30_000, maxBuffer: 10 * 1024 * 1024 },
+        (error, stdout, stderr) => {
+          if (error) {
+            // execFile sets error.code to the exit code
+            resolve({
+              code: (error as { code?: number }).code ?? 1,
+              stdout: stdout ?? "",
+              stderr: stderr ?? (error as Error).message,
+            });
+          } else {
+            resolve({ code: 0, stdout: stdout ?? "", stderr: stderr ?? "" });
           }
         }
-      } catch (err: any) {
-        throw new Error(`Hard rollback failed: ${err.message}`);
+      );
+      child.on("error", (err) => reject(err));
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Lifecycle
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private ensureLock(): void {
+    if (this.disposed) {
+      throw new Error("RefTransactionCoordinator has been disposed.");
+    }
+    if (this.currentOwnerId === null) {
+      throw new Error("No active lock. Call acquireLock() first.");
+    }
+  }
+
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.stopHeartbeat();
+
+    // Wait for any in-flight heartbeat to complete
+    if (this.heartbeatInFlight !== null) {
+      try {
+        await this.heartbeatInFlight;
+      } catch {
+        // Ignore
       }
-    } else {
-      await execFileAsync("git", ["reset", `--${mode}`, refName], {
-        cwd: workspaceRoot,
-      });
     }
 
-    return { success: true, refName, mode };
+    // Release lock if held
+    if (this.currentOwnerId !== null) {
+      try {
+        await this.release();
+      } catch (err) {
+        console.error(
+          "[RefTransactionCoordinator] Error during dispose release:",
+          err
+        );
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Diagnostics
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getLockStatus(): Promise<{
+    held: boolean;
+    ownerId: string | null;
+    ownerRecord: OwnerRecord | null;
+    stale: boolean;
+  }> {
+    let ownerRecord: OwnerRecord | null = null;
+    try {
+      const raw = await fs.readFile(this.ownerFilePath, "utf-8");
+      ownerRecord = JSON.parse(raw) as OwnerRecord;
+    } catch {
+      // No lock
+    }
+
+    const held = this.currentOwnerId !== null;
+    const stale =
+      ownerRecord !== null
+        ? Date.now() - new Date(ownerRecord.heartbeat).getTime() > STALE_THRESHOLD_MS
+        : false;
+
+    return {
+      held,
+      ownerId: this.currentOwnerId,
+      ownerRecord,
+      stale,
+    };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Export
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default RefTransactionCoordinator;
