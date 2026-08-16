@@ -74,7 +74,7 @@ export interface FirstRunStatus {
 }
 
 export interface ExecutableDiagnostic {
-  id: "agy" | "codex" | "git" | "gh" | "ollama" | "nvidia";
+  id: "agy" | "codex" | "claude" | "git" | "gh" | "ollama" | "nvidia";
   label: string;
   available: boolean;
   path: string;
@@ -191,6 +191,7 @@ export function loadConfigurationCenterSnapshot(
   const codexExecutable = findCodexExecutable(
     typeof orchestrator.CodexExe === "string" ? orchestrator.CodexExe : undefined,
   );
+  const claudeExecutable = findClaudeExecutable();
   const agyExecutable = findExecutable(["agy.exe", "agy"]);
   const ollamaExecutable = findExecutable(["ollama.exe", "ollama"], [
     localAppDataPath("Programs", "Ollama", "ollama.exe"),
@@ -280,6 +281,7 @@ export function loadConfigurationCenterSnapshot(
     diagnostics: [
       diagnostic("agy", "Agy", agyExecutable, true),
       diagnostic("codex", "Codex", codexExecutable, true),
+      diagnostic("claude", "Anthropic Claude", claudeExecutable, true),
       diagnostic("git", "Git for Windows", gitExecutable, false),
       diagnostic("gh", "GitHub CLI", ghExecutable, true),
       diagnostic(
@@ -1168,6 +1170,27 @@ function findCodexExecutable(existing?: string): string | null {
       );
       if (matches[0]) return matches[0];
     }
+  }
+  return null;
+}
+
+function findClaudeExecutable(existing?: string): string | null {
+  const appData = process.env.APPDATA;
+  const localAppData = process.env.LOCALAPPDATA;
+  const candidates = [
+    existing,
+    process.env.CLAUDE_EXE,
+    process.env.CLAUDE_CODE_EXE,
+    findExecutable(["claude.cmd", "claude.exe", "claude"]),
+    appData ? path.join(appData, "npm", "claude.cmd") : undefined,
+    localAppData ? path.join(localAppData, "Programs", "Claude", "Claude.exe") : undefined,
+    localAppData ? path.join(localAppData, "Claude", "Claude.exe") : undefined,
+    programFilesPath("Claude", "Claude.exe"),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const expanded = expandEnvironmentVariables(candidate);
+    if (fs.existsSync(expanded)) return path.resolve(expanded);
   }
   return null;
 }
