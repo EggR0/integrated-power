@@ -206,9 +206,16 @@ export class DashboardController implements vscode.Disposable {
     }
 
     this.tokenPollingTimer = setInterval(async () => {
-      void this.refreshTokenStatus(this.tokenRefreshGeneration, true);
+      if (this.isRefreshing) {
+        return;
+      }
+      const pollGeneration = this.tokenRefreshGeneration;
+      void this.refreshTokenStatus(pollGeneration, true);
       try {
         const nextState = await this.readDashboardState();
+        if (pollGeneration !== this.tokenRefreshGeneration) {
+          return;
+        }
         this.state = {
           ...nextState,
           isLoading: false,

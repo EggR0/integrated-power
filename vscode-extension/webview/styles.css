@@ -978,3 +978,37 @@ button {
   padding: 5px 8px;
   font-size: 11px;
 }
+
+.token-panel {
+  container-type: inline-size;
+}
+
+.token-metric,
+.capacity-summary,
+.status-pill,
+.reset-left,
+.reset-right,
+.progress-fill {
+  font-variant-numeric: tabular-nums;
+}
+
+@container (max-width: 220px) {
+  .metric-reset-row {
+    gap: 4px;
+  }
+  .capacity-metric-label {
+    font-size: 11px;
+  }
+  .reset-left,
+  .reset-right {
+    font-size: 10px;
+  }
+  .status-pill {
+    padding: 1px 4px;
+    font-size: 9px;
+  }
+  .token-section summary {
+    font-size: 11px;
+    padding: 2px 4px;
+  }
+}

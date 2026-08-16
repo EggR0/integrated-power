@@ -279,8 +279,22 @@ function render() {
   if (nextHtml === lastRenderedHtml) {
     return;
   }
+
+  const prevScrollTop = window.scrollY || document.documentElement.scrollTop;
+  const activeCommand = document.activeElement?.getAttribute("data-command");
+
   lastRenderedHtml = nextHtml;
   root.innerHTML = nextHtml;
+
+  if (prevScrollTop > 0) {
+    window.scrollTo({ top: prevScrollTop, behavior: "instant" });
+  }
+  if (activeCommand) {
+    const el = root.querySelector(`[data-command="${activeCommand}"]`);
+    if (el) {
+      el.focus();
+    }
+  }
 
   root.querySelectorAll("[data-command]").forEach((button) => {
     button.addEventListener("click", () => postCommand(button.dataset.command));
@@ -461,7 +475,7 @@ function buildClaudeMetric(label, summary, totalTokens) {
   const subtext = hasData ? `${formatTokenCount(tokens)} used` : "Waiting for quota data";
   const refreshText = hasData ? `· ${formatNumber(events)} events` : "";
   const tone = hasData ? capacityTone(percentage) : "healthy";
-  const tooltip = `Claude ${label}: ${subtext}${refreshText}.`;
+  const tooltip = `[Local Measured] Claude ${label}: ${subtext}${refreshText}.`;
 
   return {
     label,

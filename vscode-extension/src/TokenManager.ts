@@ -103,6 +103,45 @@ export class TokenManager {
   private fetchPromise?: Promise<QuotaData>;
   private hasShownAgyMissingPrompt = false;
   private hasShownAgyAuthPrompt = false;
+  private readonly circuitBreakers = new Map<string, { failures: number; cooldownUntil: number }>();
+
+  private isCircuitOpen(providerKey: string): boolean {
+    const state = this.circuitBreakers.get(providerKey);
+    if (!state) {
+      return false;
+    }
+    if (Date.now() > state.cooldownUntil) {
+      return false;
+    }
+    return state.failures >= 3;
+  }
+
+  private recordProviderSuccess(providerKey: string): void {
+    this.circuitBreakers.delete(providerKey);
+  }
+
+  private recordProviderFailure(providerKey: string): void {
+    const state = this.circuitBreakers.get(providerKey) || { failures: 0, cooldownUntil: 0 };
+    state.failures += 1;
+    if (state.failures >= 3) {
+      state.cooldownUntil = Date.now() + 30_000;
+    }
+    this.circuitBreakers.set(providerKey, state);
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<T>((resolve) => {
+      timer = setTimeout(() => resolve(fallbackValue), timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
 
   public async getStatus(
     fileUri: vscode.Uri | undefined,
@@ -557,10 +596,15 @@ export class TokenManager {
   private async fetchQuotaData(forceRefresh = false, workspaceStateRoot?: string): Promise<QuotaData> {
     const data: QuotaData = { errors: [], quotaPools: [] };
 
-    // Use collectors to gather quota and compute metrics
-    await Promise.all([
-      this.fetchCodexQuota(forceRefresh)
-        .then((codexQuota) => {
+    const tasks = [
+      // 1. Codex
+      (async () => {
+        if (this.isCircuitOpen("codex") && !forceRefresh) {
+          return;
+        }
+        try {
+          const codexQuota = await this.withTimeout(this.fetchCodexQuota(forceRefresh), 3000, {});
+          this.recordProviderSuccess("codex");
           data.codexPercentage = codexQuota.codexPercentage;
           data.codexResetTime = codexQuota.codexResetTime;
           data.codexEstimatedAbsolute = codexQuota.codexEstimatedAbsolute;
@@ -589,12 +633,20 @@ export class TokenManager {
               confidence: "reported-quota"
             });
           }
-        })
-        .catch((error: unknown) => {
+        } catch (error) {
+          this.recordProviderFailure("codex");
           data.errors.push(`Codex: ${this.errorMessage(error)}`);
-        }),
-      this.fetchAntigravityQuota()
-        .then((antigravityQuota) => {
+        }
+      })(),
+
+      // 2. Antigravity
+      (async () => {
+        if (this.isCircuitOpen("antigravity") && !forceRefresh) {
+          return;
+        }
+        try {
+          const antigravityQuota = await this.withTimeout(this.fetchAntigravityQuota(), 3000, {});
+          this.recordProviderSuccess("antigravity");
           data.antigravityPercentage = antigravityQuota.antigravityPercentage;
           data.antigravityResetTime = antigravityQuota.antigravityResetTime;
           data.antigravityWeeklyPercentage = antigravityQuota.antigravityWeeklyPercentage;
@@ -635,8 +687,8 @@ export class TokenManager {
             source: "cli-text",
             confidence: "reported-quota"
           });
-        })
-        .catch((error: unknown) => {
+        } catch (error) {
+          this.recordProviderFailure("antigravity");
           if (error instanceof AgyNotInstalledError) {
             this.handleAgyMissing();
             data.errors.push(`Antigravity: CLI is missing.`);
@@ -646,29 +698,62 @@ export class TokenManager {
           } else {
             data.errors.push(`Antigravity: ${this.errorMessage(error)}`);
           }
-        }),
-      this.fetchLocalLlmStatus()
-        .then(({ localComputeStatus, quotaPool }) => {
+        }
+      })(),
+
+      // 3. Local LLM / GPU
+      (async () => {
+        if (this.isCircuitOpen("localLlm") && !forceRefresh) {
+          return;
+        }
+        try {
+          const { localComputeStatus, quotaPool } = await this.withTimeout(
+            this.fetchLocalLlmStatus(),
+            2500,
+            { localComputeStatus: { endpointHealth: "offline", programName: "Offline", loadedModels: [], gpus: [] } }
+          );
+          this.recordProviderSuccess("localLlm");
           data.localComputeStatus = localComputeStatus;
           if (quotaPool) {
             data.quotaPools!.push(quotaPool);
           }
-        })
-        .catch((error: unknown) => {
+        } catch (error) {
+          this.recordProviderFailure("localLlm");
           data.errors.push(`LocalLLM: ${this.errorMessage(error)}`);
-        }),
-      this.fetchClaudeDirectUsage(workspaceStateRoot)
-        .then((usage) => {
+        }
+      })(),
+
+      // 4. Claude Direct Telemetry
+      (async () => {
+        if (this.isCircuitOpen("claude") && !forceRefresh) {
+          return;
+        }
+        try {
+          const usage = await this.withTimeout(
+            this.fetchClaudeDirectUsage(workspaceStateRoot),
+            2000,
+            {
+              status: "no-data",
+              today: this.emptyUsageSummary(),
+              sevenDays: this.emptyUsageSummary(),
+              sources: [],
+              lastMeasuredAt: new Date().toISOString(),
+              errors: [],
+            }
+          );
+          this.recordProviderSuccess("claude");
           data.claudeDirectUsage = usage;
           if (usage.errors?.length) {
             data.errors.push(...usage.errors.map((error) => `Claude Direct: ${error}`));
           }
-        })
-        .catch((error: unknown) => {
+        } catch (error) {
+          this.recordProviderFailure("claude");
           data.errors.push(`Claude Direct: ${this.errorMessage(error)}`);
-        }),
-    ]);
+        }
+      })(),
+    ];
 
+    await Promise.allSettled(tasks);
     return data;
   }
 
@@ -699,8 +784,8 @@ export class TokenManager {
             // Log files can contain non-JSON diagnostic lines. Ignore those lines.
           }
         });
-      } catch (error) {
-        if (!this.isFileNotFound(error)) {
+      } catch (error: any) {
+        if (!this.isFileNotFound(error) && error?.code !== "EBUSY" && error?.code !== "EPERM") {
           errors.push(`${source}: ${this.errorMessage(error)}`);
         }
       }
