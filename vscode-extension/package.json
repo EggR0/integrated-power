@@ -156,44 +156,12 @@
       {
         "command": "integratedPower.local.startDModelServer",
         "title": "Integrated Power: Start D: Local Model Server"
-      },
-      {
-        "command": "integratedPower.terminals.openAll",
-        "title": "Integrated Power: Open All Background Terminals in IDE",
-        "icon": "$(terminal)"
-      },
-      {
-        "command": "integratedPower.terminals.showBroker",
-        "title": "Integrated Power: Show Broker Terminal",
-        "icon": "$(pulse)"
-      },
-      {
-        "command": "integratedPower.terminals.showOllama",
-        "title": "Integrated Power: Show Ollama Local LLM Terminal",
-        "icon": "$(server-process)"
-      },
-      {
-        "command": "integratedPower.terminals.showWebUI",
-        "title": "Integrated Power: Show Web UI Terminal",
-        "icon": "$(browser)"
       }
     ],
     "menus": {
       "commandPalette": [
         {
           "command": "integratedPower.agentRuns.openCompact"
-        },
-        {
-          "command": "integratedPower.terminals.openAll"
-        },
-        {
-          "command": "integratedPower.terminals.showBroker"
-        },
-        {
-          "command": "integratedPower.terminals.showOllama"
-        },
-        {
-          "command": "integratedPower.terminals.showWebUI"
         }
       ],
       "view/title": [

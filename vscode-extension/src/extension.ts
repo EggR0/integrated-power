@@ -98,7 +98,6 @@ export function activate(context: vscode.ExtensionContext): void {
   ensureIntegratedPowerStorageMigration();
   const provider = new DashboardProvider(context);
   const brokerController = new BrokerController();
-  brokerController.initTerminalWatcher();
   context.subscriptions.push(brokerController);
   const openConfigurationCenter = (section: ConfigurationSection = "overview") =>
     ConfigurationCenter.open(
@@ -183,22 +182,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       "integratedPower.broker.showLogs",
       () => brokerController.showLogs(false),
-    ),
-    vscode.commands.registerCommand(
-      "integratedPower.terminals.openAll",
-      () => brokerController.spawnBackgroundTerminals(context),
-    ),
-    vscode.commands.registerCommand(
-      "integratedPower.terminals.showBroker",
-      () => brokerController.showTerminal("Broker", context),
-    ),
-    vscode.commands.registerCommand(
-      "integratedPower.terminals.showOllama",
-      () => brokerController.showTerminal("Ollama", context),
-    ),
-    vscode.commands.registerCommand(
-      "integratedPower.terminals.showWebUI",
-      () => brokerController.showTerminal("Web UI", context),
     ),
     provider,
     toolbarItem,

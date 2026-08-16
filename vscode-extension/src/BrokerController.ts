@@ -28,55 +28,6 @@ export class BrokerController implements vscode.Disposable {
     this.outputChannel.show(preserveFocus);
   }
 
-  private spawnedTerminals: vscode.Terminal[] = [];
-  private terminalWatcherDisposable: vscode.Disposable | undefined;
-
-  public initTerminalWatcher(): void {
-    if (this.terminalWatcherDisposable) return;
-    this.cleanupTerminals();
-    this.terminalWatcherDisposable = vscode.window.onDidOpenTerminal((term) => {
-      const name = term.name;
-      if (name.startsWith("Integrated Power:")) {
-        try {
-          term.dispose();
-        } catch {
-          // ignore
-        }
-        return;
-      }
-      this.log(`[Agent Terminal Watcher] Detected active agent terminal: "${name}"`);
-    });
-  }
-
-  public cleanupTerminals(): void {
-    for (const term of vscode.window.terminals) {
-      if (term.name.startsWith("Integrated Power:")) {
-        try {
-          term.dispose();
-        } catch {
-          // best effort
-        }
-      }
-    }
-  }
-
-  public getActiveAgentTerminals(): { name: string; isIntegratedPower: boolean }[] {
-    return vscode.window.terminals.map((t) => ({
-      name: t.name,
-      isIntegratedPower: t.name.startsWith("Integrated Power:"),
-    }));
-  }
-
-  public spawnBackgroundTerminals(_context: vscode.ExtensionContext): void {
-    this.cleanupTerminals();
-    this.showLogs(false);
-  }
-
-  public showTerminal(_name: "Broker" | "Ollama" | "Web UI", _context?: vscode.ExtensionContext): void {
-    this.cleanupTerminals();
-    this.showLogs(false);
-  }
-
   public async start(context: vscode.ExtensionContext): Promise<void> {
     if (this.server) return;
     this.log("Starting Integrated Power broker...");
@@ -128,10 +79,6 @@ export class BrokerController implements vscode.Disposable {
   }
 
   public dispose(): void {
-    if (this.terminalWatcherDisposable) {
-      this.terminalWatcherDisposable.dispose();
-      this.terminalWatcherDisposable = undefined;
-    }
     if (this.server) void this.server.close();
     this.server = undefined;
     this.broker = undefined;
@@ -140,10 +87,6 @@ export class BrokerController implements vscode.Disposable {
       this.workerTerminal.dispose();
       this.workerTerminal = undefined;
     }
-    for (const term of this.spawnedTerminals) {
-      try { term.dispose(); } catch { /* best effort */ }
-    }
-    this.spawnedTerminals = [];
   }
 }
 
