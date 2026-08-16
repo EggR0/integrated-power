@@ -900,13 +900,17 @@ button:focus-visible {
   }
 }
 
-/* Responsive Text Truncation */
-.text-short {
+/* Responsive 3-Stage Text Truncation */
+.text-full {
+  display: inline;
+}
+
+.text-medium {
   display: none;
 }
 
-.text-full {
-  display: inline;
+.text-short {
+  display: none;
 }
 
 /* Compact toolbar panel: the dashboard is sized to fill the viewport
@@ -1030,57 +1034,77 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-@container (max-width: 230px) {
+/* Stage 2: Medium Compact (240px ~ 330px) */
+@container (max-width: 330px) {
   .text-full {
+    display: none !important;
+  }
+  .text-medium {
+    display: inline !important;
+  }
+  .text-short {
+    display: none !important;
+  }
+  .metric-reset-row {
+    gap: 6px;
+  }
+  .capacity-summary {
+    gap: 5px;
+  }
+  .capacity-summary .summary-pill {
+    padding: 2px 7px;
+    font-size: 10.5px;
+  }
+  .status-pill {
+    padding: 2px 6px;
+    font-size: 10.5px;
+  }
+  .token-section summary {
+    font-size: 12px;
+    padding: 2px 5px;
+  }
+  .capacity-group h3 {
+    font-size: 12px;
+  }
+}
+
+/* Stage 3: Minimal Compact (< 240px) */
+@container (max-width: 240px) {
+  .text-full {
+    display: none !important;
+  }
+  .text-medium {
     display: none !important;
   }
   .text-short {
     display: inline !important;
   }
   .metric-reset-row {
-    gap: 4px;
+    gap: 3px;
+  }
+  .capacity-metric-label {
+    font-size: 10.5px;
+  }
+  .reset-left,
+  .reset-right {
+    font-size: 10px;
   }
   .capacity-summary {
     gap: 4px;
   }
   .capacity-summary .summary-pill {
-    padding: 2px 6px;
-    font-size: 10px;
+    font-size: 9px;
+    padding: 1px 4px;
   }
   .status-pill {
-    padding: 1px 5px;
-    font-size: 10px;
-  }
-  .token-section summary {
-    font-size: 11px;
-    padding: 2px 4px;
-  }
-  .capacity-group h3 {
-    font-size: 11.5px;
-  }
-}
-
-@container (max-width: 180px) {
-  .metric-reset-row {
-    gap: 2px;
-  }
-  .capacity-metric-label {
-    font-size: 10px;
-  }
-  .reset-left,
-  .reset-right {
+    padding: 1px 4px;
     font-size: 9px;
   }
-  .capacity-summary .summary-pill {
-    font-size: 8.5px;
-    padding: 1px 3px;
-  }
-  .status-pill {
-    padding: 1px 3px;
-    font-size: 8.5px;
-  }
   .token-section summary {
-    font-size: 10px;
+    font-size: 10.5px;
     padding: 2px 3px;
+  }
+  .capacity-group h3 {
+    font-size: 11px;
   }
 }
