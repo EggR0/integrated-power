@@ -2,8 +2,8 @@
   "name": "integrated-power",
   "publisher": "EggR",
   "displayName": "Integrated Power",
-  "description": "Integrated Power multi-AI broker and Antigravity IDE dashboard for Agy, Codex, local LLM delegation, usage, and approvals.",
-  "version": "0.8.0",
+  "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
+  "version": "0.9.0",
   "author": {
     "name": "EggR"
   },
@@ -152,6 +152,11 @@
       {
         "command": "integratedPower.broker.openDashboard",
         "title": "Integrated Power: Open Broker Tasks"
+      },
+      {
+        "command": "integratedPower.broker.showLogs",
+        "title": "Integrated Power: Show Broker Logs",
+        "icon": "$(output)"
       },
       {
         "command": "integratedPower.local.startDModelServer",

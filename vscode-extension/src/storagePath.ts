@@ -236,99 +236,6 @@ export function resolveIntegratedPowerStateRoot(
  */
 export const resolveEggRStateRoot = resolveIntegratedPowerStateRoot;
 
-export function ensureIntegratedPowerStorageMigration(
-  env: NodeJS.ProcessEnv = process.env,
-  userHome: string = os.homedir(),
-  platform: NodeJS.Platform = process.platform,
-): IntegratedPowerStorageMigration {
-  const productConfigPath = integratedPowerRootsConfigPath(userHome, env);
-  const explicitSessionRoot = env.INTEGRATED_POWER_STATE_ROOT?.trim();
-  if (explicitSessionRoot) {
-    return {
-      destinationRoot: path.resolve(
-        resolvePortablePath(explicitSessionRoot, env, userHome),
-      ),
-      copiedFiles: 0,
-      productConfigPath,
-    };
-  }
-  const legacyConfigPath = legacyEggRRootsConfigPath(userHome);
-  const productConfig = readOptionalJsonObject(productConfigPath);
-  const legacyConfig = envValue(env, "INTEGRATED_POWER_ROOTS_CONFIG")
-    ? {}
-    : readOptionalJsonObject(legacyConfigPath);
-  const destinationRoot = resolveIntegratedPowerStateRoot(
-    env,
-    userHome,
-    platform,
-  );
-  const legacyDefault = defaultLegacyStateRoot(env, userHome, platform);
-  const configuredLegacyRoot = envValue(env, "INTEGRATED_POWER_ROOTS_CONFIG")
-    ? destinationRoot
-    : typeof legacyConfig.state_root === "string" && legacyConfig.state_root.trim()
-      ? resolvePortablePath(legacyConfig.state_root, env, userHome)
-      : legacyDefault;
-  const markerPath = path.join(destinationRoot, STATE_MIGRATION_MARKER);
-  let copiedFiles = 0;
-
-  if (
-    !pathsEqual(configuredLegacyRoot, destinationRoot, platform) &&
-    fs.existsSync(configuredLegacyRoot) &&
-    !fs.existsSync(markerPath)
-  ) {
-    copiedFiles = copyMissingRegularFiles(configuredLegacyRoot, destinationRoot);
-    writeJsonAtomic(markerPath, {
-      schemaVersion: 1,
-      sourceRoot: configuredLegacyRoot,
-      destinationRoot,
-      copiedFiles,
-      completedAt: new Date().toISOString(),
-      legacyDataRetained: true,
-    });
-  }
-
-  const mergedConfig = {
-    ...legacyConfig,
-    ...productConfig,
-    state_root: destinationRoot,
-  };
-  writeJsonAtomic(productConfigPath, mergedConfig);
-
-  return {
-    ...(fs.existsSync(configuredLegacyRoot) &&
-    !pathsEqual(configuredLegacyRoot, destinationRoot, platform)
-      ? { sourceRoot: configuredLegacyRoot }
-      : {}),
-    destinationRoot,
-    copiedFiles,
-    productConfigPath,
-  };
-}
-
-export function synchronizeIntegratedPowerRootsFromLegacy(
-  userHome: string = os.homedir(),
-): string {
-  const productConfigPath = integratedPowerRootsConfigPath(userHome);
-  const productConfig = readOptionalJsonObject(productConfigPath);
-  const legacyConfig = envValue(process.env, "INTEGRATED_POWER_ROOTS_CONFIG")
-    ? {}
-    : readOptionalJsonObject(legacyEggRRootsConfigPath(userHome));
-  const stateRoot =
-    typeof productConfig.state_root === "string" &&
-    productConfig.state_root.trim()
-      ? productConfig.state_root
-      : typeof legacyConfig.state_root === "string" &&
-          legacyConfig.state_root.trim()
-        ? legacyConfig.state_root
-      : resolveIntegratedPowerStateRoot(process.env, userHome);
-  writeJsonAtomic(productConfigPath, {
-    ...legacyConfig,
-    ...productConfig,
-    state_root: stateRoot,
-  });
-  return productConfigPath;
-}
-
 export function resolveEggRWorkspaceDescriptor(folderPath: string): EggRWorkspaceDescriptor {
   const resolvedFolder = normalizeWorkspacePathForStorage(folderPath);
   const repoRoot = runGit(resolvedFolder, ["rev-parse", "--show-toplevel"]) ?? resolvedFolder;
@@ -357,18 +264,6 @@ export function workspaceStoragePathForFolder(
   configuredId?: string,
 ): string {
   return path.join(stateRoot, "workspaces", eggRWorkspaceId(folderPath, remoteUrl, configuredId));
-}
-
-export function legacyWorkspaceStorageCandidates(globalStorageFsPath: string, folderPath: string): string[] {
-  const normalized = normalizeWorkspacePathForStorage(folderPath);
-  const legacyInputs = new Set([
-    normalized,
-    /^[A-Z]:/.test(normalized) ? normalized[0].toLowerCase() + normalized.slice(1) : normalized,
-  ]);
-
-  return [...legacyInputs].map((value) =>
-    path.join(globalStorageFsPath, "workspaces", crypto.createHash("md5").update(value).digest("hex")),
-  );
 }
 
 function runGit(cwd: string, args: string[]): string | undefined {

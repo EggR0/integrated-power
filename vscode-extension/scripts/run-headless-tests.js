@@ -177,42 +177,22 @@ test("an explicit roots file never falls through to another profile's legacy con
   }
 });
 
-test("Integrated Power uses its product state root and copies legacy files without deleting them", () => {
+test("Integrated Power uses its product state root", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-state-"));
   const localAppData = path.join(tempHome, "AppData", "Local");
-  const legacyState = path.join(localAppData, "EggR", "state");
   const productState = path.join(localAppData, "IntegratedPower", "state");
-  const legacyFile = path.join(legacyState, "workspaces", "example", "report.json");
   try {
-    fs.mkdirSync(path.dirname(legacyFile), { recursive: true });
-    fs.writeFileSync(legacyFile, "legacy", "utf8");
     const env = { LOCALAPPDATA: localAppData };
     assert.strictEqual(
       resolveIntegratedPowerStateRoot(env, tempHome, "win32"),
       path.resolve(productState),
-    );
-    const migration = ensureIntegratedPowerStorageMigration(
-      env,
-      tempHome,
-      "win32",
-    );
-    assert.strictEqual(migration.copiedFiles, 1);
-    assert.strictEqual(
-      fs.readFileSync(path.join(productState, "workspaces", "example", "report.json"), "utf8"),
-      "legacy",
-    );
-    assert.strictEqual(fs.readFileSync(legacyFile, "utf8"), "legacy");
-    assert.ok(
-      fs.existsSync(
-        path.join(tempHome, ".config", "integrated-power", "roots.json"),
-      ),
     );
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });
 
-test("package commands exclude removed Athena workflow", () => {
+test("package commands exclude removed Athena workflow and legacy terminals", () => {
   const manifest = JSON.parse(readText("package.json"));
   const commands = (manifest.contributes?.commands ?? []).map((entry) => entry.command).sort();
 
@@ -222,6 +202,7 @@ test("package commands exclude removed Athena workflow", () => {
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
     "integratedPower.broker.openDashboard",
+    "integratedPower.broker.showLogs",
     "integratedPower.broker.start",
     "integratedPower.eggr.installOrUpdateOrchestrator",
     "integratedPower.eggr.openConfigurationCenter",
@@ -230,11 +211,7 @@ test("package commands exclude removed Athena workflow", () => {
     "integratedPower.eggr.runOrchestratorSetup",
     "integratedPower.eggr.runPrivateKnowledgeSetup",
     "integratedPower.local.startDModelServer",
-    "integratedPower.terminals.openAll",
-    "integratedPower.terminals.showBroker",
-    "integratedPower.terminals.showOllama",
-    "integratedPower.terminals.showWebUI",
-  ]);
+  ].sort());
 });
 
 test("package uses the EggR publisher and canonical public repository", () => {
@@ -322,7 +299,7 @@ test("dashboard activation does not silently install or overwrite the EggR orche
   assert.ok(!setupSources.includes("InstallGlobalRules"));
 });
 
-test("webview preserves token status and removes duplicate header buttons", () => {
+test("webview preserves token status and integrates Anthropic Claude submenu", () => {
   const webview = readText("webview", "main.js");
   const styles = readText("webview", "styles.css");
   const extensionSource = readText("src", "extension.ts");
@@ -334,12 +311,12 @@ test("webview preserves token status and removes duplicate header buttons", () =
   assert.ok(!webview.includes("Refreshing, showing previous data"));
   assert.ok(!webview.includes("renderLoadingStrip"));
   assert.ok(!webview.includes('data-command="refresh" ${dashboardState.isLoading ? "disabled" : ""}'));
-  assert.ok(webview.includes("Claude Direct"));
-  assert.ok(webview.includes("renderClaudeDirectUsage"));
+  assert.ok(webview.includes("Anthropic Claude"));
+  assert.ok(webview.includes("renderClaudeTokenSection"));
   assert.ok(!webview.includes("renderCapacityGroup(\"Claude Opus 4.6 Thinking\""));
   assert.ok(webview.includes("Opus 4.6 Thinking via Antigravity"));
   assert.ok(!styles.includes(".loading-strip"));
-  assert.match(styles, /body\s*\{[\s\S]*min-width:\s*340px;/);
+  assert.match(styles, /body\s*\{[\s\S]*min-width:\s*0;/);
   assert.match(styles, /\.dashboard-shell\.is-refreshing \.progress-fill\s*\{[\s\S]*var\(--vscode-descriptionForeground\)/);
   assert.match(styles, /\.dashboard-shell:not\(\.is-refreshing\) \.token-metric\.warning \.progress-fill/);
   assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));

@@ -12,7 +12,6 @@ import {
   resolveIntegratedPowerToolsRoot,
   resolveIntegratedPowerWorkRoot,
   resolvePortablePath,
-  synchronizeIntegratedPowerRootsFromLegacy,
 } from "./storagePath";
 import { inspectAntigravityPluginInstall } from "./installAntigravityPlugin";
 import {
@@ -612,7 +611,6 @@ export async function runPrivateKnowledgeConfiguration(
   if (!isRecord(parsed)) {
     throw new Error("Knowledge 설정 도구가 올바른 JSON 결과를 반환하지 않았습니다.");
   }
-  synchronizeIntegratedPowerRootsFromLegacy();
   return parsed;
 }
 
