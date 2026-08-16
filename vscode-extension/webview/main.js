@@ -296,40 +296,41 @@ function render() {
     }
   }
 
-  root.querySelectorAll("[data-command]").forEach((button) => {
-    button.addEventListener("click", () => postCommand(button.dataset.command));
-  });
+  if (!root.__delegationInitialized) {
+    root.__delegationInitialized = true;
 
-  root.querySelectorAll("[data-artifact-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const artifactId = button.dataset.artifactId;
-      if (artifactId && vscode) {
-        vscode.postMessage({ type: "openArtifact", artifactId });
+    root.addEventListener("click", (e) => {
+      const cmdBtn = e.target.closest("[data-command]");
+      if (cmdBtn && cmdBtn.dataset.command) {
+        postCommand(cmdBtn.dataset.command);
+        return;
+      }
+
+      const artifactBtn = e.target.closest("[data-artifact-id]");
+      if (artifactBtn && artifactBtn.dataset.artifactId && vscode) {
+        vscode.postMessage({ type: "openArtifact", artifactId: artifactBtn.dataset.artifactId });
+        return;
       }
     });
-  });
+
+    root.addEventListener("toggle", (e) => {
+      const details = e.target.closest("details.token-section");
+      if (details && details.dataset.section) {
+        dashboardState = {
+          ...dashboardState,
+          sectionStates: {
+            ...normalizeSectionStates(dashboardState.sectionStates),
+            [details.dataset.section]: details.open,
+          },
+        };
+        persistState();
+      }
+    }, true);
+  }
 
   root.querySelectorAll("[data-progress]").forEach((element) => {
     const percentage = clamp(Number(element.dataset.progress), 0, 100);
     element.style.width = `${percentage.toFixed(1)}%`;
-  });
-
-  root.querySelectorAll("details.token-section").forEach((details) => {
-    details.addEventListener("toggle", () => {
-      const section = details.dataset.section;
-      if (!section) {
-        return;
-      }
-
-      dashboardState = {
-        ...dashboardState,
-        sectionStates: {
-          ...normalizeSectionStates(dashboardState.sectionStates),
-          [section]: details.open,
-        },
-      };
-      persistState();
-    });
   });
 
   if (isRefreshing) {

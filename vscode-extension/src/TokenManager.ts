@@ -130,9 +130,12 @@ export class TokenManager {
   }
 
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<T>((resolve) => {
       timer = setTimeout(() => resolve(fallbackValue), timeoutMs);
+      if (typeof timer.unref === "function") {
+        timer.unref();
+      }
     });
     try {
       return await Promise.race([promise, timeoutPromise]);
