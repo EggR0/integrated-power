@@ -564,17 +564,14 @@ function capacitySummaryEntry(label, exactPercentage, left, max) {
 function renderTokenPanelStatus(status) {
   const visibleStatuses = [];
   if (dashboardState.viewConfig?.showCodex !== false && status.codexStatus) visibleStatuses.push(status.codexStatus);
-  const pillStatus = visibleStatuses[0] || "Unknown";
+  const pillStatus = visibleStatuses[0] || "Active";
   const isRefreshing = dashboardState.isLoading || dashboardState.isTokenLoading;
   const refreshingClass = isRefreshing ? " status-refreshing" : "";
-  const label = isRefreshing
-    ? `Refreshing ${formatElapsed(dashboardState.refreshStartedAt)}`
-    : pillStatus;
   const title = isRefreshing
-    ? `Showing previous data. Last fresh update: ${formatDateTime(dashboardState.updatedAt)}.`
+    ? `Updating... Last fresh update: ${formatDateTime(dashboardState.updatedAt)}.`
     : `Current status: ${pillStatus}.`;
 
-  return `<span class="status-pill ${statusClass(pillStatus)}${refreshingClass}" title="${escapeAttr(title)}">${escapeHtml(label)}</span>`;
+  return `<span class="status-pill ${statusClass(pillStatus)}${refreshingClass}" title="${escapeAttr(title)}">${escapeHtml(pillStatus)}</span>`;
 }
 
 function renderTokenSkeleton() {

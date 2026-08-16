@@ -209,7 +209,7 @@ export class DashboardController implements vscode.Disposable {
 
     this.tokenPollingTimer = setInterval(() => {
       void this.refreshTokenStatus(this.tokenRefreshGeneration, true);
-    }, 3000);
+    }, 5000);
   }
 
   private stopTokenPolling(triggerFinalRefresh: boolean): void {
