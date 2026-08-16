@@ -57,7 +57,10 @@ Import-Module (Join-Path $PSScriptRoot "lib\EggR.Paths.psm1") -Force -DisableNam
 Import-Module (Join-Path $PSScriptRoot "lib\IntegratedPower.Artifacts.psm1") -Force -DisableNameChecking
 $storagePath = Get-GlobalStorage -RepoRoot $repoRoot
 
-$ensureSetup = Join-Path $PSScriptRoot "Ensure-CodexOrchestratorSetup.ps1"
+$ensureSetup = Join-Path $PSScriptRoot "Ensure-IpOrchestratorSetup.ps1"
+if (!(Test-Path -LiteralPath $ensureSetup -PathType Leaf)) {
+    $ensureSetup = Join-Path $PSScriptRoot "Ensure-CodexOrchestratorSetup.ps1"
+}
 if (!(Test-Path -LiteralPath $ensureSetup -PathType Leaf)) {
     throw "Missing setup helper: $ensureSetup"
 }

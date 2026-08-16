@@ -812,7 +812,10 @@ $blockEnd
     }
 
     try {
-        $ensureSetup = Join-Path $PSScriptRoot "Ensure-CodexOrchestratorSetup.ps1"
+        $ensureSetup = Join-Path $PSScriptRoot "Ensure-IpOrchestratorSetup.ps1"
+        if (!(Test-Path -LiteralPath $ensureSetup -PathType Leaf)) {
+            $ensureSetup = Join-Path $PSScriptRoot "Ensure-CodexOrchestratorSetup.ps1"
+        }
         if (!(Test-Path -LiteralPath $ensureSetup -PathType Leaf)) {
             Throw-CodexDebateError "Missing setup helper: $ensureSetup" 4
         }
