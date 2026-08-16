@@ -21,7 +21,7 @@ const state = {
 
 const defaults = [
   { provider: "google.antigravity.ide", label: "Antigravity IDE / Agy", mode: "cli", capabilities: ["leader", "executor"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
-  { provider: "local.openai-compatible", label: "로컬 Qwen 3.6 27B", mode: "local", capabilities: ["executor", "local-mcp"], available: false, stateKind: "not_installed", stateLabel: "설치X", model: "qwen3.6:27b", reason: "확인중" },
+  { provider: "local.openai-compatible", label: "로컬 Qwen 3.8 27B", mode: "local", capabilities: ["executor", "local-mcp"], available: false, stateKind: "not_installed", stateLabel: "설치X", model: "qwen3.8:27b", reason: "확인중" },
   { provider: "openai.codex.app", label: "Codex App Server", mode: "app-server", capabilities: ["leader", "executor"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
   { provider: "openai.chatgpt.app", label: "ChatGPT desktop/web MCP app", mode: "gui", capabilities: ["leader", "remote-mcp"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
   { provider: "anthropic.claude.desktop", label: "Claude Desktop local MCP", mode: "gui", capabilities: ["leader", "local-mcp"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
@@ -655,7 +655,7 @@ function renderLocalLlmMetrics(metricsData) {
     const tdModel = document.createElement("td");
     tdModel.style.padding = "6px 8px";
     tdModel.style.color = "#38bdf8";
-    tdModel.textContent = m.model || "qwen3.6:27b";
+    tdModel.textContent = m.model || "qwen3.8:27b";
 
     const tdScale = document.createElement("td");
     tdScale.style.padding = "6px 8px";

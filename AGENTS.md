@@ -13,7 +13,7 @@ that records rejected candidates, compatibility/licence evidence, and a
 regression test. Do not reset or delete existing user changes.
 
 The authoritative local path is `Select-LocalLLMModel.ps1` followed by
-`Invoke-LocalLLM.ps1`/`Invoke-vLLMJob.ps1`. Preserve qwen3.6:27b preference,
+`Invoke-LocalLLM.ps1`/`Invoke-vLLMJob.ps1`. Preserve qwen3.8:27b preference,
 VRAM reservation, compute capability, CPU offload, install consent,
 cold-load timeout, metrics, artifact coalescing, GPU index/UUID, and privacy
 boundaries. Never silently restart a server on a different GPU.

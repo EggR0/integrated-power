@@ -115,7 +115,7 @@ async function main() {
     assert.strictEqual(shouldEscalate(task, [{ passed: false }]), true);
     const decision = chooseProvider({ task, capabilities: await broker.discover() });
     assert.strictEqual(decision.provider, "google.antigravity.ide");
-    assert.strictEqual(selectPreferredLocalModel(["qwen2.5:7b", "qwen2.5-coder:32b", "qwen3.6:27b", "gpt-oss:20b"]), "qwen3.6:27b");
+    assert.strictEqual(selectPreferredLocalModel(["qwen2.5:7b", "qwen2.5-coder:32b", "qwen3.6:27b", "qwen3.8:27b", "gpt-oss:20b"]), "qwen3.8:27b");
     const contextRoot = path.join(temp, "context");
     fs.mkdirSync(contextRoot, { recursive: true });
     fs.writeFileSync(path.join(contextRoot, "new.ts"), "const token = secret-value;", "utf8");

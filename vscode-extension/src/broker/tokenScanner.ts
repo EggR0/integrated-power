@@ -294,7 +294,7 @@ export async function scanLiveTokenStatus(): Promise<LiveTokenStatus> {
           lastSync: new Date().toISOString(),
           localComputeStatus: {
             status: isOnline ? (isBusy ? "busy" : "online") : "offline",
-            modelName: data.localComputeStatus?.loadedModels?.[0] || "qwen3.6:27b",
+            modelName: data.localComputeStatus?.loadedModels?.[0] || "qwen3.8:27b",
             vramUsedMb,
             vramTotalMb,
             gpus,
@@ -333,7 +333,7 @@ export async function scanLiveTokenStatus(): Promise<LiveTokenStatus> {
     lastSync: new Date().toISOString(),
     localComputeStatus: {
       status: isOnline ? (isBusy ? "busy" : "online") : "offline",
-      modelName: "qwen3.6:27b",
+      modelName: "qwen3.8:27b",
       vramUsedMb,
       vramTotalMb,
       gpus,

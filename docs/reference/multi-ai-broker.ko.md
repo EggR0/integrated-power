@@ -12,7 +12,7 @@ Integrated Power는 Antigravity IDE 확장에만 종속되지 않는 loopback �
 ## 현재 연결
 
 - Agy: `agy -p <prompt> --mode accept-edits`로 명시된 작업만 위임합니다.
-- 로컬 LLM: D의 `127.0.0.1:11435`를 우선 탐색하고 `qwen3.6:27b`를 기본 선택합니다.
+- 로컬 LLM: D의 `127.0.0.1:11435`를 우선 탐색하고 `qwen3.8:27b`를 기본 선택합니다.
 - Codex: 공식 Codex App Server stdio JSON-RPC의 `initialize → thread/start → turn/start` 흐름을 사용합니다.
 - Claude/ChatGPT: 공식 MCP 연결 경계를 제공합니다. GUI 자격증명이나 연결되지 않은 대화를 읽지 않습니다.
 - Grok: 공식 연결 규격이 확인될 때까지 capability만 표시하고 비활성화합니다.

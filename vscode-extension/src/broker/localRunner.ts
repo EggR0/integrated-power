@@ -8,7 +8,7 @@ import { promisify } from "util";
 import { TaskEnvelope } from "./protocol";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_MODEL = "qwen3.6:27b";
+const DEFAULT_MODEL = "qwen3.8:27b";
 
 export interface LocalRunResult {
   text: string;

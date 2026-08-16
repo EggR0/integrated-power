@@ -287,7 +287,7 @@ export class OpenAiCompatibleLocalAdapter implements AgentAdapter {
         stateLabel: "사용가능",
         mode: "local",
         capabilities: ["executor", "local-mcp", "streaming"],
-        model: process.env.INTEGRATED_POWER_LOCAL_MODEL || "qwen3.6:27b",
+        model: process.env.INTEGRATED_POWER_LOCAL_MODEL || "qwen3.8:27b",
         endpoint: this.endpoint,
         reason: `Selection is delegated to Select-LocalLLMModel.ps1 (${scriptsRoot}).`,
       };
@@ -374,6 +374,7 @@ function extractA2AText(result: any): string {
 export function selectPreferredLocalModel(models: string[]): string | undefined {
   const normalized = models.filter(Boolean);
   const preference = [
+    "qwen3.8:27b",
     "qwen3.6:27b",
     "qwen2.5-coder:32b",
     "qwen3.6:latest",

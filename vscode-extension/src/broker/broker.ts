@@ -562,9 +562,9 @@ export class IntegratedPowerBroker {
       },
       localLlm: {
         provider: "local.openai-compatible",
-        label: "Local LLM (Qwen 3.6 27B / Ollama)",
+        label: "Local LLM (Qwen 3.8 27B / Ollama)",
         status: localCap?.available ? "사용가능 (Zero Token Cost)" : "미설치",
-        model: localCap?.model || "qwen3.6:27b",
+        model: localCap?.model || "qwen3.8:27b",
         role: "VRAM 기반 포맷팅, 자동완성, 민감 데이터 처리, 단순 반복 작업 (비용 0)",
       },
       routingPolicy: "1. Heavy 코드 생성/분석 -> Antigravity\n2. 정밀 로직/아키텍처 검증 -> Codex\n3. 단순 반복/오프라인 작업 -> Local LLM (토큰 소모 없음)",
