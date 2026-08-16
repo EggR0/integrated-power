@@ -197,7 +197,7 @@
     "vscode:prepublish": "node ./scripts/build-extension.js",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "pnpm run test:reuse && pnpm run compile && node ./scripts/test-compact-ui.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && pnpm run test:powershell",
+    "test": "pnpm run test:reuse && pnpm run compile && node ./scripts/test-compact-ui.js && node ./scripts/test-runtime-background-token.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && pnpm run test:powershell",
     "test:ui": "node ./scripts/test-compact-ui.js",
     "test:reuse": "node ./scripts/run-reuse-gate.js && node ./scripts/test-gpu-selection.js",
     "test:powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-LocalLLMInventory.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-OnboardingMigration.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/scripts/tests/Invoke-LocalLLM.Tests.ps1",
