@@ -36,7 +36,14 @@ export class BrokerController implements vscode.Disposable {
     this.cleanupTerminals();
     this.terminalWatcherDisposable = vscode.window.onDidOpenTerminal((term) => {
       const name = term.name;
-      if (name.startsWith("Integrated Power:")) return;
+      if (name.startsWith("Integrated Power:")) {
+        try {
+          term.dispose();
+        } catch {
+          // ignore
+        }
+        return;
+      }
       this.log(`[Agent Terminal Watcher] Detected active agent terminal: "${name}"`);
     });
   }
@@ -60,34 +67,14 @@ export class BrokerController implements vscode.Disposable {
     }));
   }
 
-  public spawnBackgroundTerminals(context: vscode.ExtensionContext): void {
-    const existing = vscode.window.terminals;
-    const ccDir = resolveControlCenterDir(context);
-    const isWin = process.platform === "win32";
-    
-    // 1. Integrated Power: Broker
-    let brokerTerm = existing.find((t) => t.name === "Integrated Power: Broker");
-    if (!brokerTerm || brokerTerm.exitStatus !== undefined) {
-      brokerTerm = vscode.window.createTerminal({
-        name: "Integrated Power: Broker",
-        iconPath: new vscode.ThemeIcon("pulse"),
-      });
-      this.spawnedTerminals.push(brokerTerm);
-      brokerTerm.sendText(isWin ? `cd '${ccDir}'; node broker-server.js` : `cd "${ccDir}" && node broker-server.js`);
-    }
-    brokerTerm.show(true);
+  public spawnBackgroundTerminals(_context: vscode.ExtensionContext): void {
+    this.cleanupTerminals();
+    this.showLogs(false);
   }
 
-  public showTerminal(name: "Broker" | "Ollama" | "Web UI", context?: vscode.ExtensionContext): void {
-    const fullName = `Integrated Power: ${name}`;
-    let term = vscode.window.terminals.find((t) => t.name === fullName);
-    if (term && term.exitStatus === undefined) {
-      term.show(true);
-    } else if (context) {
-      this.spawnBackgroundTerminals(context);
-      term = vscode.window.terminals.find((t) => t.name === fullName);
-      if (term) term.show(true);
-    }
+  public showTerminal(_name: "Broker" | "Ollama" | "Web UI", _context?: vscode.ExtensionContext): void {
+    this.cleanupTerminals();
+    this.showLogs(false);
   }
 
   public async start(context: vscode.ExtensionContext): Promise<void> {
