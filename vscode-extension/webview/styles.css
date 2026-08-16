@@ -555,6 +555,8 @@ button:focus-visible {
   text-align: right;
   white-space: nowrap;
   padding-right: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .capacity-metric-label,
@@ -562,6 +564,7 @@ button:focus-visible {
 .reset-right {
   min-width: 0;
   overflow-wrap: anywhere;
+  text-overflow: ellipsis;
 }
 
 .token-footer {
