@@ -293,16 +293,17 @@ button:focus-visible {
 
 .capacity-summary {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 0 0 10px;
   min-width: 0;
   width: 100%;
 }
 
-.capacity-summary span {
+.capacity-summary .summary-pill {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   min-height: 22px;
   border: 1px solid color-mix(in srgb, var(--vscode-focusBorder), transparent 50%);
   border-radius: 999px;
@@ -311,24 +312,22 @@ button:focus-visible {
   background: color-mix(in srgb, var(--vscode-focusBorder), transparent 90%);
   font-size: 11px;
   font-weight: 600;
-  min-width: 0;
-  flex: 1 1 0;
-  justify-content: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1 1 auto;
+  justify-content: center;
 }
 
-.capacity-summary strong {
-  margin-right: 5px;
+.capacity-summary .summary-pill strong {
+  margin-right: 2px;
+  flex-shrink: 0;
   color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-charts-green) 22%);
 }
 
-.capacity-summary .summary-warning strong {
+.capacity-summary .summary-pill.summary-warning strong {
   color: var(--vscode-charts-yellow);
 }
 
-.capacity-summary .summary-critical strong {
+.capacity-summary .summary-pill.summary-critical strong {
   color: var(--vscode-charts-red);
 }
 
@@ -1031,7 +1030,7 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-@container (max-width: 340px) {
+@container (max-width: 230px) {
   .text-full {
     display: none !important;
   }
@@ -1044,44 +1043,44 @@ button {
   .capacity-summary {
     gap: 4px;
   }
-  .capacity-summary span {
+  .capacity-summary .summary-pill {
     padding: 2px 6px;
-    font-size: 10.5px;
+    font-size: 10px;
   }
   .status-pill {
     padding: 1px 5px;
     font-size: 10px;
   }
   .token-section summary {
-    font-size: 11.5px;
+    font-size: 11px;
     padding: 2px 4px;
   }
   .capacity-group h3 {
-    font-size: 12px;
+    font-size: 11.5px;
   }
 }
 
-@container (max-width: 220px) {
+@container (max-width: 180px) {
   .metric-reset-row {
     gap: 2px;
   }
   .capacity-metric-label {
-    font-size: 10.5px;
+    font-size: 10px;
   }
   .reset-left,
   .reset-right {
-    font-size: 9.5px;
-  }
-  .capacity-summary span {
     font-size: 9px;
-    padding: 1px 4px;
+  }
+  .capacity-summary .summary-pill {
+    font-size: 8.5px;
+    padding: 1px 3px;
   }
   .status-pill {
     padding: 1px 3px;
-    font-size: 9px;
+    font-size: 8.5px;
   }
   .token-section summary {
-    font-size: 10.5px;
+    font-size: 10px;
     padding: 2px 3px;
   }
 }

@@ -622,13 +622,13 @@ function renderCapacitySummary(status) {
 
   return `
     <div class="capacity-summary" title="${escapeAttr("Higher remaining quota is better. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.")}">
-      <span>
+      <span class="summary-pill">
         <strong>Best</strong>
         <span class="text-full">${escapeHtml(strongest.label)}</span>
         <span class="text-short">${escapeHtml(strongest.shortLabel)}</span>
         ${strongest.percentage.toFixed(0)}%
       </span>
-      <span class="summary-${escapeAttr(capacityTone(lowest.percentage))}">
+      <span class="summary-pill summary-${escapeAttr(capacityTone(lowest.percentage))}">
         <strong>Lowest</strong>
         <span class="text-full">${escapeHtml(lowest.label)}</span>
         <span class="text-short">${escapeHtml(lowest.shortLabel)}</span>
