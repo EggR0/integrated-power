@@ -547,7 +547,7 @@ function buildClaudeMetric(label, summary, totalTokens) {
   const tooltip = `[Local Measured] Claude ${label}: ${subtextFull}${refreshFull}.`;
 
   const labelFull = label;
-  const labelMedium = label === "Weekly" ? "Week" : label;
+  const labelMedium = label;
   const labelShort = label === "Today" ? "Today" : "W";
 
   return {
@@ -619,23 +619,28 @@ function renderLocalComputeStatus(tokenStatus) {
         <div class="capacity-groups">
           ${
             localComputeStatus.gpus?.length
-              ? localComputeStatus.gpus.map((gpu) =>
-                  renderCapacityGroup(`GPU ${gpu.id}: ${gpu.name}`, [
+              ? localComputeStatus.gpus.map((gpu) => {
+                  const powerText = gpu.powerDrawW && gpu.powerLimitW ? `${gpu.powerDrawW}W / ${gpu.powerLimitW}W` : "";
+                  const vramUsedGb = (Number(gpu.vramUsedMb || 0) / 1024).toFixed(1);
+                  const vramTotalGb = (Number(gpu.vramTotalMb || 0) / 1024).toFixed(0);
+                  const vramText = Number(gpu.vramTotalMb || 0) > 0 ? `${vramUsedGb}GB / ${vramTotalGb}GB` : "";
+                  return renderCapacityGroup(`GPU ${gpu.id}: ${gpu.name}`, [
                     buildHardwareMetric(
                       "GPU",
                       gpu.utilizationPercentage,
                       100,
                       "%",
-                      `${gpu.powerDrawW}W / ${gpu.powerLimitW}W`
+                      powerText
                     ),
                     buildHardwareMetric(
                       "VRAM",
                       gpu.vramUsedMb,
                       gpu.vramTotalMb,
-                      "MB"
+                      "MB",
+                      vramText
                     ),
-                  ])
-                ).join("")
+                  ]);
+                }).join("")
               : renderCapacityGroup("Offline", [
                   buildHardwareMetric("GPU", null, 100, "%"),
                   buildHardwareMetric("VRAM", null, null, "MB"),
@@ -765,7 +770,7 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
   const tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
 
   const labelFull = label;
-  const labelMedium = label === "Weekly" ? "Week" : label;
+  const labelMedium = label;
   const labelShort = label === "5Hours" ? "5H" : label === "Weekly" ? "W" : label;
 
   return {
