@@ -18,6 +18,63 @@ export {
   workspaceStoragePathForFolder,
 };
 
+export class WorkspacePollutionError extends Error {
+  constructor(public readonly targetPath: string, public readonly repoRoot: string) {
+    super(
+      `[WorkspacePollutionError] Blocked runtime write inside workspace: "${targetPath}". ` +
+      `All state, telemetry, and metrics MUST target StateRoot outside the workspace repository ("${repoRoot}").`
+    );
+    this.name = "WorkspacePollutionError";
+  }
+}
+
+/**
+ * Asserts that targetPath is NOT inside the workspace repository.
+ * Throws WorkspacePollutionError if a violation occurs.
+ */
+export function assertNotInWorkspace(targetPath: string, repoRoot: string): void {
+  if (!targetPath || !repoRoot) return;
+  const resolvedTarget = path.resolve(targetPath).toLowerCase();
+  const resolvedRepo = path.resolve(repoRoot).toLowerCase();
+  if (resolvedTarget === resolvedRepo || resolvedTarget.startsWith(resolvedRepo + path.sep.toLowerCase())) {
+    throw new WorkspacePollutionError(targetPath, repoRoot);
+  }
+}
+
+/**
+ * Safely writes a file ensuring it is outside the workspace repository.
+ */
+export async function safeWriteFile(
+  targetPath: string,
+  data: string | Uint8Array,
+  repoRoot: string,
+  options?: fs.WriteFileOptions
+): Promise<void> {
+  assertNotInWorkspace(targetPath, repoRoot);
+  const dir = path.dirname(targetPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  await fs.promises.writeFile(targetPath, data, options);
+}
+
+/**
+ * Safely appends to a file ensuring it is outside the workspace repository.
+ */
+export async function safeAppendFile(
+  targetPath: string,
+  data: string | Uint8Array,
+  repoRoot: string,
+  options?: fs.WriteFileOptions
+): Promise<void> {
+  assertNotInWorkspace(targetPath, repoRoot);
+  const dir = path.dirname(targetPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  await fs.promises.appendFile(targetPath, data, options);
+}
+
 export class WorkspacePaths {
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -100,7 +157,12 @@ export class WorkspacePaths {
   private joinGlobalStorage(relativePath: string): vscode.Uri | undefined {
     const basePath = this.workspaceStoragePath;
     if (!basePath) return undefined;
-    return vscode.Uri.file(path.join(basePath, ...relativePath.split("/")));
+    const target = path.join(basePath, ...relativePath.split("/"));
+    const folder = this.primaryFolder;
+    if (folder) {
+      assertNotInWorkspace(target, folder.uri.fsPath);
+    }
+    return vscode.Uri.file(target);
   }
 
   public toWorkspaceRelativePath(value: string): string | undefined {
