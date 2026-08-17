@@ -829,16 +829,22 @@ function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) 
     subtextShort = `${normalizedPercentage.toFixed(1)}%`;
   }
 
-  const countdown = formatRefreshCountdown(rawResetTime);
+  let effectiveResetTime = rawResetTime;
+  if (isWeeklyExhausted && pairedWeeklyPrefix) {
+    const pairedResetTime = status[`${pairedWeeklyPrefix}ResetTime`];
+    if (pairedResetTime) {
+      effectiveResetTime = pairedResetTime;
+    }
+  }
+
+  const countdown = formatRefreshCountdown(effectiveResetTime);
   const refreshFull = countdown ? countdown.full : "";
   const refreshMedium = countdown ? (countdown.medium || countdown.short) : "";
   const refreshShort = countdown ? countdown.short : "";
   
   let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   if (isWeeklyExhausted) {
-    const pairedResetTime = status[`${pairedWeeklyPrefix}ResetTime`];
-    const weeklyCountdown = formatRefreshCountdown(pairedResetTime);
-    tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${weeklyCountdown ? ` · Weekly ${weeklyCountdown.full}` : ""}). All 5-hour capacity is locked.`;
+    tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` · ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
   } else if (isWeeklyCapped) {
     tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
   }
