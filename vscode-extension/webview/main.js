@@ -392,11 +392,11 @@ function renderTokenStatus(tokenStatus) {
   }
 
   const status = tokenStatus || {};
-  const antigravity = buildTokenMetric("5Hours", status, "antigravity", "Gemini 3.1 Pro 5Hours");
+  const antigravity = buildTokenMetric("5Hours", status, "antigravity", "Gemini 3.1 Pro 5Hours", "antigravityWeekly");
   const antigravityWeekly = buildTokenMetric("Weekly", status, "antigravityWeekly", "Gemini 3.1 Pro Weekly");
-  const opus = buildTokenMetric("5Hours", status, "opus", "Opus 4.6 Thinking via Antigravity 5Hours");
+  const opus = buildTokenMetric("5Hours", status, "opus", "Opus 4.6 Thinking via Antigravity 5Hours", "opusWeekly");
   const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Opus 4.6 Thinking via Antigravity Weekly");
-  const codex = buildTokenMetric("5Hours", status, "codex", "ChatGPT 5Hours");
+  const codex = buildTokenMetric("5Hours", status, "codex", "ChatGPT 5Hours", "codexWeekly");
   const codexWeekly = buildTokenMetric("Weekly", status, "codexWeekly", "ChatGPT Weekly");
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
   const taskWeight = normalizeTaskWeight(status.recommendedTaskWeight);
@@ -484,7 +484,7 @@ function renderTokenStatus(tokenStatus) {
 }
 
 function renderClaudeTokenSection(status, isOpen) {
-  const claude5Hours = buildTokenMetric("5Hours", status, "claude", "Claude 5Hours");
+  const claude5Hours = buildTokenMetric("5Hours", status, "claude", "Claude 5Hours", "claudeWeekly");
   const claudeWeekly = buildTokenMetric("Weekly", status, "claudeWeekly", "Claude Weekly");
   const hasQuota = claude5Hours.percentage > 0 || claudeWeekly.percentage > 0 || status.claudePercentage !== undefined;
 
@@ -503,7 +503,7 @@ function renderClaudeTokenSection(status, isOpen) {
     ];
   } else {
     metrics = [
-      buildTokenMetric("5Hours", status, "claude", "Claude 5Hours"),
+      buildTokenMetric("5Hours", status, "claude", "Claude 5Hours", "claudeWeekly"),
       buildTokenMetric("Weekly", status, "claudeWeekly", "Claude Weekly"),
     ];
   }
@@ -734,7 +734,48 @@ function renderTokenSkeleton() {
   `;
 }
 
-function buildTokenMetric(label, status, prefix, ariaLabel) {
+const K_CAPACITY_RATIOS = Object.freeze({
+  opus: 4.5,
+  antigravity: 5.0,
+  codex: 4.0,
+  claude: 4.5,
+});
+const K_DEFAULT_RATIO = 4.5;
+
+function calculateEffective5HourQuota(fiveHourPct, weeklyPct, prefix) {
+  const modelKey = prefix.toLowerCase().replace(/weekly/i, "");
+  const K = K_CAPACITY_RATIOS[modelKey] ?? K_DEFAULT_RATIO;
+
+  if (weeklyPct === 0) {
+    return {
+      effectivePct: 0.0,
+      isWeeklyExhausted: true,
+      isWeeklyCapped: true,
+      K,
+    };
+  }
+
+  if (typeof weeklyPct === "number" && Number.isFinite(weeklyPct)) {
+    const weeklyCeiling = weeklyPct * K;
+    if (weeklyCeiling < fiveHourPct) {
+      return {
+        effectivePct: clamp(weeklyCeiling, 0, 100),
+        isWeeklyExhausted: false,
+        isWeeklyCapped: true,
+        K,
+      };
+    }
+  }
+
+  return {
+    effectivePct: fiveHourPct,
+    isWeeklyExhausted: false,
+    isWeeklyCapped: false,
+    K,
+  };
+}
+
+function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) {
   const left = toFiniteNumber(status[`${prefix}TokensLeft`]);
   const max = toFiniteNumber(status[`${prefix}Max`]);
   const exactPercentage = status[`${prefix}Percentage`];
@@ -749,9 +790,34 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
   }
 
   const hasAbsolute = typeof estimated === "number" || max > 0 || left > 0;
-  const normalizedPercentage = percentage ?? 0;
+  let normalizedPercentage = percentage ?? 0;
+  let isWeeklyExhausted = false;
+  let isWeeklyCapped = false;
+  let capReason = "";
+
+  // Dual-Window Quota Synchronization: 5Hours constrained by Weekly
+  if (label === "5Hours" && pairedWeeklyPrefix && percentage !== undefined) {
+    const weeklyExact = status[`${pairedWeeklyPrefix}Percentage`];
+    const weeklyLeft = toFiniteNumber(status[`${pairedWeeklyPrefix}TokensLeft`]);
+    const weeklyMax = toFiniteNumber(status[`${pairedWeeklyPrefix}Max`]);
+    let weeklyPct = typeof weeklyExact === "number" && Number.isFinite(weeklyExact)
+      ? clamp(weeklyExact, 0, 100)
+      : weeklyMax > 0 ? clamp((weeklyLeft / weeklyMax) * 100, 0, 100) : undefined;
+
+    if (weeklyPct !== undefined) {
+      const sync = calculateEffective5HourQuota(normalizedPercentage, weeklyPct, prefix);
+      normalizedPercentage = sync.effectivePct;
+      isWeeklyExhausted = sync.isWeeklyExhausted;
+      isWeeklyCapped = sync.isWeeklyCapped;
+      if (isWeeklyExhausted) {
+        capReason = "Weekly exhausted";
+      } else if (isWeeklyCapped) {
+        capReason = `Weekly capped (${weeklyPct.toFixed(1)}% × ${sync.K})`;
+      }
+    }
+  }
   
-  const displayPercentage = typeof exactPercentage === "number" ? exactPercentage : normalizedPercentage;
+  const displayPercentage = isWeeklyExhausted ? 0.0 : normalizedPercentage;
   const mainText = (hasAbsolute || percentage !== undefined) ? `${displayPercentage.toFixed(2)}%` : "Unavailable";
   
   let subtextFull = "Waiting for quota data";
@@ -767,7 +833,15 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
   const refreshFull = countdown ? countdown.full : "";
   const refreshMedium = countdown ? (countdown.medium || countdown.short) : "";
   const refreshShort = countdown ? countdown.short : "";
-  const tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+  
+  let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+  if (isWeeklyExhausted) {
+    const pairedResetTime = status[`${pairedWeeklyPrefix}ResetTime`];
+    const weeklyCountdown = formatRefreshCountdown(pairedResetTime);
+    tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${weeklyCountdown ? ` · Weekly ${weeklyCountdown.full}` : ""}). All 5-hour capacity is locked.`;
+  } else if (isWeeklyCapped) {
+    tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
+  }
 
   const labelFull = label;
   const labelMedium = label;
@@ -792,6 +866,8 @@ function buildTokenMetric(label, status, prefix, ariaLabel) {
     unavailable: percentage === undefined && !hasAbsolute,
     tone: capacityTone(normalizedPercentage),
     tooltip,
+    isWeeklyExhausted,
+    isWeeklyCapped,
   };
 }
 
