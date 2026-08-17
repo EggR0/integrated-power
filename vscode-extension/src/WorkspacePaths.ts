@@ -31,18 +31,55 @@ export class WorkspacePollutionError extends Error {
 /**
  * Asserts that targetPath is NOT inside the workspace repository.
  * Throws WorkspacePollutionError if a violation occurs.
+ *
+ * Design: fail-CLOSED. If either argument is missing, the check
+ * cannot guarantee safety, so it refuses rather than silently allowing.
+ *
+ * Platform: case-insensitive comparison on win32 only.
+ * Symlinks: resolved via fs.realpathSync where possible.
  */
 export function assertNotInWorkspace(targetPath: string, repoRoot: string): void {
-  if (!targetPath || !repoRoot) return;
-  const resolvedTarget = path.resolve(targetPath).toLowerCase();
-  const resolvedRepo = path.resolve(repoRoot).toLowerCase();
-  if (resolvedTarget === resolvedRepo || resolvedTarget.startsWith(resolvedRepo + path.sep.toLowerCase())) {
+  if (!targetPath) {
+    throw new WorkspacePollutionError(targetPath ?? "", repoRoot ?? "<unknown>");
+  }
+  if (!repoRoot) {
+    throw new WorkspacePollutionError(targetPath, "<unresolved repoRoot>");
+  }
+
+  // Resolve symlinks where possible; fall back to path.resolve for non-existent targets
+  let resolvedTarget: string;
+  try {
+    resolvedTarget = fs.realpathSync(targetPath);
+  } catch {
+    // Target may not exist yet — resolve the parent directory instead
+    const parent = path.dirname(targetPath);
+    try {
+      resolvedTarget = path.join(fs.realpathSync(parent), path.basename(targetPath));
+    } catch {
+      resolvedTarget = path.resolve(targetPath);
+    }
+  }
+
+  let resolvedRepo: string;
+  try {
+    resolvedRepo = fs.realpathSync(repoRoot);
+  } catch {
+    resolvedRepo = path.resolve(repoRoot);
+  }
+
+  // Case-insensitive only on Windows; Linux/macOS paths are case-sensitive
+  const caseInsensitive = process.platform === "win32";
+  const normTarget = caseInsensitive ? resolvedTarget.toLowerCase() : resolvedTarget;
+  const normRepo = caseInsensitive ? resolvedRepo.toLowerCase() : resolvedRepo;
+
+  if (normTarget === normRepo || normTarget.startsWith(normRepo + path.sep)) {
     throw new WorkspacePollutionError(targetPath, repoRoot);
   }
 }
 
 /**
  * Safely writes a file ensuring it is outside the workspace repository.
+ * Uses fully async I/O to avoid blocking the VS Code extension host event loop.
  */
 export async function safeWriteFile(
   targetPath: string,
@@ -51,15 +88,13 @@ export async function safeWriteFile(
   options?: fs.WriteFileOptions
 ): Promise<void> {
   assertNotInWorkspace(targetPath, repoRoot);
-  const dir = path.dirname(targetPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.promises.writeFile(targetPath, data, options);
 }
 
 /**
  * Safely appends to a file ensuring it is outside the workspace repository.
+ * Uses fully async I/O to avoid blocking the VS Code extension host event loop.
  */
 export async function safeAppendFile(
   targetPath: string,
@@ -68,10 +103,7 @@ export async function safeAppendFile(
   options?: fs.WriteFileOptions
 ): Promise<void> {
   assertNotInWorkspace(targetPath, repoRoot);
-  const dir = path.dirname(targetPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.promises.appendFile(targetPath, data, options);
 }
 
@@ -128,18 +160,24 @@ export class WorkspacePaths {
   }
 
   public createWatchers(onChange: () => void): vscode.Disposable[] {
-    const workspaceStatePath = this.workspaceStoragePath;
-    if (!workspaceStatePath) return [];
+    const globalStatePath = this.workspaceStoragePath;
+    if (!globalStatePath) return [];
 
-    if (!fs.existsSync(workspaceStatePath)) {
-      fs.mkdirSync(workspaceStatePath, { recursive: true });
+    // Defense-in-depth: verify the state path is outside the workspace repo
+    const folder = this.primaryFolder;
+    if (folder) {
+      assertNotInWorkspace(globalStatePath, folder.uri.fsPath);
+    }
+
+    if (!fs.existsSync(globalStatePath)) {
+      fs.mkdirSync(globalStatePath, { recursive: true });
     }
 
     const runWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(workspaceStatePath, RUNS_RELATIVE_PATH),
+      new vscode.RelativePattern(globalStatePath, RUNS_RELATIVE_PATH),
     );
     const tokenWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(workspaceStatePath, TOKEN_REPORT_RELATIVE_PATH),
+      new vscode.RelativePattern(globalStatePath, TOKEN_REPORT_RELATIVE_PATH),
     );
 
     return [
@@ -157,7 +195,16 @@ export class WorkspacePaths {
   private joinGlobalStorage(relativePath: string): vscode.Uri | undefined {
     const basePath = this.workspaceStoragePath;
     if (!basePath) return undefined;
-    const target = path.join(basePath, ...relativePath.split("/"));
+
+    // Reject path traversal segments (WARNING-3: prevent escaping StateRoot)
+    const segments = relativePath.split(/[\/\\]/).filter(Boolean);
+    if (segments.some(s => s === ".." || s === ".")) {
+      throw new Error(`[WorkspacePaths] Invalid relative path (traversal detected): ${relativePath}`);
+    }
+
+    const target = path.join(basePath, ...segments);
+
+    // Defense-in-depth: ensure the resolved path is outside the workspace repo
     const folder = this.primaryFolder;
     if (folder) {
       assertNotInWorkspace(target, folder.uri.fsPath);
