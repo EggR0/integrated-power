@@ -1502,7 +1502,12 @@ export class TokenManager {
 
     const directories = existing
       .filter(({ entry }) => entry.isDirectory())
-      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+      .sort((a, b) => {
+        // Prioritize lexical descending (e.g. "2026" > "2025", "08" > "07", "17" > "16")
+        const nameCmp = b.entry.name.localeCompare(a.entry.name, undefined, { numeric: true });
+        if (nameCmp !== 0) return nameCmp;
+        return b.stat.mtimeMs - a.stat.mtimeMs;
+      });
 
     for (const child of directories) {
       if (files.length >= MAX_SESSION_FILES) {

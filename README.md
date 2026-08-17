@@ -1,7 +1,7 @@
 
 # Integrated Power
 
-현재 릴리스: `0.9.0`
+현재 릴리스: `0.9.1`
 
 Integrated Power는 AI 엔지니어링 및 멀티 에이전트 작업을 위한 **2-Track 에코시스템**을 제공합니다:
 
