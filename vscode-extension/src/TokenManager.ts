@@ -17,7 +17,7 @@ import {
 import { AgyQuotaClient, AgyNotInstalledError, AgyNotAuthenticatedError } from "./AgyQuotaClient";
 import matter from "gray-matter";
 
-const QUOTA_CACHE_TTL_MS = 60_000;
+const QUOTA_CACHE_TTL_MS = 5_000;
 const MAX_SESSION_SCAN_DEPTH = 5;
 const MAX_SESSION_FILES = 80;
 const MAX_SESSION_FILE_BYTES = 256 * 1024;
@@ -1308,9 +1308,15 @@ export class TokenManager {
     >
   > {
     const sessionsDir = path.join(os.homedir(), ".codex", "sessions");
+
+    // 1. If forceRefresh is requested, trigger live refresh first
+    if (forceRefresh) {
+      await this.triggerCodexLiveRefresh();
+    }
+
     let files = await this.walkJsonlFiles(sessionsDir);
 
-    // 1. Fast scan existing session files first
+    // 2. Fast scan existing session files
     for (const file of files) {
       const content = await this.readFileTail(file.fullPath, MAX_SESSION_FILE_BYTES);
       const lines = content.split(/\r?\n/).reverse().slice(0, MAX_SESSION_LINES_PER_FILE);
@@ -1332,8 +1338,8 @@ export class TokenManager {
       }
     }
 
-    // 2. If no quota found and forceRefresh is requested, trigger live refresh
-    if (forceRefresh) {
+    // 3. Fallback: if no quota found and forceRefresh was not originally executed, try live refresh once
+    if (!forceRefresh) {
       await this.triggerCodexLiveRefresh();
       files = await this.walkJsonlFiles(sessionsDir);
       for (const file of files) {
