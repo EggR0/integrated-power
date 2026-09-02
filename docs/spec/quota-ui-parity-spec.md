@@ -201,10 +201,34 @@ CC 배선(buildTokenMetric·calculateCapacitySummary import, K 테이블 중복 
 reuse-gate P3 마커(webview `IPQuota.buildTokenMetric`/`IPQuota.calculateCapacitySummary`,
 CC import + K 재정의 금지). tsc exit 0, CC `vite build` 통과 (9 modules transformed).
 
+### P4 완료 (A8 로컬 LLM 서버 배지 — shared로 단일화)
+
+`shared/quota/local.ts` (순수, DOM/Node 0):
+- `localServerBadge(endpointHealth, loadedModels, programName)` — 3분기 배지(우선순위):
+  ① 모델 로딩 중 → `Active · {모델}`(tone=active), ② 엔드포인트 가동/대기
+  (`ok`|`idle`) → `{프로그램} (Idle)`(tone=idle), ③ 그 외 → `Offline`(tone=offline).
+  IDE 웹뷰 `renderLocalComputeStatus`의 배지 로직을 원본 그대로 추출.
+  반환 `{ text, tone, hasLoadedModels, isServerRunning, programName }`.
+- `localLoadedModelLabel(loadedModels)` — 첫 로딩 모델(없으면 `—`).
+
+배선 (P1/P3 패턴 유지):
+- control-center `src/main.js`: `local-llm-status-tag`를 `localServerBadge`로 통일 —
+  기존 `lcs.status === "online"|"busy"` 체크 제거. **P2 상태에 `status` 필드가
+  없어 항상 "Offline"이던 버그 수정** (실측 `token_status.json` keys:
+  `endpointHealth`/`programName`/`loadedModels`/`gpus`만). tone→클래스(active→online,
+  idle→idle, offline→기본). footer `local-loaded-model`(실제 모델), `local-endpoint-health`
+  (정상/대기/오프라인)도 실제 데이터로 갱신 — HTML의 하드코딩
+  (`qwen3.8:27b`/`127.0.0.1:11434`) placeholder화.
+- IDE 웹뷰는 현재 배지 WIP(`renderLocalComputeStatus`)을 그대로 사용 — 이번 P4는
+  CC를 IDE 기준으로 통일한 것. WIP 커밋 시에도 shared `localServerBadge`로 위임 가능.
+
+검증: `test-quota-core.js` P4 — `localServerBadge` 500 랜덤 === IDE 웹뷰 배지 기준,
+A8 분기(Active/Idle/Offline + tone), `localLoadedModelLabel`, CC 배선(localServerBadge
+import + `lcs.status` 기반 배지 제거 확인). reuse-gate P4 마커. tsc exit 0, CC
+`vite build` 통과 (10 modules).
+
 ### 남은 단계
 
-- P4: A8 로컬 LLM 서버 배지 — control-center에 미커밋된 IDE 배지 로직과
-  동일한 기준(`endpointHealth`+`loadedModels`)으로 P2 후 적용
 - P5: B2 force refresh **클라이언트 배선** — broker는 `?force=1`을 이미 처리(P2).
   control-center의 수동 새로고침 버튼이 `/v1/tokens/status?force=1`을 부르게 배선
 - P6: A10 출처 구분 표시, B5 provider 블록 토글

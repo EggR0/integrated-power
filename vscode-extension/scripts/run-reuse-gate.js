@@ -52,6 +52,10 @@ if (fs.existsSync(ccRoot)) {
     if (!cc.includes("buildTokenMetric")) failures.push("control-center main.js must import buildTokenMetric (A4+A7) from @shared/quota");
     if (!cc.includes("calculateCapacitySummary")) failures.push("control-center main.js must import calculateCapacitySummary (A5) from @shared/quota");
     if (/const K_CAPACITY_RATIOS/.test(cc)) failures.push("control-center main.js redefines K_CAPACITY_RATIOS (single source must stay in shared/quota)");
+    // P4: the local-LLM server badge must come from the shared localServerBadge,
+    // not the old always-false `status === "online"|"busy"` check.
+    if (!cc.includes("localServerBadge")) failures.push("control-center main.js must import localServerBadge (A8) from @shared/quota");
+    if (/\.status === "online"/.test(cc)) failures.push("control-center main.js still keys its badge off a `status` field the P2 state never carries");
   }
 }
 

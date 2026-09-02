@@ -6,6 +6,8 @@ import {
   buildTokenMetric,
   absoluteTokenText,
   calculateCapacitySummary,
+  localServerBadge,
+  localLoadedModelLabel,
 } from "@shared/quota";
 
 const API = "http://127.0.0.1:37241";
@@ -339,12 +341,30 @@ function renderTokens() {
   }
 
   // 6. Local Compute & Multi-GPU
-  const lcs = ts.localComputeStatus;
+  const lcs = ts.localComputeStatus || {};
+  // P4: the server badge now comes from the shared localServerBadge — the same
+  // criterion the IDE webview uses (a loaded model, else an up/idle endpoint,
+  // else offline). This replaces the old check on a `status` field the P2 state
+  // never carries (it was permanently "Offline").
+  const badge = localServerBadge(lcs.endpointHealth, lcs.loadedModels, lcs.programName);
   const localTag = $("local-llm-status-tag");
   if (localTag) {
-    const isOnline = lcs?.status === "online" || lcs?.status === "busy";
-    localTag.textContent = isOnline ? (lcs.status === "busy" ? "Busy" : "Online") : "Offline";
-    localTag.className = `provider-state-tag ${isOnline ? "online" : ""}`;
+    const tagClass = badge.tone === "active" ? "online" : badge.tone === "idle" ? "idle" : "";
+    localTag.textContent = badge.text;
+    localTag.className = `provider-state-tag ${tagClass}`.trim();
+    localTag.title = badge.text;
+  }
+  // Footer: reflect the actually-loaded model and endpoint health (the markup
+  // previously hard-coded "qwen3.8:27b" / "정상 (127.0.0.1:11434)").
+  const loadedModelEl = $("local-loaded-model");
+  if (loadedModelEl) loadedModelEl.textContent = localLoadedModelLabel(lcs.loadedModels);
+  const endpointEl = $("local-endpoint-health");
+  if (endpointEl) {
+    const health = typeof lcs.endpointHealth === "string" ? lcs.endpointHealth : "offline";
+    const running = health === "ok" || health === "idle";
+    endpointEl.textContent = running
+      ? `${health === "ok" ? "정상" : "대기"} (${lcs.programName || "server"})`
+      : "오프라인";
   }
 
   const gpuContainer = $("gpu-status-container");

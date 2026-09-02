@@ -38,6 +38,8 @@ var IPQuota = (() => {
     formatRefreshCountdown: () => formatRefreshCountdown,
     formatResetTime: () => formatResetTime,
     formatTokenCount: () => formatTokenCount,
+    localLoadedModelLabel: () => localLoadedModelLabel,
+    localServerBadge: () => localServerBadge,
     mergeQuotaSettings: () => mergeQuotaSettings,
     toFiniteNumber: () => toFiniteNumber
   });
@@ -142,6 +144,44 @@ var IPQuota = (() => {
       return date.toLocaleString(void 0, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
     }
     return date.toLocaleTimeString(void 0, { hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+
+  // shared/quota/local.ts
+  function localServerBadge(endpointHealth, loadedModels, programName) {
+    const models = Array.isArray(loadedModels) ? loadedModels : [];
+    const hasLoadedModels = models.length > 0;
+    const health = typeof endpointHealth === "string" ? endpointHealth : "offline";
+    const isServerRunning = health === "ok" || health === "idle";
+    const program = typeof programName === "string" && programName.trim() ? programName : "Server";
+    if (hasLoadedModels) {
+      return {
+        text: `Active \xB7 ${models[0]}`,
+        tone: "active",
+        hasLoadedModels,
+        isServerRunning,
+        programName: program
+      };
+    }
+    if (isServerRunning) {
+      return {
+        text: `${program} (Idle)`,
+        tone: "idle",
+        hasLoadedModels,
+        isServerRunning,
+        programName: program
+      };
+    }
+    return {
+      text: "Offline",
+      tone: "offline",
+      hasLoadedModels,
+      isServerRunning,
+      programName: program
+    };
+  }
+  function localLoadedModelLabel(loadedModels) {
+    const models = Array.isArray(loadedModels) ? loadedModels : [];
+    return models.length > 0 ? String(models[0]) : "\u2014";
   }
 
   // shared/quota/metric.ts

@@ -310,6 +310,63 @@ test("absoluteTokenText: left/max, estimated fallback, left-only, none (A4)", ()
 });
 
 // ---------------------------------------------------------------------------
+console.log("quota-core: P4 local-server badge parity (localServerBadge)");
+
+// The IDE webview's uncommitted local-compute badge logic (renderLocalComputeStatus)
+// is the reference. We re-derive it inline and check the shared module agrees on
+// every branch: loaded model -> Active·{model}; up/idle -> {program} (Idle); else Offline.
+function ideWipBadge(endpointHealth, loadedModels, programName) {
+  const health = endpointHealth || "offline";
+  const models = Array.isArray(loadedModels) ? loadedModels : [];
+  const hasLoadedModels = models.length > 0;
+  const isServerRunning = health === "ok" || health === "idle";
+  let text;
+  if (hasLoadedModels) text = `Active · ${models[0]}`;
+  else if (isServerRunning) text = `${programName || "Server"} (Idle)`;
+  else text = "Offline";
+  return { text, hasLoadedModels, isServerRunning };
+}
+
+test("localServerBadge matches the IDE webview badge across random inputs", () => {
+  const healths = ["ok", "idle", "offline", "error", "busy", undefined];
+  const modelLists = [[], ["qwen3.8:27b"], ["gpt-oss-20b", "glm-4.5-air"], undefined, null];
+  const programs = ["vLLM", "Offline", "Server", "", "Ollama", undefined];
+  for (let i = 0; i < 500; i++) {
+    const h = healths[Math.floor(Math.random() * healths.length)];
+    const m = modelLists[Math.floor(Math.random() * modelLists.length)];
+    const p = programs[Math.floor(Math.random() * programs.length)];
+    const a = ideWipBadge(h, m, p);
+    const b = shared.localServerBadge(h, m, p);
+    assert.strictEqual(b.text, a.text, `text mismatch at h=${JSON.stringify(h)} m=${JSON.stringify(m)} p=${JSON.stringify(p)}`);
+    assert.strictEqual(b.hasLoadedModels, a.hasLoadedModels, `hasLoadedModels mismatch at h=${JSON.stringify(h)} m=${JSON.stringify(m)}`);
+    assert.strictEqual(b.isServerRunning, a.isServerRunning, `isServerRunning mismatch at h=${JSON.stringify(h)}`);
+  }
+});
+
+test("localServerBadge branch coverage (A8: Active / Idle / Offline + tone)", () => {
+  // Active: a loaded model wins even when the endpoint is offline.
+  assert.strictEqual(shared.localServerBadge("offline", ["qwen3.8:27b"], "vLLM").text, "Active · qwen3.8:27b");
+  assert.strictEqual(shared.localServerBadge("ok", ["a", "b"], "vLLM").text, "Active · a");
+  assert.strictEqual(shared.localServerBadge("ok", ["a", "b"], "vLLM").tone, "active");
+  // Idle: server up, no model loaded.
+  assert.strictEqual(shared.localServerBadge("idle", [], "vLLM").text, "vLLM (Idle)");
+  assert.strictEqual(shared.localServerBadge("ok", [], "vLLM").text, "vLLM (Idle)");
+  assert.strictEqual(shared.localServerBadge("idle", undefined, undefined).text, "Server (Idle)");
+  assert.strictEqual(shared.localServerBadge("ok", [], "vLLM").tone, "idle");
+  // Offline: down endpoint, no model.
+  assert.strictEqual(shared.localServerBadge("offline", [], "Offline").text, "Offline");
+  assert.strictEqual(shared.localServerBadge(undefined, undefined, undefined).text, "Offline");
+  assert.strictEqual(shared.localServerBadge("error", [], "vLLM").text, "Offline");
+  assert.strictEqual(shared.localServerBadge("offline", [], "Offline").tone, "offline");
+});
+
+test("localLoadedModelLabel: first model or placeholder", () => {
+  assert.strictEqual(shared.localLoadedModelLabel(["qwen3.8:27b", "glm"]), "qwen3.8:27b");
+  assert.strictEqual(shared.localLoadedModelLabel([]), "—");
+  assert.strictEqual(shared.localLoadedModelLabel(undefined), "—");
+});
+
+// ---------------------------------------------------------------------------
 console.log("quota-core: control-center wiring");
 test("control-center imports the shared quota source (no duplicated K logic)", () => {
   const cc = fs.readFileSync(ccMain, "utf8");
@@ -320,6 +377,10 @@ test("control-center imports the shared quota source (no duplicated K logic)", (
   assert.ok(cc.includes("calculateCapacitySummary"), "control-center must import calculateCapacitySummary (A5)");
   // The old per-program K table must be gone from the CC (single source of truth).
   assert.ok(!/const K_CAPACITY_RATIOS/.test(cc), "duplicate K_CAPACITY_RATIOS remains in control-center");
+  // P4: the local-LLM server badge must come from the shared localServerBadge,
+  // not the old (always-false) lcs.status === "online"|"busy" check.
+  assert.ok(cc.includes("localServerBadge"), "control-center must import localServerBadge (A8)");
+  assert.ok(!/lcs\??\.status === "online"/.test(cc), "control-center still keys its badge off lcs.status (always-false)");
 });
 
 if (failures) {
