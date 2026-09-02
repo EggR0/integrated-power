@@ -79,7 +79,7 @@ export class DeferredGuiAdapter extends DiscoveryAdapter {
       stateLabel: "설치X",
       mode: this.bridgeMode,
       capabilities: ["leader", "executor", "remote-mcp", "streaming"],
-      reason: `Waiting for an official ${this.bridgeHint} plugin/MCP submission bridge; linked conversations remain private.`,
+      reason: `${this.bridgeHint} 공식 플러그인/MCP 제출 브릿지가 준비될 때까지 대기 중입니다. 연결된 대화는 비공개로 유지됩니다.`,
     };
   }
 }
@@ -162,7 +162,7 @@ export class A2APeerAdapter implements AgentAdapter {
         mode: isLoopbackEndpoint(this.endpoint) ? "local" : "api",
         capabilities: ["executor", "remote-mcp", "streaming", "cancel"],
         endpoint: this.endpoint,
-        reason: `Official A2A SDK peer unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        reason: `공식 A2A SDK peer 사용 불가: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
@@ -274,10 +274,10 @@ export class OpenAiCompatibleLocalAdapter implements AgentAdapter {
 
   public async discover(): Promise<AgentCapability> {
     if (process.platform !== "win32") {
-      return { provider: this.provider, label: "Local LLM (legacy policy adapter)", available: false, stateKind: "not_installed", stateLabel: "설치X", mode: "local", capabilities: ["executor", "local-mcp", "streaming"], endpoint: this.endpoint, reason: "The Windows legacy selector/runner is the current first-wave authority." };
+      return { provider: this.provider, label: "Local LLM (legacy policy adapter)", available: false, stateKind: "not_installed", stateLabel: "설치X", mode: "local", capabilities: ["executor", "local-mcp", "streaming"], endpoint: this.endpoint, reason: "현재 1차 권한은 Windows 레거시 선택기/러너입니다.", };
     }
     try {
-      if (!legacyLocalRunnerAvailable()) throw new Error("Legacy selector/runner scripts are not installed.");
+      if (!legacyLocalRunnerAvailable()) throw new Error("레거시 선택기/러너 스크립트가 설치되어 있지 않습니다.");
       const scriptsRoot = process.env.INTEGRATED_POWER_LOCAL_SCRIPTS || "legacy-vsix-scripts";
       return {
         provider: this.provider,
@@ -289,7 +289,7 @@ export class OpenAiCompatibleLocalAdapter implements AgentAdapter {
         capabilities: ["executor", "local-mcp", "streaming"],
         model: process.env.INTEGRATED_POWER_LOCAL_MODEL || "qwen3.8:27b",
         endpoint: this.endpoint,
-        reason: `Selection is delegated to Select-LocalLLMModel.ps1 (${scriptsRoot}).`,
+        reason: `선택은 Select-LocalLLMModel.ps1(${scriptsRoot})에 위임됩니다.`,
       };
     } catch (error) {
       return { provider: this.provider, label: "Local LLM (legacy selector/runner)", available: false, stateKind: "not_installed", stateLabel: "설치X", mode: "local", capabilities: ["executor", "local-mcp", "streaming"], endpoint: this.endpoint, reason: error instanceof Error ? error.message : String(error) };

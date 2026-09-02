@@ -44,8 +44,8 @@ export function inspectHostIntegration(provider: ProviderId): HostIntegrationSta
         stateLabel: "설치X",
         mode: "gui",
         capabilities: ["leader", "remote-mcp", "streaming"],
-        reason: "Remote Cowork control is disabled until an official broker bridge is available; no GUI automation or credential reuse is attempted.",
-        setup: "Use Claude Desktop local MCP or a future official Cowork bridge.",
+        reason: "공식 브로커 브릿지가 제공될 때까지 Cowork 원격 제어는 비활성화됩니다. GUI 자동화나 자격증명 재사용은 시도하지 않습니다.",
+        setup: "Claude Desktop 로컬 MCP 또는 향후 공식 Cowork 브릿지를 사용하세요.",
       };
     default:
       throw new Error(`Unsupported host integration: ${provider}`);
@@ -165,7 +165,7 @@ function inspectClaudeDesktop(): HostIntegrationStatus {
       mode: "gui",
       capabilities: ["leader", "remote-mcp", "streaming"],
       endpoint: remoteEndpoint,
-      setup: "Add the HTTPS MCP endpoint under Claude Desktop Settings > Connectors.",
+      setup: "Claude Desktop 설정 > Connectors에 HTTPS MCP 엔드포인트를 추가하세요.",
     };
   }
 
