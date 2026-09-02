@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Integrated POWER — 프로그램 실행 구조</title>
+<style>
+  :root {
+    --bg: #020617; --card: #0f172a; --border: #1e293b;
+    --text: #e2e8f0; --muted: #94a3b8; --faint: #64748b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+    padding: 32px 40px 48px;
+  }
+  .header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .pulse { width: 10px; height: 10px; border-radius: 50%; background: #34d399;
+    animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+  .subtitle { color: var(--muted); font-size: 12px; margin-bottom: 22px; }
+  .diagram-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; margin-bottom: 22px;
+  }
+  .diagram-card svg { width: 100%; height: auto; display: block; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .card-dot.cyan { background: #22d3ee; } .card-dot.violet { background: #a78bfa; } .card-dot.emerald { background: #34d399; }
+  .card h3 { font-size: 13px; font-weight: 700; }
+  .card ul { list-style: none; }
+  .card li { font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .footer { margin-top: 22px; font-size: 10px; color: var(--faint); text-align: center; }
+  text { font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="pulse"></div>
+  <h1>Integrated POWER — 프로그램 실행 구조</h1>
+</div>
+<div class="subtitle">broker는 <b style="color:#34d399">단일 코어</b>(공통 구현) — 실행 호스트는 <b style="color:#22d3ee">두 개</b>: VSIX(in-process) / Tauri standalone launcher</div>
+
+<div class="diagram-card">
+<svg viewBox="0 0 1280 830" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#22d3ee"/>
+    </marker>
+    <marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#34d399"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="830" fill="#020617"/>
+  <rect width="1280" height="830" fill="url(#grid)"/>
+
+  <!-- ═══ arrows (behind boxes) ═══ -->
+  <!-- A1: BrokerController (in-process) → HTTP -->
+  <path d="M 230 175 C 230 300, 380 330, 500 385" fill="none" stroke="#34d399" stroke-width="1.6" marker-end="url(#arrow-emerald)"/>
+  <text x="248" y="315" font-size="9" fill="#34d399">in-process 기동 (activate 시)</text>
+  <!-- A2: broker-server.js → HTTP (attach or start) -->
+  <path d="M 1050 175 C 1050 300, 990 345, 830 385" fill="none" stroke="#34d399" stroke-width="1.6" marker-end="url(#arrow-emerald)"/>
+  <text x="948" y="290" font-size="9" fill="#34d399">probe 37241 → 이미 기동이면 attach</text>
+  <text x="985" y="302" font-size="9" fill="#34d399">아니면 독립 프로세스로 기동</text>
+  <!-- A3: webview → HTTP -->
+  <path d="M 230 245 C 230 350, 300 420, 370 418" fill="none" stroke="#22d3ee" stroke-width="1.6" marker-end="url(#arrow-cyan)"/>
+  <text x="150" y="385" font-size="9" fill="#22d3ee">GET /v1/tokens/status</text>
+  <text x="150" y="397" font-size="9" fill="#22d3ee">(?force=1 — P5)</text>
+  <!-- A4: Tauri window → HTTP -->
+  <path d="M 1050 245 C 1050 340, 985 405, 910 412" fill="none" stroke="#22d3ee" stroke-width="1.6" marker-end="url(#arrow-cyan)"/>
+  <text x="1010" y="380" font-size="9" fill="#22d3ee">poll + ?force=1</text>
+  <!-- A5: HTTP → broker -->
+  <path d="M 510 430 L 510 455" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <!-- A6: broker → state (through the 650-670 gap) -->
+  <path d="M 650 482 L 660 482 L 660 650" fill="none" stroke="#a78bfa" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="668" y="620" font-size="9" fill="#a78bfa">state 기록 (host 무관 공유)</text>
+  <!-- A7: scanner → broker -->
+  <path d="M 670 478 L 650 478" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <!-- A8: broker → localRunner -->
+  <path d="M 510 510 L 510 530" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <!-- A9: tokenScanner → provider CLI -->
+  <path d="M 670 468 C 500 452, 390 425, 290 407" fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="355" y="428" font-size="9" fill="#94a3b8">quota 스캔 (TTL 5s)</text>
+  <!-- A10: localRunner → local LLM -->
+  <path d="M 370 551 C 330 545, 320 512, 290 495" fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <!-- A11: mcp → ChatGPT/Claude -->
+  <path d="M 910 551 C 965 545, 985 490, 1000 458" fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <!-- A12: HTTP → mcp (same port, dashed) -->
+  <path d="M 900 430 C 935 455, 928 500, 895 530" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3,4" marker-end="url(#arrow)"/>
+
+  <!-- ═══ HOST 1: VSIX ═══ -->
+  <rect x="40" y="20" width="380" height="250" rx="12" fill="none" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="8,4"/>
+  <text x="60" y="44" font-size="12" font-weight="700" fill="#fbbf24">호스트 1 — VSIX (VS Code 확장)</text>
+  <!-- extension.ts -->
+  <rect x="60" y="60" width="340" height="45" rx="6" fill="#0f172a"/>
+  <rect x="60" y="60" width="340" height="45" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="230" y="80" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">extension.ts — activate()</text>
+  <text x="230" y="96" font-size="9" fill="#94a3b8" text-anchor="middle">BrokerController 등록 · 커맨드 바인딩</text>
+  <!-- BrokerController -->
+  <rect x="60" y="130" width="340" height="45" rx="6" fill="#0f172a"/>
+  <rect x="60" y="130" width="340" height="45" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="230" y="150" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">BrokerController</text>
+  <text x="230" y="166" font-size="9" fill="#94a3b8" text-anchor="middle">동일 broker 코드를 확장 프로세스 안에서 실행</text>
+  <!-- webview -->
+  <rect x="60" y="200" width="340" height="45" rx="6" fill="#0f172a"/>
+  <rect x="60" y="200" width="340" height="45" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="230" y="220" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">webview (dashboard)</text>
+  <text x="230" y="236" font-size="9" fill="#94a3b8" text-anchor="middle">quota-core.js IIFE (window.IPQuota)</text>
+
+  <!-- ═══ HOST 2: Tauri control-center ═══ -->
+  <rect x="860" y="20" width="380" height="250" rx="12" fill="none" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="8,4"/>
+  <text x="880" y="44" font-size="12" font-weight="700" fill="#fbbf24">호스트 2 — Control-center (Tauri 데스크톱)</text>
+  <!-- tauri conf -->
+  <rect x="880" y="60" width="340" height="45" rx="6" fill="#0f172a"/>
+  <rect x="880" y="60" width="340" height="45" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="1050" y="80" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">tauri.conf.json</text>
+  <text x="1050" y="96" font-size="9" fill="#94a3b8" text-anchor="middle">beforeDev/BuildCommand → compile + prepare:broker + dev</text>
+  <!-- broker-server.js -->
+  <rect x="880" y="130" width="340" height="45" rx="6" fill="#0f172a"/>
+  <rect x="880" y="130" width="340" height="45" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="1050" y="150" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">broker-server.js (standalone launcher)</text>
+  <text x="1050" y="166" font-size="9" fill="#94a3b8" text-anchor="middle">broker-out/ (prepare:broker 복사) 또는 workspace out</text>
+  <!-- tauri window -->
+  <rect x="880" y="200" width="340" height="45" rx="6" fill="#0f172a"/>
+  <rect x="880" y="200" width="340" height="45" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="1050" y="220" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">Tauri window (vite 번들)</text>
+  <text x="1050" y="236" font-size="9" fill="#94a3b8" text-anchor="middle">src/main.js — fetch http://127.0.0.1:37241</text>
+
+  <!-- ═══ BROKER CORE ═══ -->
+  <rect x="340" y="340" width="600" height="250" rx="12" fill="rgba(6,78,59,0.12)" stroke="#34d399" stroke-width="1.4" stroke-dasharray="8,4"/>
+  <text x="360" y="366" font-size="12" font-weight="700" fill="#34d399">broker core — 단일 구현 (vscode-extension/src/broker/*, 두 호스트가 공유)</text>
+  <!-- HTTP -->
+  <rect x="370" y="385" width="540" height="45" rx="6" fill="#0f172a"/>
+  <rect x="370" y="385" width="540" height="45" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="640" y="405" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">HTTP server — 127.0.0.1:37241</text>
+  <text x="640" y="421" font-size="9" fill="#94a3b8" text-anchor="middle">/v1/tokens/status · /v1/tasks · /v1/integrations/… · /mcp (SSE)</text>
+  <!-- broker -->
+  <rect x="370" y="455" width="280" height="55" rx="6" fill="#0f172a"/>
+  <rect x="370" y="455" width="280" height="55" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="510" y="479" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">IntegratedPowerBroker</text>
+  <text x="510" y="497" font-size="9" fill="#94a3b8" text-anchor="middle">+ event ledger (events.enc.jsonl)</text>
+  <!-- tokenScanner -->
+  <rect x="670" y="455" width="240" height="55" rx="6" fill="#0f172a"/>
+  <rect x="670" y="455" width="240" height="55" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="790" y="479" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">tokenScanner</text>
+  <text x="790" y="497" font-size="9" fill="#94a3b8" text-anchor="middle">CLI probe + 5s TTL · force 우회 (P2)</text>
+  <!-- localRunner -->
+  <rect x="370" y="530" width="280" height="42" rx="6" fill="#0f172a"/>
+  <rect x="370" y="530" width="280" height="42" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="510" y="548" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">localRunner</text>
+  <text x="510" y="563" font-size="9" fill="#94a3b8" text-anchor="middle">로컬 LLM job 실행 (Select-LocalLLMModel.ps1…)</text>
+  <!-- mcp -->
+  <rect x="670" y="530" width="240" height="42" rx="6" fill="#0f172a"/>
+  <rect x="670" y="530" width="240" height="42" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="790" y="548" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">mcp-server.js</text>
+  <text x="790" y="563" font-size="9" fill="#94a3b8" text-anchor="middle">MCP (SSE, 같은 포트 …/mcp)</text>
+
+  <!-- ═══ STATE ═══ -->
+  <rect x="420" y="650" width="440" height="70" rx="6" fill="#0f172a"/>
+  <rect x="420" y="650" width="440" height="70" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="640" y="676" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">공유 상태 — %LOCALAPPDATA%\IntegratedPower\state</text>
+  <text x="640" y="695" font-size="9" fill="#c4b5fd" text-anchor="middle">token_status.json (P2 원본 passthrough) · events.enc.jsonl</text>
+  <text x="640" y="710" font-size="9" fill="#94a3b8" text-anchor="middle">두 호스트가 같은 root를 쓰므로 VSIX가 스캔해도 CC에 그대로 보임</text>
+
+  <!-- ═══ EXTERNALS ═══ -->
+  <rect x="40" y="380" width="250" height="55" rx="6" fill="#0f172a"/>
+  <rect x="40" y="380" width="250" height="55" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="165" y="404" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">provider CLI (codex 등)</text>
+  <text x="165" y="422" font-size="9" fill="#94a3b8" text-anchor="middle">quotaPools source / confidence 원본</text>
+
+  <rect x="40" y="460" width="250" height="55" rx="6" fill="#0f172a"/>
+  <rect x="40" y="460" width="250" height="55" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="165" y="484" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">로컬 LLM 서버</text>
+  <text x="165" y="502" font-size="9" fill="#94a3b8" text-anchor="middle">Ollama 11434 (기본) / vLLM 등</text>
+
+  <rect x="1000" y="410" width="240" height="55" rx="6" fill="#0f172a"/>
+  <rect x="1000" y="410" width="240" height="55" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="1120" y="434" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">ChatGPT / Claude Desktop</text>
+  <text x="1120" y="452" font-size="9" fill="#94a3b8" text-anchor="middle">맞춤형 MCP SSE 등록</text>
+
+  <!-- ═══ LEGEND ═══ -->
+  <rect x="40" y="760" width="1200" height="44" rx="8" fill="rgba(15,23,42,0.7)" stroke="#1e293b"/>
+  <rect x="60" y="778" width="26" height="10" rx="3" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.2"/>
+  <text x="94" y="787" font-size="9" fill="#94a3b8">호스트 / UI</text>
+  <rect x="190" y="778" width="26" height="10" rx="3" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.2"/>
+  <text x="224" y="787" font-size="9" fill="#94a3b8">broker core</text>
+  <rect x="330" y="778" width="26" height="10" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.2"/>
+  <text x="364" y="787" font-size="9" fill="#94a3b8">공유 상태</text>
+  <rect x="450" y="778" width="26" height="10" rx="3" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="484" y="787" font-size="9" fill="#94a3b8">외부 시스템</text>
+  <line x1="580" y1="783" x2="616" y2="783" stroke="#34d399" stroke-width="1.6"/>
+  <text x="624" y="787" font-size="9" fill="#94a3b8">broker 기동</text>
+  <line x1="710" y1="783" x2="746" y2="783" stroke="#22d3ee" stroke-width="1.6"/>
+  <text x="754" y="787" font-size="9" fill="#94a3b8">HTTP 호출 (UI → broker)</text>
+  <line x1="900" y1="783" x2="936" y2="783" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5,4"/>
+  <text x="944" y="787" font-size="9" fill="#94a3b8">외부 프로세스 / 엔드포인트</text>
+</svg>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-header"><div class="card-dot emerald"></div><h3>호스트 2, 코어 1</h3></div>
+    <ul>
+      <li>• VSIX: activate 시 in-process로 같은 코드를 실행</li>
+      <li>• Tauri: prepare:broker → broker-out/ 복사 후 독립 프로세스</li>
+      <li>• broker-server.js는 37241 probe → 이미 올라가 있으면 attach (broker는 항상 1개)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-dot violet"></div><h3>공유 상태</h3></div>
+    <ul>
+      <li>• %LOCALAPPDATA%\IntegratedPower\state — canonical root</li>
+      <li>• token_status.json · events.enc.jsonl</li>
+      <li>• 호스트가 whichever든 같은 파일을 읽으므로 UI가 동일한 데이터를 보임</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-dot cyan"></div><h3>UI는 모두 HTTP 클라이언트</h3></div>
+    <ul>
+      <li>• webview와 Tauri window는 :37241 API만 호출</li>
+      <li>• P5: 수동 새로고침은 ?force=1 → tokenScanner 5s TTL 우회</li>
+      <li>• MCP SSE (…/mcp)로 ChatGPT/Claude 연결</li>
+    </ul>
+  </div>
+</div>
+
+<div class="footer">Integrated POWER · 2026-09-02 · broker 19 modules · port 37241 (INTEGRATED_POWER_BROKER_PORT)</div>
+
+</body>
+</html>

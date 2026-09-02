@@ -20,29 +20,60 @@ export interface AutoStartStatus {
  * Resolves the preferred executable or launcher script to run on boot.
  * The caller (control-center settings) may override with a customTarget, e.g.
  * a freshly built Tauri binary.
+ *
+ * Order matters for distribution:
+ *   1. A running Tauri app registers ITSELF (process.execPath) — the
+ *      installed binary (release) or tauri:dev binary (dev), whichever is
+ *      live. This is the only target that is guaranteed to exist on this
+ *      machine, so it wins over every hardcoded candidate.
+ *   2. Known Tauri install locations — the default NSIS path
+ *      (%LOCALAPPDATA%\Programs\<productName>\) and the tauri:dev output.
+ *      The binary name comes from Cargo.toml (integrated-power-control-center),
+ *      NOT the productName — the earlier candidate list assumed
+ *      "IntegratedPower.exe" in paths that do not exist, so a packaged
+ *      install fell through to registering bare "node" at boot.
+ *   3. Dev layout: node + broker-server.js launcher.
  */
 export function resolveAutoStartTarget(): string {
+  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+
+  // 1. Running inside a Tauri build? Register the actual binary. The release
+  //    exe and the tauri:dev exe share the Cargo package name, so matching on
+  //    the basename covers both without hardcoding an install directory.
+  if (process.platform === "win32") {
+    const exeBase = path.basename(process.execPath).toLowerCase();
+    if (exeBase.endsWith(".exe") && exeBase.startsWith("integrated-power-control-center")) {
+      return `"${process.execPath}"`;
+    }
+  }
+  if (process.platform === "darwin" || process.platform === "linux") {
+    const exeBase = path.basename(process.execPath).toLowerCase();
+    if (exeBase.includes("integrated-power-control-center")) {
+      return process.execPath;
+    }
+  }
+
   if (process.platform !== "win32") {
     return process.execPath;
   }
 
-  // 1. If running inside a packaged Tauri / desktop app
-  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+  // 2. Known install locations (productName has a space — it must stay
+  //    quoted when the registry value is written).
   const candidates = [
     process.env.INTEGRATED_POWER_EXE,
-    path.join(localAppData, "IntegratedPower", "IntegratedPower.exe"),
-    path.join(localAppData, "Programs", "IntegratedPower", "IntegratedPower.exe"),
-    path.join(process.cwd(), "control-center", "src-tauri", "target", "release", "integrated-power.exe"),
-    path.join(process.cwd(), "src-tauri", "target", "release", "integrated-power.exe"),
+    path.join(localAppData, "Programs", "Integrated Power Control Center", "integrated-power-control-center.exe"),
+    path.join(localAppData, "integrated-power-control-center", "integrated-power-control-center.exe"),
+    path.join(process.cwd(), "control-center", "src-tauri", "target", "release", "integrated-power-control-center.exe"),
+    path.join(process.cwd(), "src-tauri", "target", "release", "integrated-power-control-center.exe"),
   ].filter(Boolean) as string[];
 
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
-      return candidate;
+      return `"${candidate}"`;
     }
   }
 
-  // 2. Fallback to node launcher for broker-server
+  // 3. Fallback to node launcher for broker-server
   const brokerServerPath = path.resolve(__dirname, "..", "..", "control-center", "broker-server.js");
   if (fs.existsSync(brokerServerPath)) {
     return `"${process.execPath}" "${brokerServerPath}"`;
