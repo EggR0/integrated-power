@@ -473,7 +473,16 @@ export class DashboardController implements vscode.Disposable {
       codexWeeklyMax: current.codexWeeklyMax || previous.codexWeeklyMax,
 
       claudeDirectUsage: current.claudeDirectUsage ?? previous.claudeDirectUsage,
-      localComputeStatus: current.localComputeStatus ?? previous.localComputeStatus,
+      localComputeStatus: {
+        endpointHealth: current.localComputeStatus?.endpointHealth ?? previous.localComputeStatus?.endpointHealth ?? "offline",
+        programName: current.localComputeStatus?.programName ?? previous.localComputeStatus?.programName ?? "Offline",
+        loadedModels: (current.localComputeStatus?.loadedModels && current.localComputeStatus.loadedModels.length > 0)
+          ? current.localComputeStatus.loadedModels
+          : previous.localComputeStatus?.loadedModels || [],
+        gpus: (current.localComputeStatus?.gpus && current.localComputeStatus.gpus.length > 0)
+          ? current.localComputeStatus.gpus
+          : previous.localComputeStatus?.gpus || [],
+      },
       codexStatus: (current.codexStatus && current.codexStatus !== "offline") ? current.codexStatus : previous.codexStatus || "offline",
       llmStatus: (current.llmStatus && current.llmStatus !== "offline") ? current.llmStatus : previous.llmStatus || "offline",
       recommendedTaskWeight: (current.recommendedTaskWeight && current.recommendedTaskWeight !== "unknown")

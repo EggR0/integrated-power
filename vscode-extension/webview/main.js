@@ -590,8 +590,23 @@ function renderLocalComputeStatus(tokenStatus) {
 
   const status = tokenStatus || {};
   const localComputeStatus = status.localComputeStatus || {};
-  const localProgramName = stringValue(localComputeStatus.programName) || "Offline";
+  const endpointHealth = localComputeStatus.endpointHealth || "offline";
+  const loadedModels = Array.isArray(localComputeStatus.loadedModels) ? localComputeStatus.loadedModels : [];
+  const hasLoadedModels = loadedModels.length > 0;
+  const isServerRunning = endpointHealth === "ok" || endpointHealth === "idle";
+
+  let serverBadgeText = "Offline";
+  let serverBadgeClass = "status-error";
+  if (hasLoadedModels) {
+    serverBadgeText = `Active · ${loadedModels[0]}`;
+    serverBadgeClass = "status-ok";
+  } else if (isServerRunning) {
+    serverBadgeText = `${localComputeStatus.programName || "Server"} (Idle)`;
+    serverBadgeClass = "status-neutral";
+  }
+
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
+  const gpus = Array.isArray(localComputeStatus.gpus) ? localComputeStatus.gpus : [];
 
   return `
     <article class="panel token-panel local-compute-panel">
@@ -600,31 +615,42 @@ function renderLocalComputeStatus(tokenStatus) {
           <p class="eyebrow">Local Compute</p>
           <h2>Local LLM</h2>
         </div>
-        <span class="status-pill ${statusClass(status.llmStatus || localProgramName)}">${escapeHtml(localProgramName)}</span>
+        <span class="status-pill ${serverBadgeClass}">${escapeHtml(serverBadgeText)}</span>
       </div>
 
       <details class="token-section" data-section="localLlm" ${sectionStates.localLlm ? "open" : ""}>
         <summary>
           <span class="section-title">
-            <span class="text-full">GPU Capacity</span>
-            <span class="text-medium">GPU Capacity</span>
-            <span class="text-short">GPU</span>
+            <span class="text-full">GPU Capacity (${gpus.length ? `${gpus.length} GPUs` : "Detecting"})</span>
+            <span class="text-medium">GPU Capacity (${gpus.length})</span>
+            <span class="text-short">GPU (${gpus.length})</span>
           </span>
-          <span class="status-pill ${statusClass(status.llmStatus || localProgramName)}">
-            <span class="text-full">${escapeHtml(status.llmStatus || "Unknown")}</span>
-            <span class="text-medium">${escapeHtml(status.llmStatus || "Unknown")}</span>
-            <span class="text-short">${escapeHtml((status.llmStatus || "Unknown").replace(/\s*\(.*?\)/, ""))}</span>
+          <span class="status-pill ${serverBadgeClass}">
+            <span class="text-full">${escapeHtml(serverBadgeText)}</span>
+            <span class="text-medium">${escapeHtml(serverBadgeText)}</span>
+            <span class="text-short">${escapeHtml(hasLoadedModels ? "Active" : isServerRunning ? "Ready" : "Offline")}</span>
           </span>
         </summary>
         <div class="capacity-groups">
           ${
-            localComputeStatus.gpus?.length
-              ? localComputeStatus.gpus.map((gpu) => {
+            gpus.length
+              ? gpus.map((gpu) => {
                   const powerText = gpu.powerDrawW && gpu.powerLimitW ? `${gpu.powerDrawW}W / ${gpu.powerLimitW}W` : "";
                   const vramUsedGb = (Number(gpu.vramUsedMb || 0) / 1024).toFixed(1);
                   const vramTotalGb = (Number(gpu.vramTotalMb || 0) / 1024).toFixed(0);
                   const vramText = Number(gpu.vramTotalMb || 0) > 0 ? `${vramUsedGb}GB / ${vramTotalGb}GB` : "";
-                  return renderCapacityGroup(`GPU ${gpu.id}: ${gpu.name}`, [
+
+                  const isGpuActive = Number(gpu.vramUsedMb || 0) >= 1000;
+                  let gpuTag = "";
+                  if (hasLoadedModels && isGpuActive) {
+                    gpuTag = ` · [${loadedModels[0]}]`;
+                  } else if (isGpuActive) {
+                    gpuTag = ` · [VRAM Active]`;
+                  } else {
+                    gpuTag = ` · [Idle]`;
+                  }
+
+                  return renderCapacityGroup(`GPU ${gpu.id}: ${gpu.name}${gpuTag}`, [
                     buildHardwareMetric(
                       "GPU",
                       gpu.utilizationPercentage,
@@ -641,7 +667,7 @@ function renderLocalComputeStatus(tokenStatus) {
                     ),
                   ]);
                 }).join("")
-              : renderCapacityGroup("Offline", [
+              : renderCapacityGroup("GPU Offline", [
                   buildHardwareMetric("GPU", null, 100, "%"),
                   buildHardwareMetric("VRAM", null, null, "MB"),
                 ])
@@ -653,22 +679,13 @@ function renderLocalComputeStatus(tokenStatus) {
 }
 
 function renderCapacitySummary(status) {
-  const entries = [
-    capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
-    capacitySummaryEntry("Gemini Weekly", "Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
-    capacitySummaryEntry("Opus 5Hours", "Opus 5Hours", "Opus 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax),
-    capacitySummaryEntry("Opus Weekly", "Opus Weekly", "Opus W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
-    capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax),
-    capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax),
-  ].filter(Boolean);
-
-  if (!entries.length) {
+  // A5 Best/Lowest selection lives in shared/quota (window.IPQuota) — the
+  // same source the control-center consumes. Only the DOM stays here.
+  const summary = IPQuota.calculateCapacitySummary(status);
+  if (!summary) {
     return "";
   }
-
-  const sorted = entries.slice().sort((a, b) => a.percentage - b.percentage);
-  const lowest = sorted[0];
-  const strongest = sorted[sorted.length - 1];
+  const { lowest, strongest } = summary;
 
   return `
     <div class="capacity-summary" title="${escapeAttr("Higher remaining quota is better. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.")}">

@@ -1,5 +1,6 @@
 import * as cp from "child_process";
 import * as fs from "fs";
+import * as http from "http";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
@@ -103,6 +104,7 @@ export class TokenManager {
   private fetchPromise?: Promise<QuotaData>;
   private hasShownAgyMissingPrompt = false;
   private hasShownAgyAuthPrompt = false;
+  private lastGpuMetrics?: GpuStatus[];
   private readonly circuitBreakers = new Map<string, { failures: number; cooldownUntil: number }>();
 
   private isCircuitOpen(providerKey: string): boolean {
@@ -712,8 +714,15 @@ export class TokenManager {
         try {
           const { localComputeStatus, quotaPool } = await this.withTimeout(
             this.fetchLocalLlmStatus(),
-            2500,
-            { localComputeStatus: { endpointHealth: "offline", programName: "Offline", loadedModels: [], gpus: [] } }
+            4000,
+            {
+              localComputeStatus: {
+                endpointHealth: "offline",
+                programName: "Offline",
+                loadedModels: [],
+                gpus: this.lastGpuMetrics || [],
+              },
+            },
           );
           this.recordProviderSuccess("localLlm");
           data.localComputeStatus = localComputeStatus;
@@ -1108,8 +1117,11 @@ export class TokenManager {
     try {
       const output = await this.execFileText(
         "nvidia-smi",
-        ["--query-gpu=index,name,utilization.gpu,memory.used,memory.total,power.draw,power.limit,enforced.power.limit", "--format=csv,noheader,nounits"],
-        { timeoutMs: 5_000 },
+        [
+          "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,power.draw,power.limit,enforced.power.limit",
+          "--format=csv,noheader,nounits",
+        ],
+        { timeoutMs: 3_000 },
       );
       const rows = output
         .split(/\r?\n/)
@@ -1118,28 +1130,77 @@ export class TokenManager {
         .map((line) => line.split(",").map((part) => part.trim()));
 
       if (rows.length === 0) {
-        return undefined;
+        return this.lastGpuMetrics;
       }
 
-      const gpus: GpuStatus[] = rows.map(parts => {
-        const powerLimit = parseFloat(parts[6]);
-        const enforcedLimit = parseFloat(parts[7]);
-        const userConfiguredLimit = Number.isFinite(powerLimit) && powerLimit > 0 ? powerLimit : (Number.isFinite(enforcedLimit) ? enforcedLimit : 0);
-        return {
-          id: parseInt(parts[0], 10),
-          name: parts[1],
-          utilizationPercentage: parseFloat(parts[2]),
-          vramUsedMb: parseFloat(parts[3]),
-          vramTotalMb: parseFloat(parts[4]),
-          powerDrawW: parseFloat(parts[5]),
-          powerLimitW: userConfiguredLimit
-        };
-      }).filter(gpu => Number.isFinite(gpu.utilizationPercentage));
-      
-      return gpus.length > 0 ? gpus : undefined;
+      const gpus: GpuStatus[] = rows
+        .map((parts) => {
+          const powerLimit = parseFloat(parts[6]);
+          const enforcedLimit = parseFloat(parts[7]);
+          const userConfiguredLimit =
+            Number.isFinite(powerLimit) && powerLimit > 0
+              ? powerLimit
+              : Number.isFinite(enforcedLimit)
+              ? enforcedLimit
+              : 0;
+          return {
+            id: parseInt(parts[0], 10),
+            name: parts[1],
+            utilizationPercentage: parseFloat(parts[2]),
+            vramUsedMb: parseFloat(parts[3]),
+            vramTotalMb: parseFloat(parts[4]),
+            powerDrawW: parseFloat(parts[5]),
+            powerLimitW: userConfiguredLimit,
+          };
+        })
+        .filter((gpu) => Number.isFinite(gpu.utilizationPercentage));
+
+      if (gpus.length > 0) {
+        this.lastGpuMetrics = gpus;
+        return gpus;
+      }
+      return this.lastGpuMetrics;
     } catch {
-      return undefined;
+      return this.lastGpuMetrics;
     }
+  }
+
+  private httpGetJson(urlStr: string, timeoutMs = 800): Promise<JsonObject> {
+    return new Promise((resolve, reject) => {
+      try {
+        const url = new URL(urlStr);
+        const req = http.get(
+          url,
+          {
+            timeout: timeoutMs,
+            headers: { Accept: "application/json" },
+          },
+          (res) => {
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(`HTTP ${res.statusCode}`));
+              return;
+            }
+            let body = "";
+            res.setEncoding("utf8");
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () => {
+              try {
+                const parsed = JSON.parse(body);
+                resolve(parsed as JsonObject);
+              } catch (e) {
+                reject(e);
+              }
+            });
+          },
+        );
+        req.on("error", reject);
+        req.on("timeout", () => {
+          req.destroy(new Error("Probe timeout"));
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 
   // Collector for Local LLM
@@ -1147,71 +1208,102 @@ export class TokenManager {
     const gpuMetrics = await this.fetchGpuMetrics();
     const withGpuMetrics = (status: LocalComputeStatus): LocalComputeStatus => ({
       ...status,
-      gpus: gpuMetrics,
+      gpus: gpuMetrics || this.lastGpuMetrics,
     });
 
-    const probes: Array<{
-      programName: string;
-      quotaPoolId: string;
-      url: string;
-      modelsFromJson: (parsed: JsonObject) => string[];
-    }> = [
-      {
-        programName: "Ollama",
-        quotaPoolId: "local.ollama",
-        url: "http://localhost:11434/api/ps",
-        modelsFromJson: (parsed) => {
-          const models = Array.isArray(parsed.models) ? parsed.models : [];
-          return models.map((model: any) => String(model?.name || "")).filter(Boolean);
-        },
-      },
-      {
-        programName: "LM Studio",
-        quotaPoolId: "local.lm-studio",
-        url: "http://localhost:1234/v1/models",
-        modelsFromJson: (parsed) => {
-          const models = Array.isArray(parsed.data) ? parsed.data : [];
-          return models.map((model: any) => String(model?.id || "")).filter(Boolean);
-        },
-      },
-      {
-        programName: "vLLM",
-        quotaPoolId: "local.vllm",
-        url: "http://localhost:8000/v1/models",
-        modelsFromJson: (parsed) => {
-          const models = Array.isArray(parsed.data) ? parsed.data : [];
-          return models.map((model: any) => String(model?.id || "")).filter(Boolean);
-        },
-      },
-    ];
+    // 1. Ollama Probe
+    try {
+      const psData = await this.httpGetJson("http://127.0.0.1:11434/api/ps", 800);
+      const models = Array.isArray(psData.models) ? psData.models : [];
+      const loadedModels = models.map((m: any) => String(m?.name || "")).filter(Boolean);
+      const isModelLoaded = loadedModels.length > 0;
 
-    for (const probe of probes) {
+      return {
+        localComputeStatus: withGpuMetrics({
+          endpointHealth: isModelLoaded ? "ok" : "idle",
+          programName: isModelLoaded ? `Ollama (${loadedModels[0]})` : "Ollama (Idle)",
+          loadedModels,
+        }),
+        quotaPool: {
+          id: "local.ollama",
+          provider: "local",
+          source: "local-service",
+          confidence: "exact",
+        },
+      };
+    } catch {
       try {
-        const response = await this.execFileText("curl", ["-s", "--max-time", "2", probe.url], { timeoutMs: 3_000 });
-        const parsed = JSON.parse(response) as JsonObject;
-        const loadedModels = probe.modelsFromJson(parsed);
-
-        return {
-          localComputeStatus: withGpuMetrics({
-            endpointHealth: "ok",
-            programName: probe.programName,
-            loadedModels,
-          }),
-          quotaPool: {
-            id: probe.quotaPoolId,
-            provider: "local",
-            source: "local-service",
-            confidence: "exact",
-          },
-        };
+        const tagsData = await this.httpGetJson("http://127.0.0.1:11434/api/tags", 600);
+        if (tagsData && (Array.isArray(tagsData.models) || tagsData.models)) {
+          return {
+            localComputeStatus: withGpuMetrics({
+              endpointHealth: "idle",
+              programName: "Ollama (Idle)",
+              loadedModels: [],
+            }),
+            quotaPool: {
+              id: "local.ollama",
+              provider: "local",
+              source: "local-service",
+              confidence: "exact",
+            },
+          };
+        }
       } catch {
-        // Continue probing the next common local LLM endpoint.
+        // Ollama offline
       }
+    }
+
+    // 2. LM Studio Probe
+    try {
+      const lmsData = await this.httpGetJson("http://127.0.0.1:1234/v1/models", 600);
+      const models = Array.isArray(lmsData.data) ? lmsData.data : [];
+      const loadedModels = models.map((m: any) => String(m?.id || "")).filter(Boolean);
+      const isModelLoaded = loadedModels.length > 0;
+      return {
+        localComputeStatus: withGpuMetrics({
+          endpointHealth: isModelLoaded ? "ok" : "idle",
+          programName: isModelLoaded ? `LM Studio (${loadedModels[0]})` : "LM Studio (Idle)",
+          loadedModels,
+        }),
+        quotaPool: {
+          id: "local.lm-studio",
+          provider: "local",
+          source: "local-service",
+          confidence: "exact",
+        },
+      };
+    } catch {
+      // LM Studio offline
+    }
+
+    // 3. vLLM Probe
+    try {
+      const vllmData = await this.httpGetJson("http://127.0.0.1:8000/v1/models", 600);
+      const models = Array.isArray(vllmData.data) ? vllmData.data : [];
+      const loadedModels = models.map((m: any) => String(m?.id || "")).filter(Boolean);
+      const isModelLoaded = loadedModels.length > 0;
+      return {
+        localComputeStatus: withGpuMetrics({
+          endpointHealth: isModelLoaded ? "ok" : "idle",
+          programName: isModelLoaded ? `vLLM (${loadedModels[0]})` : "vLLM (Idle)",
+          loadedModels,
+        }),
+        quotaPool: {
+          id: "local.vllm",
+          provider: "local",
+          source: "local-service",
+          confidence: "exact",
+        },
+      };
+    } catch {
+      // vLLM offline
     }
 
     return {
       localComputeStatus: withGpuMetrics({
         endpointHealth: "offline",
+        programName: "Offline",
         loadedModels: [],
       }),
     };
