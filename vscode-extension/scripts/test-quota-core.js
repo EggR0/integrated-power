@@ -22,6 +22,9 @@ const ccMain = path.resolve(extensionRoot, "..", "control-center", "src", "main.
 function loadIIFE(file) {
   const sandbox = { window: {} };
   sandbox.globalThis = sandbox;
+  // The shared module is browser-targeted; provide the browser globals the
+  // Node vm sandbox lacks (URL for external-provider validation).
+  sandbox.URL = URL;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(file, "utf8"), sandbox, { filename: file });
   return sandbox.window.IPQuota || sandbox.IPQuota;
@@ -367,6 +370,141 @@ test("localLoadedModelLabel: first model or placeholder", () => {
 });
 
 // ---------------------------------------------------------------------------
+console.log("quota-core: P7 external-provider parser (parseExternalPayload / validateExternalProvider)");
+
+test("parseExternalPayload: array of window objects", () => {
+  const r = shared.parseExternalPayload("MyAPI", [
+    { label: "5Hours", remainingPercentage: 80 },
+    { label: "Weekly", usedPercentage: 40 },
+  ]);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.windows.length, 2);
+  assert.strictEqual(r.windows[0].label, "5Hours");
+  assert.strictEqual(r.windows[0].percentage, 80);
+  assert.strictEqual(r.windows[0].tone, "ok");
+  assert.strictEqual(r.windows[1].percentage, 60, "usedPercentage is inverted to remaining");
+});
+
+test("parseExternalPayload: windows array / single object / per-window keys", () => {
+  const w = shared.parseExternalPayload("x", { windows: [{ name: "A", remaining_percentage: "25%" }] });
+  assert.strictEqual(w.ok, true);
+  assert.strictEqual(w.windows[0].percentage, 25);
+  const single = shared.parseExternalPayload("x", { percentUsed: 10 });
+  assert.strictEqual(single.ok, true);
+  assert.strictEqual(single.windows[0].percentage, 90);
+  const keyed = shared.parseExternalPayload("x", { fiveHour: { remainingPercentage: 10 }, weekly: { remainingPercentage: 20 } });
+  assert.strictEqual(keyed.ok, true);
+  assert.strictEqual(keyed.windows.length, 2);
+});
+
+test("parseExternalPayload: error paths never throw", () => {
+  assert.strictEqual(shared.parseExternalPayload("x", null).ok, false);
+  assert.strictEqual(shared.parseExternalPayload("x", "text").ok, false);
+  assert.strictEqual(shared.parseExternalPayload("x", {}).ok, false);
+  assert.strictEqual(shared.parseExternalPayload("x", { foo: "bar" }).ok, false);
+  const partial = shared.parseExternalPayload("x", [{ label: "no-data" }, { remainingPercentage: 50 }]);
+  assert.strictEqual(partial.ok, true);
+  assert.strictEqual(partial.windows[0].unavailable, true);
+  assert.strictEqual(partial.windows[1].percentage, 50);
+});
+
+test("validateExternalProvider: url protocol + poll clamping", () => {
+  assert.ok(shared.validateExternalProvider({ name: "", url: "https://x.io" }).error);
+  assert.ok(shared.validateExternalProvider({ name: "x", url: "" }).error);
+  assert.ok(shared.validateExternalProvider({ name: "x", url: "ftp://x.io" }).error);
+  assert.ok(shared.validateExternalProvider({ name: "x", url: "not a url" }).error);
+  const ok = shared.validateExternalProvider({ name: "x", url: "http://127.0.0.1:8080/usage" });
+  assert.ok(ok.spec);
+  assert.strictEqual(ok.spec.enabled, true);
+  assert.strictEqual(ok.spec.pollMs, 60_000, "default 60s");
+  assert.strictEqual(shared.validateExternalProvider({ name: "x", url: "https://x.io", pollMs: 1 }).spec.pollMs, shared.EXTERNAL_POLL_MIN_MS);
+  assert.strictEqual(shared.validateExternalProvider({ name: "x", url: "https://x.io", pollMs: 1e9 }).spec.pollMs, shared.EXTERNAL_POLL_MAX_MS);
+});
+
+test("parseExternalPayload: absolute token pairs derive a percentage", () => {
+  // OpenAI usage shape (limit_tokens/remaining_tokens) and generic limit/used.
+  const r = shared.parseExternalPayload("T", {
+    windows: [
+      { name: "5h", limit_tokens: 500_000, remaining_tokens: 125_000 },
+      { name: "Weekly", limit: 100, used: 30 },
+    ],
+  });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.windows.length, 2);
+  assert.strictEqual(r.windows[0].unavailable, false);
+  assert.ok(Math.abs(r.windows[0].percentage - 25) < 0.01, "500k limit, 125k remaining → 25%");
+  assert.ok(Math.abs(r.windows[1].percentage - 70) < 0.01, "limit 100, used 30 → 70% remaining");
+  // Explicit percentage still wins over the token-pair fallback.
+  const both = shared.parseExternalPayload("B", { windows: [{ label: "x", remainingPercentage: 50, limit_tokens: 100, remaining_tokens: 10 }] });
+  assert.strictEqual(both.windows[0].percentage, 50, "explicit remainingPercentage beats token pair");
+});
+
+test("parseModelList: OpenAI data[].id and Ollama models[].name", () => {
+  // OpenAI-compatible /v1/models (the LM Studio / vLLM probe shape in TokenManager).
+  const openai = shared.parseModelList({ data: [{ id: "qwen3.8:27b" }, { id: "glm-4.5-air" }, { id: "qwen3.8:27b" }, { name: "no-id" }] });
+  assert.strictEqual(JSON.stringify(openai), JSON.stringify(["qwen3.8:27b", "glm-4.5-air", "no-id"]), "dedup + name fallback");
+  // Ollama /api/tags shape.
+  const ollama = shared.parseModelList({ models: [{ name: "qwen3.8:27b" }, { name: "deepseek-r1-distill-qwen-7b" }] });
+  assert.strictEqual(JSON.stringify(ollama), JSON.stringify(["qwen3.8:27b", "deepseek-r1-distill-qwen-7b"]));
+  // Non-model payloads return [] (e.g. a quota payload misfired at /models).
+  assert.strictEqual(shared.parseModelList({ windows: [{ remainingPercentage: 50 }] }).length, 0);
+  assert.strictEqual(shared.parseModelList("not json").length, 0);
+  assert.strictEqual(shared.parseModelList(null).length, 0);
+});
+
+test("modelDiscoveryUrls: /v1 base → /models, bare host → both candidates", () => {
+  assert.strictEqual(
+    JSON.stringify(shared.modelDiscoveryUrls("http://192.168.0.29:18082/v1")),
+    JSON.stringify(["http://192.168.0.29:18082/v1/models"]),
+  );
+  assert.strictEqual(
+    JSON.stringify(shared.modelDiscoveryUrls("http://192.168.0.29:11434")),
+    JSON.stringify(["http://192.168.0.29:11434/v1/models", "http://192.168.0.29:11434/api/tags"]),
+  );
+  // Trailing slash must not duplicate.
+  assert.strictEqual(
+    JSON.stringify(shared.modelDiscoveryUrls("http://192.168.0.29:18010/v1/")),
+    JSON.stringify(["http://192.168.0.29:18010/v1/models"]),
+  );
+  assert.strictEqual(shared.modelDiscoveryUrls("not a url").length, 0);
+});
+
+test("validateExternalProvider: Hermes-style form + legacy url backwards compat", () => {
+  // Full form: base endpoint + optional quota + key + discover.
+  const spec = shared.validateExternalProvider({
+    name: "vLLM remote",
+    baseUrl: "http://192.168.0.29:18082/v1/",
+    apiKey: "sekret",
+    defaultModel: "Qwen3.8-27B-AWQ",
+    quotaUrl: "https://api.openai.com/v1/organization/usage",
+    discoverModels: true,
+    pollMs: 60000,
+  });
+  assert.ok(spec.spec, JSON.stringify(spec));
+  assert.strictEqual(spec.spec.baseUrl, "http://192.168.0.29:18082/v1/");
+  assert.strictEqual(spec.spec.quotaUrl, "https://api.openai.com/v1/organization/usage");
+  assert.strictEqual(spec.spec.apiKey, "sekret");
+  assert.strictEqual(spec.spec.defaultModel, "Qwen3.8-27B-AWQ");
+  assert.strictEqual(spec.spec.discoverModels, true);
+  // Relative quota URL resolves against the base (absolute paths resolve to
+  // the origin per URL semantics).
+  const rel = shared.validateExternalProvider({ name: "x", baseUrl: "http://h:1/v1", quotaUrl: "/usage" });
+  assert.strictEqual(rel.spec.quotaUrl, "http://h:1/usage");
+  // Legacy: a bare `url` (no baseUrl) is both base and quota source — so
+  // previously registered providers keep polling their quota endpoint.
+  const legacy = shared.validateExternalProvider({ name: "Mock", url: "http://127.0.0.1:39321/quota", pollMs: 60000 });
+  assert.ok(legacy.spec);
+  assert.strictEqual(legacy.spec.baseUrl, "http://127.0.0.1:39321/quota");
+  assert.strictEqual(legacy.spec.quotaUrl, "http://127.0.0.1:39321/quota");
+  // Blank key → undefined (no Authorization header).
+  assert.strictEqual(shared.validateExternalProvider({ name: "x", baseUrl: "http://h/v1", apiKey: "  " }).spec.apiKey, undefined);
+  // Model-only provider: base without quota is valid.
+  const modelOnly = shared.validateExternalProvider({ name: "LM", baseUrl: "http://127.0.0.1:1234/v1", quotaUrl: "" });
+  assert.ok(modelOnly.spec);
+  assert.strictEqual(modelOnly.spec.quotaUrl, undefined);
+});
+
+// ---------------------------------------------------------------------------
 console.log("quota-core: control-center wiring");
 test("control-center imports the shared quota source (no duplicated K logic)", () => {
   const cc = fs.readFileSync(ccMain, "utf8");
@@ -400,6 +538,23 @@ test("control-center imports the shared quota source (no duplicated K logic)", (
     assert.ok(ccHtml.includes(`id="provider-${key}"`), `control-center index.html must keep the provider-${key} card (B5)`);
   }
   assert.ok(ccHtml.includes('id="provider-visibility-reset"'), "control-center index.html must keep the show-all reset button (B5)");
+  // P7 external providers: CC must consume the shared parser, register via the
+  // broker server-side fetch endpoint, render DOM-only cards into the host,
+  // and the settings form + taskbar toggle must exist in the HTML.
+  assert.ok(cc.includes("parseExternalPayload"), "control-center must import parseExternalPayload");
+  assert.ok(cc.includes("validateExternalProvider"), "control-center must import validateExternalProvider");
+  assert.ok(cc.includes("parseModelList"), "control-center must import parseModelList (Hermes-style model discovery)");
+  assert.ok(cc.includes("modelDiscoveryUrls"), "control-center must import modelDiscoveryUrls");
+  assert.ok(cc.includes("/v1/providers/external?url="), "control-center must fetch external payloads through the broker");
+  assert.ok(cc.includes("ip_external_providers"), "control-center must persist external providers in localStorage");
+  assert.ok(cc.includes("createElement"), "external provider cards must be built with the DOM API");
+  assert.ok(ccHtml.includes('id="external-providers-host"'), "index.html must host external provider cards");
+  assert.ok(ccHtml.includes('id="ext-add"'), "index.html must have the external provider add form");
+  assert.ok(ccHtml.includes('id="ext-test"'), "index.html must expose the provider test button");
+  assert.ok(ccHtml.includes('id="ext-apikey"'), "index.html must expose the API key field");
+  assert.ok(ccHtml.includes('id="ext-discover"'), "index.html must expose the model-discovery checkbox");
+  assert.ok(ccHtml.includes('id="setting-taskbar-toggle"'), "index.html must expose the OS taskbar toggle");
+  assert.ok(cc.includes("setSkipTaskbar"), "control-center must drive Tauri setSkipTaskbar for the taskbar toggle");
 });
 
 if (failures) {

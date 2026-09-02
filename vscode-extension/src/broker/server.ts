@@ -135,6 +135,53 @@ export async function startBrokerServer(
         const result = await setAutoStart(input.enabled === true, input.targetPath);
         return send(response, 200, result);
       }
+      // External provider fetch: the UI registers arbitrary http(s) endpoints
+      // (self-hosted gateways, OpenAI usage API, local JSON files over HTTP).
+      // The broker fetches server-side because a browser on 127.0.0.1:5173
+      // would be blocked by cross-origin policy against arbitrary hosts.
+      // Loopback is still enforced: only http(s), max 256KB, 8s timeout.
+      if (request.method === "GET" && url.pathname === "/v1/providers/external") {
+        const requested = url.searchParams.get("url");
+        // Optional bearer token (local servers usually leave it blank).
+        const key = url.searchParams.get("key");
+        if (!requested) {
+          return send(response, 400, { error: "missing url query parameter" });
+        }
+        let target: URL;
+        try {
+          target = new URL(requested);
+        } catch {
+          return send(response, 400, { error: "invalid url" });
+        }
+        if (target.protocol !== "http:" && target.protocol !== "https:") {
+          return send(response, 400, { error: "only http/https urls are allowed" });
+        }
+        try {
+          const headers: Record<string, string> = { accept: "application/json, text/plain, */*" };
+          if (key) headers["authorization"] = `Bearer ${key}`;
+          const upstream = await fetch(target, {
+            signal: AbortSignal.timeout(8000),
+            headers,
+            redirect: "follow",
+          });
+          const text = await upstream.text();
+          if (text.length > 256 * 1024) {
+            return send(response, 502, { error: "upstream response exceeds 256KB", upstreamStatus: upstream.status });
+          }
+          let payload: unknown = text;
+          try {
+            payload = JSON.parse(text);
+          } catch {
+            payload = { raw: text.slice(0, 8192) };
+          }
+          if (upstream.status >= 400) {
+            return send(response, 502, { error: `upstream responded ${upstream.status}`, upstreamStatus: upstream.status, payload });
+          }
+          return send(response, 200, { upstreamStatus: upstream.status, payload });
+        } catch (error) {
+          return send(response, 502, { error: `fetch failed: ${error instanceof Error ? error.message : String(error)}` });
+        }
+      }
       if (request.method === "GET" && url.pathname === "/v1/tokens/status") {
         const force = url.searchParams.get("force") === "1" || url.searchParams.get("force") === "true";
         const tokenStatus = await scanLiveTokenStatus({ force });

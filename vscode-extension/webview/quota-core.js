@@ -21,6 +21,11 @@ var IPQuota = (() => {
   var index_exports = {};
   __export(index_exports, {
     DEFAULT_POLL_INTERVAL_MS: () => DEFAULT_POLL_INTERVAL_MS,
+    EXTERNAL_FETCH_MAX_BYTES: () => EXTERNAL_FETCH_MAX_BYTES,
+    EXTERNAL_FETCH_TIMEOUT_MS: () => EXTERNAL_FETCH_TIMEOUT_MS,
+    EXTERNAL_MODELS_MAX: () => EXTERNAL_MODELS_MAX,
+    EXTERNAL_POLL_MAX_MS: () => EXTERNAL_POLL_MAX_MS,
+    EXTERNAL_POLL_MIN_MS: () => EXTERNAL_POLL_MIN_MS,
     K_CAPACITY_RATIOS: () => K_CAPACITY_RATIOS,
     K_DEFAULT_RATIO: () => K_DEFAULT_RATIO,
     MAX_POLL_INTERVAL_MS: () => MAX_POLL_INTERVAL_MS,
@@ -41,7 +46,11 @@ var IPQuota = (() => {
     localLoadedModelLabel: () => localLoadedModelLabel,
     localServerBadge: () => localServerBadge,
     mergeQuotaSettings: () => mergeQuotaSettings,
-    toFiniteNumber: () => toFiniteNumber
+    modelDiscoveryUrls: () => modelDiscoveryUrls,
+    parseExternalPayload: () => parseExternalPayload,
+    parseModelList: () => parseModelList,
+    toFiniteNumber: () => toFiniteNumber,
+    validateExternalProvider: () => validateExternalProvider
   });
 
   // shared/quota/capacity.ts
@@ -90,6 +99,206 @@ var IPQuota = (() => {
       isWeeklyExhausted: false,
       isWeeklyCapped: false,
       K
+    };
+  }
+
+  // shared/quota/external.ts
+  var EXTERNAL_POLL_MIN_MS = 1e4;
+  var EXTERNAL_POLL_MAX_MS = 60 * 60 * 1e3;
+  var EXTERNAL_FETCH_TIMEOUT_MS = 8e3;
+  var EXTERNAL_FETCH_MAX_BYTES = 512 * 1024;
+  var EXTERNAL_MODELS_MAX = 50;
+  var REMAINING_KEYS = [
+    "remainingPercentage",
+    "remaining_percentage",
+    "remainingPercent",
+    "remaining_percent",
+    "percentRemaining",
+    "percent_remaining",
+    "percentUsedIsComplement",
+    "remaining",
+    "pctRemaining",
+    "pct_remaining"
+  ];
+  var USED_KEYS = [
+    "usedPercentage",
+    "used_percentage",
+    "percentUsed",
+    "percent_used",
+    "usagePercent",
+    "usage_percent"
+  ];
+  var LIMIT_KEYS = ["limit", "limitTokens", "limit_tokens", "max", "maxTokens", "max_tokens", "total", "totalTokens", "total_tokens"];
+  var REMAINING_ABS_KEYS = ["remainingTokens", "remaining_tokens", "tokensRemaining", "tokens_remaining", "left", "leftTokens", "left_tokens", "availableTokens", "available_tokens"];
+  var USED_ABS_KEYS = ["usedTokens", "used_tokens", "tokensUsed", "tokens_used", "used", "consumed", "consumedTokens", "consumed_tokens"];
+  function tokenPairRemaining(raw) {
+    const limit = toFiniteNumber2(raw[LIMIT_KEYS[0]] ?? raw["limitTokens"] ?? raw["limit_tokens"] ?? raw["max"] ?? raw["maxTokens"] ?? raw["max_tokens"] ?? raw["total"] ?? raw["totalTokens"] ?? raw["total_tokens"]);
+    if (limit === void 0 || limit <= 0) return void 0;
+    for (const key of REMAINING_ABS_KEYS) {
+      const value = toFiniteNumber2(raw[key]);
+      if (value !== void 0) return Math.min(100, Math.max(0, value / limit * 100));
+    }
+    for (const key of USED_ABS_KEYS) {
+      const value = toFiniteNumber2(raw[key]);
+      if (value !== void 0) return Math.min(100, Math.max(0, (limit - value) / limit * 100));
+    }
+    return void 0;
+  }
+  function toFiniteNumber2(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const trimmed = value.trim().replace(/%$/, "");
+      if (!trimmed) return void 0;
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : void 0;
+    }
+    return void 0;
+  }
+  function extractRemaining(raw) {
+    for (const key of REMAINING_KEYS) {
+      const value = toFiniteNumber2(raw[key]);
+      if (value !== void 0) return value;
+    }
+    for (const key of USED_KEYS) {
+      const value = toFiniteNumber2(raw[key]);
+      if (value !== void 0) return 100 - value;
+    }
+    return tokenPairRemaining(raw);
+  }
+  function labelOf(raw, index) {
+    for (const key of ["label", "name", "window", "period", "id"]) {
+      const value = raw[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return "Window " + (index + 1);
+  }
+  function windowFrom(raw, index, toneOf) {
+    if (raw === null || typeof raw !== "object") return null;
+    const obj = raw;
+    const remaining = extractRemaining(obj);
+    const label = labelOf(obj, index);
+    const note = typeof obj["note"] === "string" ? obj["note"] : typeof obj["description"] === "string" ? obj["description"] : void 0;
+    if (remaining === void 0) {
+      return { label, percentage: 0, tone: "critical", unavailable: true, note: note || "remaining field not found" };
+    }
+    const percentage = Math.min(100, Math.max(0, remaining));
+    return { label, percentage, tone: toneOf(percentage), unavailable: false, note };
+  }
+  function parseExternalPayload(name, raw, toneOf = (p) => p <= 15 ? "critical" : p <= 35 ? "warning" : "ok") {
+    if (raw === void 0 || raw === null) {
+      return { ok: false, name, windows: [], error: "empty response" };
+    }
+    if (typeof raw !== "object") {
+      return { ok: false, name, windows: [], error: "payload is not a JSON object or array" };
+    }
+    let entries = [];
+    if (Array.isArray(raw)) {
+      entries = raw;
+    } else {
+      const obj = raw;
+      const windows2 = obj["windows"];
+      if (Array.isArray(windows2) && windows2.length > 0) {
+        entries = windows2;
+      } else if (extractRemaining(obj) !== void 0) {
+        entries = [obj];
+      } else {
+        const candidates = [];
+        for (const value of Object.values(obj)) {
+          if (value && typeof value === "object" && extractRemaining(value) !== void 0) {
+            candidates.push(value);
+          }
+        }
+        if (candidates.length > 0) entries = candidates;
+      }
+    }
+    if (entries.length === 0) {
+      return { ok: false, name, windows: [], error: "no quota windows found (needs a remaining/used percentage field)" };
+    }
+    const windows = [];
+    entries.forEach((entry, index) => {
+      const metric = windowFrom(entry, index + 1, toneOf);
+      if (metric) windows.push(metric);
+    });
+    if (windows.length === 0) {
+      return { ok: false, name, windows: [], error: "no quota windows found" };
+    }
+    return { ok: true, name, windows };
+  }
+  function modelDiscoveryUrls(baseUrl) {
+    try {
+      const parsed = new URL(baseUrl);
+      const root = parsed.toString().replace(/\/+$/, "");
+      if (/\/v1$/.test(parsed.pathname.replace(/\/+$/, ""))) return [`${root}/models`];
+      const openai = `${root}/v1/models`;
+      const ollama = `${root}/api/tags`;
+      return openai === ollama ? [openai] : [openai, ollama];
+    } catch {
+      return [];
+    }
+  }
+  function parseModelList(raw) {
+    if (raw === null || typeof raw !== "object") return [];
+    const obj = raw;
+    const list = obj["data"] ?? obj["models"];
+    if (!Array.isArray(list)) return [];
+    const names = [];
+    for (const entry of list) {
+      if (entry === null || typeof entry !== "object") continue;
+      const e = entry;
+      const id = typeof e["id"] === "string" && e["id"].trim() ? e["id"].trim() : void 0;
+      const name = typeof e["name"] === "string" && e["name"].trim() ? e["name"].trim() : void 0;
+      const model = id || name;
+      if (model && !names.includes(model)) names.push(model);
+    }
+    return names.slice(0, EXTERNAL_MODELS_MAX);
+  }
+  function validateExternalProvider(input) {
+    const name = (input.name || "").trim();
+    if (!name) return { error: "provider name is required" };
+    const baseText = (input.baseUrl ?? input.url ?? "").trim();
+    if (!baseText) return { error: "provider endpoint URL is required" };
+    let base;
+    try {
+      base = new URL(baseText);
+    } catch {
+      return { error: "invalid endpoint URL (must start with http:// or https://)" };
+    }
+    if (base.protocol !== "http:" && base.protocol !== "https:") {
+      return { error: "only http/https URLs are supported" };
+    }
+    const quotaText = (input.quotaUrl ?? "").trim();
+    let quotaUrl;
+    if (quotaText) {
+      try {
+        const resolved = new URL(quotaText, base.toString());
+        if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+          return { error: "quota URL must be http/https" };
+        }
+        quotaUrl = resolved.toString();
+      } catch {
+        return { error: "invalid quota URL" };
+      }
+    } else if (!input.baseUrl) {
+      quotaUrl = base.toString();
+    }
+    const requested = input.pollMs !== void 0 ? Math.round(input.pollMs) : 6e4;
+    const pollMs = Math.min(EXTERNAL_POLL_MAX_MS, Math.max(EXTERNAL_POLL_MIN_MS, Number.isFinite(requested) ? requested : 6e4));
+    const rawId = input.id || "ext-" + Date.now().toString(36);
+    const id = rawId.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64) || "ext-" + Date.now().toString(36);
+    const key = (input.apiKey ?? "").trim();
+    const defaultModel = (input.defaultModel ?? "").trim();
+    return {
+      spec: {
+        id,
+        name,
+        baseUrl: base.toString(),
+        quotaUrl,
+        apiKey: key || void 0,
+        defaultModel: defaultModel || void 0,
+        discoverModels: input.discoverModels !== false,
+        pollMs,
+        enabled: input.enabled !== false
+      }
     };
   }
 

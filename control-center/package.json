@@ -3,8 +3,9 @@
   "private": true,
   "version": "0.9.1",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "node ./scripts/dev.js",
     "build": "vite build",
+    "compile:broker": "cd ../vscode-extension && tsc -p .",
     "prepare:broker": "node ./scripts/copy-broker.js",
     "verify:package": "node ./scripts/verify-package.js",
     "broker": "node ./broker-server.js",
@@ -17,6 +18,7 @@
     "vite": "^6.1.0"
   },
   "dependencies": {
-    "@a2a-js/sdk": "^1.0.1"
+    "@a2a-js/sdk": "^1.0.1",
+    "@tauri-apps/api": "^2.11.1"
   }
 }

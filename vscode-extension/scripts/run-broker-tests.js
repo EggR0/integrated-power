@@ -1,5 +1,6 @@
 const assert = require("assert");
 const fs = require("fs");
+const http = require("http");
 const os = require("os");
 const path = require("path");
 const {
@@ -330,6 +331,47 @@ async function main() {
       assert.strictEqual(stream.headers.get("x-ag-ui-version"), "1");
       const streamText = await stream.text();
       assert.ok(streamText.includes("RUN_STARTED") && streamText.includes("RUN_FINISHED"));
+
+      // --- /v1/providers/external: broker-side fetch of a user-registered URL ---
+      // The UI registers arbitrary http(s) endpoints; the broker fetches them
+      // server-side so the browser's CORS never applies. We point it at a local
+      // upstream that speaks the external quota wire format.
+      const upstream = http.createServer((req, res) => {
+        res.setHeader("content-type", "application/json");
+        if (req.url === "/usage") {
+          res.end(JSON.stringify({ windows: [{ label: "5Hours", remainingPercentage: 82 }, { label: "Weekly", usedPercentage: 30 }] }));
+        } else if (req.url === "/plain") {
+          res.end("not json at all");
+        } else {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: "boom" }));
+        }
+      });
+      await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+      const upPort = upstream.address().port;
+      try {
+        const okRes = await fetch(`http://127.0.0.1:${httpServer.port}/v1/providers/external?url=${encodeURIComponent(`http://127.0.0.1:${upPort}/usage`)}`);
+        assert.strictEqual(okRes.status, 200);
+        const okJson = await okRes.json();
+        assert.strictEqual(okJson.upstreamStatus, 200);
+        assert.strictEqual(okJson.payload.windows[0].remainingPercentage, 82);
+
+        const textRes = await fetch(`http://127.0.0.1:${httpServer.port}/v1/providers/external?url=${encodeURIComponent(`http://127.0.0.1:${upPort}/plain`)}`);
+        assert.strictEqual(textRes.status, 200);
+        const textJson = await textRes.json();
+        assert.strictEqual(textJson.payload.raw, "not json at all");
+
+        const upstreamErr = await fetch(`http://127.0.0.1:${httpServer.port}/v1/providers/external?url=${encodeURIComponent(`http://127.0.0.1:${upPort}/bad`)}`);
+        assert.strictEqual(upstreamErr.status, 502);
+
+        const badProtocol = await fetch(`http://127.0.0.1:${httpServer.port}/v1/providers/external?url=${encodeURIComponent("ftp://nope/x")}`);
+        assert.strictEqual(badProtocol.status, 400);
+
+        const noUrl = await fetch(`http://127.0.0.1:${httpServer.port}/v1/providers/external`);
+        assert.strictEqual(noUrl.status, 400);
+      } finally {
+        await new Promise((resolve) => upstream.close(resolve));
+      }
     } finally {
       await httpServer.close();
     }

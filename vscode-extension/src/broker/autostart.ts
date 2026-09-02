@@ -5,16 +5,21 @@ import * as path from "path";
 
 const REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const REG_VALUE_NAME = "IntegratedPower";
+const LAUNCH_AGENT_LABEL = "com.integratedpower.controlcenter";
+const LAUNCH_AGENT_PATH = (home: string) => path.join(home, "Library", "LaunchAgents", `${LAUNCH_AGENT_LABEL}.plist`);
+const XDG_AUTOSTART_PATH = (home: string) => path.join(home, ".config", "autostart", "integrated-power.desktop");
 
 export interface AutoStartStatus {
   enabled: boolean;
   targetPath?: string;
   platform: string;
-  method: "registry" | "startup_folder" | "unsupported";
+  method: "registry" | "launchd" | "xdg" | "startup_folder" | "unsupported";
 }
 
 /**
  * Resolves the preferred executable or launcher script to run on boot.
+ * The caller (control-center settings) may override with a customTarget, e.g.
+ * a freshly built Tauri binary.
  */
 export function resolveAutoStartTarget(): string {
   if (process.platform !== "win32") {
@@ -46,16 +51,67 @@ export function resolveAutoStartTarget(): string {
   return `"${process.execPath}"`;
 }
 
+function xmlEscape(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function darwinPlist(target: string): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    "<plist version=\"1.0\">",
+    "<dict>",
+    "  <key>Label</key><string>" + LAUNCH_AGENT_LABEL + "</string>",
+    "  <key>RunAtLoad</key><true/>",
+    "  <key>ProgramArguments</key>",
+    "  <array>",
+    "    <string>" + xmlEscape(target) + "</string>",
+    "  </array>",
+    "</dict>",
+    "</plist>",
+    "",
+  ].join("\n");
+}
+
+function xdgDesktopEntry(target: string): string {
+  return [
+    "[Desktop Entry]",
+    "Type=Application",
+    "Name=Integrated Power Control Center",
+    `Exec=${target}`,
+    "X-GNOME-Autostart-Enabled=true",
+    "X-KDE-Autostart-Enabled=true",
+    "",
+  ].join("\n");
+}
+
 /**
- * Checks if auto-start is currently registered in Windows registry or startup folder.
+ * Checks auto-start registration for the current OS:
+ *   win32  → HKCU Run registry value
+ *   darwin → ~/Library/LaunchAgents/<label>.plist
+ *   linux  → ~/.config/autostart/integrated-power.desktop
  */
 export async function getAutoStartStatus(): Promise<AutoStartStatus> {
+  if (process.platform === "darwin") {
+    const plistPath = LAUNCH_AGENT_PATH(os.homedir());
+    if (fs.existsSync(plistPath)) {
+      const content = fs.readFileSync(plistPath, "utf8");
+      const match = content.match(/<string>([^<]+)<\/string>/);
+      return { enabled: true, targetPath: match?.[1], platform: "darwin", method: "launchd" };
+    }
+    return { enabled: false, platform: "darwin", method: "launchd" };
+  }
+  if (process.platform === "linux") {
+    const desktopPath = XDG_AUTOSTART_PATH(os.homedir());
+    if (fs.existsSync(desktopPath)) {
+      const content = fs.readFileSync(desktopPath, "utf8");
+      const match = content.match(/^Exec=(.*)$/m);
+      return { enabled: true, targetPath: match?.[1], platform: "linux", method: "xdg" };
+    }
+    return { enabled: false, platform: "linux", method: "xdg" };
+  }
   if (process.platform !== "win32") {
-    return {
-      enabled: false,
-      platform: process.platform,
-      method: "unsupported",
-    };
+    return { enabled: false, platform: process.platform, method: "unsupported" };
   }
 
   return new Promise((resolve) => {
@@ -87,15 +143,34 @@ export async function getAutoStartStatus(): Promise<AutoStartStatus> {
 }
 
 /**
- * Enables or disables auto-start on Windows startup.
+ * Enables or disables auto-start on boot for the current OS.
+ * customTarget overrides resolveAutoStartTarget() when provided.
  */
 export async function setAutoStart(enabled: boolean, customTarget?: string): Promise<AutoStartStatus> {
+  if (process.platform === "darwin") {
+    const target = customTarget || resolveAutoStartTarget();
+    const plistPath = LAUNCH_AGENT_PATH(os.homedir());
+    if (enabled) {
+      fs.mkdirSync(path.dirname(plistPath), { recursive: true });
+      fs.writeFileSync(plistPath, darwinPlist(target));
+      return { enabled: true, targetPath: target, platform: "darwin", method: "launchd" };
+    }
+    fs.rmSync(plistPath, { force: true });
+    return { enabled: false, platform: "darwin", method: "launchd" };
+  }
+  if (process.platform === "linux") {
+    const target = customTarget || resolveAutoStartTarget();
+    const desktopPath = XDG_AUTOSTART_PATH(os.homedir());
+    if (enabled) {
+      fs.mkdirSync(path.dirname(desktopPath), { recursive: true });
+      fs.writeFileSync(desktopPath, xdgDesktopEntry(target));
+      return { enabled: true, targetPath: target, platform: "linux", method: "xdg" };
+    }
+    fs.rmSync(desktopPath, { force: true });
+    return { enabled: false, platform: "linux", method: "xdg" };
+  }
   if (process.platform !== "win32") {
-    return {
-      enabled: false,
-      platform: process.platform,
-      method: "unsupported",
-    };
+    return { enabled: false, platform: process.platform, method: "unsupported" };
   }
 
   const target = customTarget || resolveAutoStartTarget();
@@ -140,14 +215,13 @@ export async function setAutoStart(enabled: boolean, customTarget?: string): Pro
 // Self-test execution when run directly (Main Rule 1)
 if (require.main === module) {
   void (async () => {
-    console.log("[autostart self-test] Testing Windows auto-start manager...");
+    console.log("[autostart self-test] Testing auto-start manager...");
     try {
       const initial = await getAutoStartStatus();
       console.log("[autostart self-test] Initial status:", initial);
 
       const target = resolveAutoStartTarget();
       console.log("[autostart self-test] Resolved target path:", target);
-
       console.log("[autostart self-test] All autostart self-test assertions passed.");
     } catch (err) {
       console.error("[autostart self-test] Error during self-test:", err);

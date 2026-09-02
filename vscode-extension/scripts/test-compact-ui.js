@@ -25,7 +25,11 @@ try {
     assert(html.includes("main-agent-select"), "HTML is missing the main-agent selector.");
     assert(html.includes("log-button"), "HTML is missing the broker log button.");
     assert(!/\binnerHTML\s*=/.test(html), "HTML contains an inline innerHTML assignment.");
-    assert(windowConfig?.skipTaskbar === true, "Tauri main window must skip the taskbar.");
+    // 2026-09-02 requirement change: the main window now shows on the OS
+    // taskbar / Dock / panel by default (skipTaskbar:false) so it "sticks to the
+    // taskbar" per OS. The tray icon stays for quick access, and the in-app
+    // "작업표시줄에 창 표시" toggle switches the window to tray-only at runtime.
+    assert(windowConfig?.skipTaskbar === false, "Tauri main window must show on the taskbar by default (skipTaskbar:false); tray-only is an in-app toggle.");
     assert(windowConfig?.width === 900, "Tauri main window width must be 900.");
     assert(windowConfig?.height === 640, "Tauri main window height must be 640.");
     for (const marker of ["TrayIconBuilder", "WindowEvent::Moved", "restore_or_place", "show_and_restore_window"]) {

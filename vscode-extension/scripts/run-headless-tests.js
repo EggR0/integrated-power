@@ -375,7 +375,12 @@ test("Tauri control center is loopback-only and keeps the broker boundary", () =
     const ui = fs.readFileSync(path.join(controlCenterRoot, "src", "main.js"), "utf8");
     const tauriMain = fs.readFileSync(path.join(controlCenterRoot, "src-tauri", "src", "main.rs"), "utf8");
     assert.strictEqual(config.identifier, "com.eggr.integrated-power.control-center");
-    assert.ok(ui.includes("http://127.0.0.1:37241"));
+    // Loopback boundary: the UI binds to 127.0.0.1 and the canonical port
+    // 37241. The port is now a single source of truth (BROKER_PORT) so the
+    // exact "http://127.0.0.1:37241" literal may be built via template
+    // string; assert the two halves that prove loopback-only.
+    assert.ok(ui.includes("127.0.0.1"), "control center must bind loopback");
+    assert.ok(ui.includes("37241"), "control center must keep the canonical loopback port");
     assert.ok(!ui.includes("api.openai.com"));
     assert.ok(fs.existsSync(path.join(controlCenterRoot, "broker-server.js")));
     assert.ok(tauriMain.includes("Command::new"));
