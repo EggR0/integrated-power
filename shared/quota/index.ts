@@ -9,4 +9,5 @@
 
 export * from "./capacity";
 export * from "./format";
+export * from "./metric";
 export * from "./settings";

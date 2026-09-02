@@ -1,11 +1,11 @@
 import "./style.css";
 import {
-  calculateEffective5HourQuota,
   capacityTone,
-  clamp,
-  formatRefreshCountdown,
   mergeQuotaSettings,
   clampPollInterval,
+  buildTokenMetric,
+  absoluteTokenText,
+  calculateCapacitySummary,
 } from "@shared/quota";
 
 const API = "http://127.0.0.1:37241";
@@ -209,63 +209,68 @@ function switchTab(targetTab) {
   if (targetTab === "logs") void refreshLogs();
 }
 
-function countdownText(resetTimeStr) {
-  // Shared three-stage countdown (control-center uses the `full` stage).
-  const countdown = formatRefreshCountdown(resetTimeStr);
-  return countdown ? countdown.full : "";
-}
-
 function renderTokens() {
   const ts = state.tokenStatus || {};
-  const agy5h = ts.antigravityPercentage;
-  const agyWeekly = ts.antigravityWeeklyPercentage;
-  const opus5h = ts.opusPercentage;
-  const opusWeekly = ts.opusWeeklyPercentage;
-  const codex5h = ts.codexPercentage;
-  const codexWeekly = ts.codexWeeklyPercentage;
 
-  // Effective 5h value via the shared K-sync (weekly budget caps the 5h window).
-  const agy5hSync = agyWeekly !== undefined ? calculateEffective5HourQuota(clamp(agy5h ?? 0, 0, 100), clamp(agyWeekly, 0, 100), "antigravity") : null;
-  const opus5hSync = opusWeekly !== undefined ? calculateEffective5HourQuota(clamp(opus5h ?? 0, 0, 100), clamp(opusWeekly, 0, 100), "opus") : null;
-  const codex5hSync = codexWeekly !== undefined ? calculateEffective5HourQuota(clamp(codex5h ?? 0, 0, 100), clamp(codexWeekly, 0, 100), "codex") : null;
+  // P3: every window is built by the shared buildTokenMetric (the same source
+  // the IDE webview consumes) — this carries A4 absolute-token availability,
+  // the A6 tone, the A3 K-sync, and the A7 tooltip in one place.
+  const windows = {
+    "gemini-5h": buildTokenMetric("5Hours", ts, "antigravity", "Gemini 3.1 Pro 5Hours", "antigravityWeekly"),
+    "gemini-weekly": buildTokenMetric("Weekly", ts, "antigravityWeekly", "Gemini 3.1 Pro Weekly"),
+    "opus-5h": buildTokenMetric("5Hours", ts, "opus", "Opus 4.6 Thinking 5Hours", "opusWeekly"),
+    "opus-weekly": buildTokenMetric("Weekly", ts, "opusWeekly", "Opus 4.6 Thinking Weekly"),
+    "codex-5h": buildTokenMetric("5Hours", ts, "codex", "ChatGPT 5Hours", "codexWeekly"),
+    "codex-weekly": buildTokenMetric("Weekly", ts, "codexWeekly", "ChatGPT Weekly"),
+  };
+  const prefixOf = {
+    "gemini-5h": "antigravity", "gemini-weekly": "antigravityWeekly",
+    "opus-5h": "opus", "opus-weekly": "opusWeekly",
+    "codex-5h": "codex", "codex-weekly": "codexWeekly",
+  };
 
-  // When the weekly pool is exhausted, the 5h countdown follows the WEEKLY
-  // reset (same as the IDE webview).
-  const agy5hReset = agy5hSync && agy5hSync.isWeeklyExhausted ? (ts.antigravityWeeklyResetTime ?? ts.antigravityResetTime) : ts.antigravityResetTime;
-  const opus5hReset = opus5hSync && opus5hSync.isWeeklyExhausted ? (ts.opusWeeklyResetTime ?? ts.opusResetTime) : ts.opusResetTime;
-  const codex5hReset = codex5hSync && codex5hSync.isWeeklyExhausted ? (ts.codexWeeklyResetTime ?? ts.codexResetTime) : ts.codexResetTime;
+  for (const [id, m] of Object.entries(windows)) {
+    const label = $(`label-${id}`);
+    if (label) {
+      label.textContent = m.unavailable ? "Waiting for quota" : `${m.percentage.toFixed(2)}% remaining`;
+      label.title = m.tooltip; // A7 tooltip (hover)
+    }
+    const reset = $(`reset-${id}`);
+    if (reset) reset.textContent = m.refreshFull || "· Waiting for quota";
+    const bar = $(`bar-${id}`);
+    if (bar) {
+      bar.style.width = `${Math.max(0, Math.min(100, m.percentage))}%`;
+      // Unified tone thresholds (<=15 critical, 15-35 caution) via the shared
+      // capacityTone — replaces the old hard-coded <20% warning.
+      bar.classList.toggle("warning", m.tone === "warning");
+      bar.classList.toggle("critical", m.tone === "critical");
+      bar.title = m.tooltip;
+    }
+    // A4: absolute tokens (left / max, or the EstimatedAbsolute fallback).
+    // Hidden (empty) when there is no absolute data, so we never show a fake "0".
+    const abs = $(`tokens-${id}`);
+    if (abs) {
+      const p = prefixOf[id];
+      const text = absoluteTokenText(ts[`${p}TokensLeft`], ts[`${p}Max`], ts[`${p}EstimatedAbsolute`]);
+      abs.textContent = text || "";
+    }
+  }
 
-  // 1. Antigravity IDE - Gemini 3.1 Pro
-  if ($("label-gemini-5h")) $("label-gemini-5h").textContent = agy5h !== undefined ? `${(agy5hSync ? agy5hSync.effectivePct : agy5h).toFixed(2)}% remaining` : "Waiting for quota";
-  if ($("reset-gemini-5h")) $("reset-gemini-5h").textContent = countdownText(agy5hReset);
-  if ($("bar-gemini-5h")) $("bar-gemini-5h").style.width = `${Math.max(0, Math.min(100, agy5hSync ? agy5hSync.effectivePct : (agy5h ?? 0)))}%`;
-
-  if ($("label-gemini-weekly")) $("label-gemini-weekly").textContent = agyWeekly !== undefined ? `${agyWeekly.toFixed(2)}% remaining` : "Waiting for quota";
-  if ($("reset-gemini-weekly")) $("reset-gemini-weekly").textContent = countdownText(ts.antigravityWeeklyResetTime);
-  if ($("bar-gemini-weekly")) $("bar-gemini-weekly").style.width = `${Math.max(0, Math.min(100, agyWeekly ?? 0))}%`;
-
-  // 2. Antigravity IDE - Opus 4.6 Thinking
-  if ($("label-opus-5h")) $("label-opus-5h").textContent = opus5h !== undefined ? `${(opus5hSync ? opus5hSync.effectivePct : opus5h).toFixed(2)}% remaining` : "Waiting for quota";
-  if ($("reset-opus-5h")) $("reset-opus-5h").textContent = countdownText(opus5hReset);
-  if ($("bar-opus-5h")) $("bar-opus-5h").style.width = `${Math.max(0, Math.min(100, opus5hSync ? opus5hSync.effectivePct : (opus5h ?? 0)))}%`;
-
-  if ($("label-opus-weekly")) $("label-opus-weekly").textContent = opusWeekly !== undefined ? `${opusWeekly.toFixed(2)}% remaining` : "Waiting for quota";
-  if ($("reset-opus-weekly")) $("reset-opus-weekly").textContent = countdownText(ts.opusWeeklyResetTime);
-  if ($("bar-opus-weekly")) $("bar-opus-weekly").style.width = `${Math.max(0, Math.min(100, opusWeekly ?? 0))}%`;
-
-  // 3. OpenAI (ChatGPT + Codex)
-  if ($("label-codex-5h")) $("label-codex-5h").textContent = codex5h !== undefined ? `${(codex5hSync ? codex5hSync.effectivePct : codex5h).toFixed(2)}% remaining` : "Waiting for quota data";
-  if ($("reset-codex-5h")) $("reset-codex-5h").textContent = countdownText(codex5hReset);
-  if ($("bar-codex-5h")) $("bar-codex-5h").style.width = codex5h !== undefined ? `${Math.max(0, Math.min(100, codex5hSync ? codex5hSync.effectivePct : codex5h))}%` : "0%";
-
-  if ($("label-codex-weekly")) $("label-codex-weekly").textContent = codexWeekly !== undefined ? `${codexWeekly.toFixed(2)}% remaining` : "Waiting for quota data";
-  if ($("reset-codex-weekly")) $("reset-codex-weekly").textContent = countdownText(ts.codexWeeklyResetTime);
-  if ($("bar-codex-weekly")) {
-    const pct = codexWeekly ?? 0;
-    $("bar-codex-weekly").style.width = codexWeekly !== undefined ? `${Math.max(0, Math.min(100, pct))}%` : "0%";
-    // Unified tone thresholds (<=15 critical, 15-35 caution) instead of the
-    // old hard-coded <20% warning.
-    $("bar-codex-weekly").classList.toggle("warning", codexWeekly !== undefined && capacityTone(clamp(pct, 0, 100)) !== "healthy");
+  // A5: Best / Lowest summary across the six windows (shared selection logic).
+  const summary = calculateCapacitySummary(ts);
+  const summaryEl = $("token-capacity-summary");
+  if (summaryEl) {
+    summaryEl.replaceChildren();
+    if (summary) {
+      const toneClass = `summary-${capacityTone(summary.lowest.percentage)}`;
+      summaryEl.append(
+        node("span", `Best: ${summary.strongest.label} ${summary.strongest.percentage.toFixed(0)}%`, "summary-pill"),
+        node("span", `Lowest: ${summary.lowest.label} ${summary.lowest.percentage.toFixed(0)}%`, `summary-pill ${toneClass}`),
+      );
+      summaryEl.style.display = "";
+    } else {
+      summaryEl.style.display = "none";
+    }
   }
 
   const codexTag = $("codex-status-tag");

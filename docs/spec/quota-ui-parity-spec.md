@@ -169,9 +169,40 @@ control-center/
 programName·directUsage.status/sources·errors를 그대로 반환, `?force=1`이
 핸들러 1회 호출 + 재기록된 파일(codex 55/777)을 재읽기함을 단언.
 
-### 남은 단계 (다음 세션)
+### P3 완료 (A4 절대 토큰 + A5 Best/Lowest + A7 tooltip, shared로 단일화)
 
-- P3: A4 절대 토큰 표시, A5 Best/Lowest 요약, A7 tooltip (P2 데이터 이제 있음)
+`shared/quota/metric.ts` (순수, DOM/Node 0) — IDE 웹뷰의 순수 계산만 원본 그대로 추출:
+- `buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix)` — A4 절대량
+  가용성(`hasAbsolute`) + A6 tone + A3 K-sync + A7 tooltip. 반환 모델
+  `{ label, ariaLabel, percentage, unavailable, tone, refreshShort/Medium/Full, hasAbsolute, tooltip }`.
+- `capacitySummaryEntry(...)` — 6개 윈도우 중 하나의 summary entry.
+- `calculateCapacitySummary(status)` — A5: 6개 entry 생성→정렬(내림차순, 동점은 소스 순서
+  유지)→`strongest`(최고)·`lowest`(최저) 선택. 어떤 entry도 유효하지 않으면 `null`.
+- `absoluteTokenText(left, max, estimated)` — A4 텍스트 단일 소스: `max>0`이면
+  `left / max`, 아니면 `EstimatedAbsolute` 폴백, 그 아니면 left만, 전부 없으면 `undefined`
+  (이때 UI는 빈 칸 — 가짜 "0" 표시 금지).
+
+배선 (P1 패턴 유지 — 계산은 shared, DOM 렌더는 각 프로그램):
+- 웹뷰 `webview/main.js`: `buildTokenMetric`은 `IPQuota.buildTokenMetric` 위랩퍼(본문 제거),
+  `renderCapacitySummary`는 `IPQuota.calculateCapacitySummary`를 호출해 선택만 받고
+  innerHTML pill 렌더만 유지. 로컬 `capacitySummaryEntry` 원본은 제거(죽은 코드 0).
+- control-center `src/main.js` `renderTokens`: 6개 윈도우를 전부 `buildTokenMetric`으로
+  생성(A4 토큰 행 `tokens-*`, A7 `title` tooltip, A6 tone→`warning`/`critical` 클래스),
+  A5는 `calculateCapacitySummary`로 Best/Lowest pill 2개를 `#token-capacity-summary`에 렌더.
+  직접 K-sync(`calculateEffective5HourQuota`+`clamp`)는 제거 — `buildTokenMetric`이 내부 수행.
+- `index.html`: 6개 `window-tokens` 행 + `#token-capacity-summary` 컨테이너 추가.
+- `src/style.css`: `.window-tokens`(비면 숨김), `.progress-fill.warning/.critical`(전체 윈도우
+  공용 톤 — 기존 codex 전용 규칙 확대), `.token-capacity-summary .summary-pill` + tone.
+
+검증: `test-quota-core.js` P3 parity — `buildTokenMetric` 500개 랜덤 윈도우 === 원본,
+A7 분기(exhausted/capped/weekly-reset-swap), `capacitySummaryEntry` 300 샘플 === 원본,
+`calculateCapacitySummary` 6윈도우 best/lowest + `null` guard, `absoluteTokenText` 6케이스,
+CC 배선(buildTokenMetric·calculateCapacitySummary import, K 테이블 중복 없음).
+reuse-gate P3 마커(webview `IPQuota.buildTokenMetric`/`IPQuota.calculateCapacitySummary`,
+CC import + K 재정의 금지). tsc exit 0, CC `vite build` 통과 (9 modules transformed).
+
+### 남은 단계
+
 - P4: A8 로컬 LLM 서버 배지 — control-center에 미커밋된 IDE 배지 로직과
   동일한 기준(`endpointHealth`+`loadedModels`)으로 P2 후 적용
 - P5: B2 force refresh **클라이언트 배선** — broker는 `?force=1`을 이미 처리(P2).

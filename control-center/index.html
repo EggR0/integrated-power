@@ -59,6 +59,7 @@
               <div>
                 <h2>AI 모델 실시간 쿼터 & 토큰 상태</h2>
                 <p id="token-last-updated" class="muted">동기화 대기 중…</p>
+                <div id="token-capacity-summary" class="token-capacity-summary" style="display: none;"></div>
               </div>
             </div>
             <div class="banner-right">
@@ -98,6 +99,7 @@
                     </div>
                     <p id="reset-gemini-5h" class="window-countdown">· Waiting for quota</p>
                     <div class="progress-track"><div id="bar-gemini-5h" class="progress-fill gemini" style="width: 0%;"></div></div>
+                    <p id="tokens-gemini-5h" class="window-tokens"></p>
                   </div>
                   <div class="quota-window-row">
                     <div class="window-info">
@@ -106,6 +108,7 @@
                     </div>
                     <p id="reset-gemini-weekly" class="window-countdown">· Waiting for quota</p>
                     <div class="progress-track"><div id="bar-gemini-weekly" class="progress-fill gemini" style="width: 0%;"></div></div>
+                    <p id="tokens-gemini-weekly" class="window-tokens"></p>
                   </div>
                 </div>
 
@@ -121,6 +124,7 @@
                     </div>
                     <p id="reset-opus-5h" class="window-countdown">· Waiting for quota</p>
                     <div class="progress-track"><div id="bar-opus-5h" class="progress-fill opus" style="width: 0%;"></div></div>
+                    <p id="tokens-opus-5h" class="window-tokens"></p>
                   </div>
                   <div class="quota-window-row">
                     <div class="window-info">
@@ -129,6 +133,7 @@
                     </div>
                     <p id="reset-opus-weekly" class="window-countdown">· Waiting for quota</p>
                     <div class="progress-track"><div id="bar-opus-weekly" class="progress-fill opus" style="width: 0%;"></div></div>
+                    <p id="tokens-opus-weekly" class="window-tokens"></p>
                   </div>
                 </div>
               </div>
@@ -156,6 +161,7 @@
                       <span id="label-codex-5h" class="window-val">Waiting for quota data</span>
                     </div>
                     <div class="progress-track"><div id="bar-codex-5h" class="progress-fill codex" style="width: 0%;"></div></div>
+                    <p id="tokens-codex-5h" class="window-tokens"></p>
                   </div>
                   <div class="quota-window-row">
                     <div class="window-info">
@@ -164,6 +170,7 @@
                     </div>
                     <p id="reset-codex-weekly" class="window-countdown">· Waiting for quota</p>
                     <div class="progress-track"><div id="bar-codex-weekly" class="progress-fill codex" style="width: 0%;"></div></div>
+                    <p id="tokens-codex-weekly" class="window-tokens"></p>
                   </div>
                 </div>
 

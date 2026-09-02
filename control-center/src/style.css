@@ -456,6 +456,46 @@ textarea { min-height: 56px; resize: vertical; }
 .progress-fill.codex.warning { background: linear-gradient(90deg, #fbbf24, #f59e0b); box-shadow: 0 0 8px rgba(251, 191, 36, 0.5); }
 .progress-fill.local { background: linear-gradient(90deg, #6366f1, #a855f7); box-shadow: 0 0 8px rgba(99, 102, 241, 0.5); }
 
+/* P3 unified tone (<=15% critical, 15-35% warning) — shared capacityTone drives
+   the class toggle on every window's bar, not just the old codex-only rule. */
+.progress-fill.warning { background: linear-gradient(90deg, #fbbf24, #f59e0b); box-shadow: 0 0 8px rgba(251, 191, 36, 0.5); }
+.progress-fill.critical { background: linear-gradient(90deg, #f87171, #ef4444); box-shadow: 0 0 8px rgba(239, 68, 68, 0.55); }
+
+/* A4: absolute tokens (left / max or the EstimatedAbsolute fallback). Empty
+   (collapsed) when there is no absolute data, so no fake "0" is ever shown. */
+.window-tokens {
+  margin: 3px 0 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-height: 0;
+}
+.window-tokens:empty { display: none; }
+
+/* A5: Best / Lowest summary across the six windows (shared selection). */
+.token-capacity-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.token-capacity-summary .summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  padding: 2px 10px;
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.08);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.token-capacity-summary .summary-pill.summary-warning { border-color: rgba(251, 191, 36, 0.45); color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
+.token-capacity-summary .summary-pill.summary-critical { border-color: rgba(239, 68, 68, 0.5); color: #f87171; background: rgba(239, 68, 68, 0.12); }
+
 .usage-stat-box {
   background: rgba(10, 15, 26, 0.6);
   border: 1px solid var(--border-subtle);

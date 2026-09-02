@@ -690,21 +690,6 @@ function renderCapacitySummary(status) {
   `;
 }
 
-function capacitySummaryEntry(labelFull, labelMedium, labelShort, exactPercentage, left, max) {
-  let percentage;
-  if (typeof exactPercentage === "number" && Number.isFinite(exactPercentage)) {
-    percentage = clamp(exactPercentage, 0, 100);
-  } else {
-    const safeLeft = toFiniteNumber(left);
-    const safeMax = toFiniteNumber(max);
-    if (safeMax > 0) {
-      percentage = clamp((safeLeft / safeMax) * 100, 0, 100);
-    }
-  }
-
-  return typeof percentage === "number" ? { label: labelFull, labelFull, labelMedium, labelShort, percentage } : undefined;
-}
-
 function renderTokenPanelStatus(status) {
   const visibleStatuses = [];
   if (dashboardState.viewConfig?.showCodex !== false && status.codexStatus) visibleStatuses.push(status.codexStatus);
@@ -744,105 +729,9 @@ const K_DEFAULT_RATIO = IPQuota.K_DEFAULT_RATIO;
 const calculateEffective5HourQuota = IPQuota.calculateEffective5HourQuota;
 
 function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) {
-  const left = toFiniteNumber(status[`${prefix}TokensLeft`]);
-  const max = toFiniteNumber(status[`${prefix}Max`]);
-  const exactPercentage = status[`${prefix}Percentage`];
-  const estimated = status[`${prefix}EstimatedAbsolute`];
-  const rawResetTime = status[`${prefix}ResetTime`];
-
-  let percentage;
-  if (typeof exactPercentage === "number" && Number.isFinite(exactPercentage)) {
-    percentage = clamp(exactPercentage, 0, 100);
-  } else if (max > 0) {
-    percentage = clamp((left / max) * 100, 0, 100);
-  }
-
-  const hasAbsolute = typeof estimated === "number" || max > 0 || left > 0;
-  let normalizedPercentage = percentage ?? 0;
-  let isWeeklyExhausted = false;
-  let isWeeklyCapped = false;
-  let capReason = "";
-
-  // Dual-Window Quota Synchronization: 5Hours constrained by Weekly
-  if (label === "5Hours" && pairedWeeklyPrefix && percentage !== undefined) {
-    const weeklyExact = status[`${pairedWeeklyPrefix}Percentage`];
-    const weeklyLeft = toFiniteNumber(status[`${pairedWeeklyPrefix}TokensLeft`]);
-    const weeklyMax = toFiniteNumber(status[`${pairedWeeklyPrefix}Max`]);
-    let weeklyPct = typeof weeklyExact === "number" && Number.isFinite(weeklyExact)
-      ? clamp(weeklyExact, 0, 100)
-      : weeklyMax > 0 ? clamp((weeklyLeft / weeklyMax) * 100, 0, 100) : undefined;
-
-    if (weeklyPct !== undefined) {
-      const sync = calculateEffective5HourQuota(normalizedPercentage, weeklyPct, prefix);
-      normalizedPercentage = sync.effectivePct;
-      isWeeklyExhausted = sync.isWeeklyExhausted;
-      isWeeklyCapped = sync.isWeeklyCapped;
-      if (isWeeklyExhausted) {
-        capReason = "Weekly exhausted";
-      } else if (isWeeklyCapped) {
-        capReason = `Weekly capped (${weeklyPct.toFixed(1)}% × ${sync.K})`;
-      }
-    }
-  }
-  
-  const displayPercentage = isWeeklyExhausted ? 0.0 : normalizedPercentage;
-  const mainText = (hasAbsolute || percentage !== undefined) ? `${displayPercentage.toFixed(2)}%` : "Unavailable";
-  
-  let subtextFull = "Waiting for quota data";
-  let subtextMedium = "Waiting";
-  let subtextShort = "Waiting";
-  if (hasAbsolute || percentage !== undefined) {
-    subtextFull = `${normalizedPercentage.toFixed(2)}% remaining`;
-    subtextMedium = `${normalizedPercentage.toFixed(2)}%`;
-    subtextShort = `${normalizedPercentage.toFixed(1)}%`;
-  }
-
-  let effectiveResetTime = rawResetTime;
-  if (isWeeklyExhausted && pairedWeeklyPrefix) {
-    const pairedResetTime = status[`${pairedWeeklyPrefix}ResetTime`];
-    if (pairedResetTime) {
-      effectiveResetTime = pairedResetTime;
-    }
-  }
-
-  const countdown = formatRefreshCountdown(effectiveResetTime);
-  const refreshFull = countdown ? countdown.full : "";
-  const refreshMedium = countdown ? (countdown.medium || countdown.short) : "";
-  const refreshShort = countdown ? countdown.short : "";
-  
-  let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
-  if (isWeeklyExhausted) {
-    tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` · ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
-  } else if (isWeeklyCapped) {
-    tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
-  }
-
-  const labelFull = label;
-  const labelMedium = label;
-  const labelShort = label === "5Hours" ? "5H" : label === "Weekly" ? "W" : label;
-
-  return {
-    label,
-    labelFull,
-    labelMedium,
-    labelShort,
-    ariaLabel: ariaLabel || label,
-    mainText,
-    subtext: subtextFull,
-    subtextFull,
-    subtextMedium,
-    subtextShort,
-    refreshText: refreshFull,
-    refreshFull,
-    refreshMedium,
-    refreshShort,
-    percentage: normalizedPercentage,
-    unavailable: percentage === undefined && !hasAbsolute,
-    tone: capacityTone(normalizedPercentage),
-    tooltip,
-    isWeeklyExhausted,
-    isWeeklyCapped,
-  };
+  // A4 absolute-token availability + A7 tooltip live in shared/quota
+  // (window.IPQuota) — the same source the control-center consumes.
+  return IPQuota.buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix);
 }
 
 function renderCapacityGroup(title, metrics) {

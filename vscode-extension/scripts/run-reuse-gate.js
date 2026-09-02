@@ -39,6 +39,21 @@ if (!read("scripts\\build-extension.js").includes("index.ts")) failures.push("bu
 requireText("src\\broker\\server.ts", "force");
 requireText("src\\broker\\tokenScanner.ts", "setForceRefreshHandler");
 requireText("src\\extension.ts", "setForceRefreshHandler");
+// P3: A4 absolute tokens + A7 tooltip + A5 Best/Lowest selection live once in
+// shared/quota. The webview delegates buildTokenMetric/calculateCapacitySummary
+// to window.IPQuota (no local re-derivation), and the control-center imports
+// the same source instead of hard-coding its own K-sync / metric builder.
+requireText("webview\\main.js", "IPQuota.buildTokenMetric");
+requireText("webview\\main.js", "IPQuota.calculateCapacitySummary");
+if (fs.existsSync(ccRoot)) {
+  const ccMainFile = path.join(ccRoot, "src", "main.js");
+  if (fs.existsSync(ccMainFile)) {
+    const cc = fs.readFileSync(ccMainFile, "utf8");
+    if (!cc.includes("buildTokenMetric")) failures.push("control-center main.js must import buildTokenMetric (A4+A7) from @shared/quota");
+    if (!cc.includes("calculateCapacitySummary")) failures.push("control-center main.js must import calculateCapacitySummary (A5) from @shared/quota");
+    if (/const K_CAPACITY_RATIOS/.test(cc)) failures.push("control-center main.js redefines K_CAPACITY_RATIOS (single source must stay in shared/quota)");
+  }
+}
 
 if (failures.length) { console.error(failures.join("\n")); process.exit(1); }
 console.log("reuse gate passed");
