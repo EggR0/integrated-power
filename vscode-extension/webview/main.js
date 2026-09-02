@@ -734,46 +734,14 @@ function renderTokenSkeleton() {
   `;
 }
 
-const K_CAPACITY_RATIOS = Object.freeze({
-  opus: 4.5,
-  antigravity: 5.0,
-  codex: 4.0,
-  claude: 4.5,
-});
-const K_DEFAULT_RATIO = 4.5;
-
-function calculateEffective5HourQuota(fiveHourPct, weeklyPct, prefix) {
-  const modelKey = prefix.toLowerCase().replace(/weekly/i, "");
-  const K = K_CAPACITY_RATIOS[modelKey] ?? K_DEFAULT_RATIO;
-
-  if (weeklyPct === 0) {
-    return {
-      effectivePct: 0.0,
-      isWeeklyExhausted: true,
-      isWeeklyCapped: true,
-      K,
-    };
-  }
-
-  if (typeof weeklyPct === "number" && Number.isFinite(weeklyPct)) {
-    const weeklyCeiling = weeklyPct * K;
-    if (weeklyCeiling < fiveHourPct) {
-      return {
-        effectivePct: clamp(weeklyCeiling, 0, 100),
-        isWeeklyExhausted: false,
-        isWeeklyCapped: true,
-        K,
-      };
-    }
-  }
-
-  return {
-    effectivePct: fiveHourPct,
-    isWeeklyExhausted: false,
-    isWeeklyCapped: false,
-    K,
-  };
-}
+// Quota calculation/formatting now lives in shared/quota (bundled to
+// webview/quota-core.js, exposed as window.IPQuota — the same source the
+// control-center desktop UI consumes via vite). Thin delegation keeps the
+// existing call sites unchanged.
+const IPQuota = window.IPQuota;
+const K_CAPACITY_RATIOS = IPQuota.K_CAPACITY_RATIOS;
+const K_DEFAULT_RATIO = IPQuota.K_DEFAULT_RATIO;
+const calculateEffective5HourQuota = IPQuota.calculateEffective5HourQuota;
 
 function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) {
   const left = toFiniteNumber(status[`${prefix}TokensLeft`]);
@@ -1268,17 +1236,15 @@ function normalizeTaskWeight(value) {
 }
 
 function toFiniteNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : 0;
+  return IPQuota.toFiniteNumber(value);
 }
 
 function clamp(value, min, max) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.min(Math.max(number, min), max) : min;
+  return IPQuota.clamp(value, min, max);
 }
 
 function capacityTone(percentage) {
-  return percentage <= 15 ? "critical" : percentage <= 35 ? "warning" : "healthy";
+  return IPQuota.capacityTone(percentage);
 }
 
 function statusClass(status) {
@@ -1296,18 +1262,11 @@ function statusClass(status) {
 }
 
 function formatNumber(value) {
-  return new Intl.NumberFormat().format(toFiniteNumber(value));
+  return IPQuota.formatNumber(value);
 }
 
 function formatTokenCount(value) {
-  const number = toFiniteNumber(value);
-  if (number >= 1_000_000) {
-    return `${(number / 1_000_000).toFixed(number >= 10_000_000 ? 1 : 2)}M tokens`;
-  }
-  if (number >= 1_000) {
-    return `${(number / 1_000).toFixed(number >= 10_000 ? 1 : 2)}K tokens`;
-  }
-  return `${formatNumber(number)} tokens`;
+  return IPQuota.formatTokenCount(value);
 }
 
 function formatDateTime(value) {
@@ -1342,48 +1301,11 @@ function formatElapsed(value) {
 }
 
 function formatResetTime(value) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-  const diffHours = (date.getTime() - Date.now()) / (1000 * 60 * 60);
-  if (diffHours > 24) {
-    return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
-  }
-  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return IPQuota.formatResetTime(value);
 }
 
 function formatRefreshCountdown(value) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
-  
-  const diffMs = date.getTime() - Date.now();
-  if (diffMs <= 0) return { full: "\u00B7 Refreshes soon", medium: "\u00B7 Soon", short: "\u00B7 Soon" };
-  
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-  
-  if (diffHours >= 24) {
-    return {
-      full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
-      medium: `\u00B7 ${diffHours}h`,
-      short: `\u00B7 ${diffHours}h`,
-    };
-  }
-  if (diffHours > 0) {
-    return {
-      full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
-      medium: `\u00B7 ${diffHours}h ${diffMins}m`,
-      short: `\u00B7 ${diffHours}h`,
-    };
-  }
-  return {
-    full: `\u00B7 Refreshes in ${diffMins}m`,
-    medium: `\u00B7 ${diffMins}m`,
-    short: `\u00B7 ${diffMins}m`,
-  };
+  return IPQuota.formatRefreshCountdown(value);
 }
 
 function escapeAttr(value) {

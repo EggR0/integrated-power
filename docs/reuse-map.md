@@ -11,6 +11,7 @@ update the row and link its proof test.
 | Agy executable | `configurationModel` executable resolution and Agy CLI bridge | shared resolver, thin `AgyCliAdapter` | discovery/delegation test |
 | Codex | `codexAppServer.ts` and App Server stdio | retain official stdio adapter | stdio integration test |
 | Usage/quota | `TokenManager`, `DashboardController`, `AgyQuotaClient`, `RunStore` | shared telemetry service; same canonical state root | VSIX/Tauri parity test |
+| Quota calculation/formatting | `vscode-extension/webview/main.js` quota pure functions (`calculateEffective5HourQuota`, `K_CAPACITY_RATIOS`, `capacityTone`, `formatRefreshCountdown`, `clamp`, `toFiniteNumber`) | moved to `shared/quota/` (TS, DOM/Node-free); webview consumes via IIFE bundle `webview/quota-core.js` (`window.IPQuota`), control-center via vite alias `@shared/quota`; renderers remain per-program (innerHTML vs DOM API) | `vscode-extension/scripts/test-quota-core.js` + reuse gate |
 | Paths/migration | `storagePath.ts`, `Ensure-IpOrchestratorSetup.ps1` | broker and Tauri use canonical IntegratedPower state | migration test |
 | MCP | official `@modelcontextprotocol/sdk` when compatible | SDK boundary; custom method switch is temporary legacy only | protocol compatibility test |
 | A2A | installed `@a2a-js/sdk` 1.0.1 | use SDK client/server edge | A2A card/send/stream test |

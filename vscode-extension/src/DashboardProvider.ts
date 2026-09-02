@@ -63,6 +63,9 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private getHtml(webview: vscode.Webview): string {
     const nonce = this.createNonce();
+    const coreScriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "webview", "quota-core.js"),
+    );
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "webview", "main.js"),
     );
@@ -89,6 +92,7 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
 </head>
 <body>
   <main id="app"></main>
+  <script nonce="${nonce}" src="${coreScriptUri}"></script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

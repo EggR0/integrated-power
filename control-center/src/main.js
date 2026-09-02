@@ -1,7 +1,22 @@
 import "./style.css";
+import {
+  calculateEffective5HourQuota,
+  capacityTone,
+  clamp,
+  formatRefreshCountdown,
+  mergeQuotaSettings,
+  clampPollInterval,
+} from "@shared/quota";
 
 const API = "http://127.0.0.1:37241";
 const streams = new Map();
+
+// Shared quota settings schema: defaults + coercion live in shared/quota.
+// Persistence stays local (localStorage) — only the schema is shared.
+const quotaSettings = mergeQuotaSettings({
+  pollIntervalMs: localStorage.getItem("ip_poll_interval") ? Number(localStorage.getItem("ip_poll_interval")) : undefined,
+  notifyOnFull: localStorage.getItem("ip_notify_full_tokens") !== "false",
+});
 
 const state = {
   capabilities: [],
@@ -10,8 +25,8 @@ const state = {
   tokenStatus: null,
   previousTokenStatus: null,
   lastFullNotified: false,
-  notifyOnFullTokens: localStorage.getItem("ip_notify_full_tokens") !== "false",
-  pollInterval: Number(localStorage.getItem("ip_poll_interval")) || 5000,
+  notifyOnFullTokens: quotaSettings.notifyOnFull,
+  pollInterval: quotaSettings.pollIntervalMs,
   autoStartEnabled: false,
   logs: { path: "", lines: [] },
   mainProvider: "google.antigravity.ide",
@@ -194,21 +209,10 @@ function switchTab(targetTab) {
   if (targetTab === "logs") void refreshLogs();
 }
 
-function formatCountdown(resetTimeStr) {
-  if (!resetTimeStr) return "";
-  const target = Date.parse(resetTimeStr);
-  if (Number.isNaN(target)) return `· ${resetTimeStr}`;
-  const diffMs = target - Date.now();
-  if (diffMs <= 0) return "· Refreshes soon (100%)";
-  const totalMinutes = Math.floor(diffMs / (1000 * 60));
-  const totalHours = Math.floor(totalMinutes / 60);
-  const mins = totalMinutes % 60;
-  if (totalHours >= 48) {
-    const days = Math.floor(totalHours / 24);
-    const remHours = totalHours % 24;
-    return `· Refreshes in ${days}d ${remHours}h`;
-  }
-  return `· Refreshes in ${totalHours}h ${mins}m`;
+function countdownText(resetTimeStr) {
+  // Shared three-stage countdown (control-center uses the `full` stage).
+  const countdown = formatRefreshCountdown(resetTimeStr);
+  return countdown ? countdown.full : "";
 }
 
 function renderTokens() {
@@ -220,36 +224,48 @@ function renderTokens() {
   const codex5h = ts.codexPercentage;
   const codexWeekly = ts.codexWeeklyPercentage;
 
+  // Effective 5h value via the shared K-sync (weekly budget caps the 5h window).
+  const agy5hSync = agyWeekly !== undefined ? calculateEffective5HourQuota(clamp(agy5h ?? 0, 0, 100), clamp(agyWeekly, 0, 100), "antigravity") : null;
+  const opus5hSync = opusWeekly !== undefined ? calculateEffective5HourQuota(clamp(opus5h ?? 0, 0, 100), clamp(opusWeekly, 0, 100), "opus") : null;
+  const codex5hSync = codexWeekly !== undefined ? calculateEffective5HourQuota(clamp(codex5h ?? 0, 0, 100), clamp(codexWeekly, 0, 100), "codex") : null;
+
+  // When the weekly pool is exhausted, the 5h countdown follows the WEEKLY
+  // reset (same as the IDE webview).
+  const agy5hReset = agy5hSync && agy5hSync.isWeeklyExhausted ? (ts.antigravityWeeklyResetTime ?? ts.antigravityResetTime) : ts.antigravityResetTime;
+  const opus5hReset = opus5hSync && opus5hSync.isWeeklyExhausted ? (ts.opusWeeklyResetTime ?? ts.opusResetTime) : ts.opusResetTime;
+  const codex5hReset = codex5hSync && codex5hSync.isWeeklyExhausted ? (ts.codexWeeklyResetTime ?? ts.codexResetTime) : ts.codexResetTime;
+
   // 1. Antigravity IDE - Gemini 3.1 Pro
-  if ($("label-gemini-5h")) $("label-gemini-5h").textContent = agy5h !== undefined ? `${agy5h.toFixed(2)}% remaining` : "Waiting for quota";
-  if ($("reset-gemini-5h")) $("reset-gemini-5h").textContent = formatCountdown(ts.antigravityResetTime);
-  if ($("bar-gemini-5h")) $("bar-gemini-5h").style.width = `${Math.max(0, Math.min(100, agy5h ?? 0))}%`;
+  if ($("label-gemini-5h")) $("label-gemini-5h").textContent = agy5h !== undefined ? `${(agy5hSync ? agy5hSync.effectivePct : agy5h).toFixed(2)}% remaining` : "Waiting for quota";
+  if ($("reset-gemini-5h")) $("reset-gemini-5h").textContent = countdownText(agy5hReset);
+  if ($("bar-gemini-5h")) $("bar-gemini-5h").style.width = `${Math.max(0, Math.min(100, agy5hSync ? agy5hSync.effectivePct : (agy5h ?? 0)))}%`;
 
   if ($("label-gemini-weekly")) $("label-gemini-weekly").textContent = agyWeekly !== undefined ? `${agyWeekly.toFixed(2)}% remaining` : "Waiting for quota";
-  if ($("reset-gemini-weekly")) $("reset-gemini-weekly").textContent = formatCountdown(ts.antigravityWeeklyResetTime);
+  if ($("reset-gemini-weekly")) $("reset-gemini-weekly").textContent = countdownText(ts.antigravityWeeklyResetTime);
   if ($("bar-gemini-weekly")) $("bar-gemini-weekly").style.width = `${Math.max(0, Math.min(100, agyWeekly ?? 0))}%`;
 
   // 2. Antigravity IDE - Opus 4.6 Thinking
-  if ($("label-opus-5h")) $("label-opus-5h").textContent = opus5h !== undefined ? `${opus5h.toFixed(2)}% remaining` : "Waiting for quota";
-  if ($("reset-opus-5h")) $("reset-opus-5h").textContent = formatCountdown(ts.opusResetTime);
-  if ($("bar-opus-5h")) $("bar-opus-5h").style.width = `${Math.max(0, Math.min(100, opus5h ?? 0))}%`;
+  if ($("label-opus-5h")) $("label-opus-5h").textContent = opus5h !== undefined ? `${(opus5hSync ? opus5hSync.effectivePct : opus5h).toFixed(2)}% remaining` : "Waiting for quota";
+  if ($("reset-opus-5h")) $("reset-opus-5h").textContent = countdownText(opus5hReset);
+  if ($("bar-opus-5h")) $("bar-opus-5h").style.width = `${Math.max(0, Math.min(100, opus5hSync ? opus5hSync.effectivePct : (opus5h ?? 0)))}%`;
 
   if ($("label-opus-weekly")) $("label-opus-weekly").textContent = opusWeekly !== undefined ? `${opusWeekly.toFixed(2)}% remaining` : "Waiting for quota";
-  if ($("reset-opus-weekly")) $("reset-opus-weekly").textContent = formatCountdown(ts.opusWeeklyResetTime);
+  if ($("reset-opus-weekly")) $("reset-opus-weekly").textContent = countdownText(ts.opusWeeklyResetTime);
   if ($("bar-opus-weekly")) $("bar-opus-weekly").style.width = `${Math.max(0, Math.min(100, opusWeekly ?? 0))}%`;
 
   // 3. OpenAI (ChatGPT + Codex)
-  if ($("label-codex-5h")) $("label-codex-5h").textContent = codex5h !== undefined ? `${codex5h.toFixed(2)}% remaining` : "Waiting for quota data";
-  if ($("reset-codex-5h")) $("reset-codex-5h").textContent = formatCountdown(ts.codexResetTime);
-  if ($("bar-codex-5h")) $("bar-codex-5h").style.width = codex5h !== undefined ? `${Math.max(0, Math.min(100, codex5h))}%` : "0%";
+  if ($("label-codex-5h")) $("label-codex-5h").textContent = codex5h !== undefined ? `${(codex5hSync ? codex5hSync.effectivePct : codex5h).toFixed(2)}% remaining` : "Waiting for quota data";
+  if ($("reset-codex-5h")) $("reset-codex-5h").textContent = countdownText(codex5hReset);
+  if ($("bar-codex-5h")) $("bar-codex-5h").style.width = codex5h !== undefined ? `${Math.max(0, Math.min(100, codex5hSync ? codex5hSync.effectivePct : codex5h))}%` : "0%";
 
   if ($("label-codex-weekly")) $("label-codex-weekly").textContent = codexWeekly !== undefined ? `${codexWeekly.toFixed(2)}% remaining` : "Waiting for quota data";
-  if ($("reset-codex-weekly")) $("reset-codex-weekly").textContent = formatCountdown(ts.codexWeeklyResetTime);
+  if ($("reset-codex-weekly")) $("reset-codex-weekly").textContent = countdownText(ts.codexWeeklyResetTime);
   if ($("bar-codex-weekly")) {
     const pct = codexWeekly ?? 0;
     $("bar-codex-weekly").style.width = codexWeekly !== undefined ? `${Math.max(0, Math.min(100, pct))}%` : "0%";
-    if (codexWeekly !== undefined && pct < 20) $("bar-codex-weekly").classList.add("warning");
-    else $("bar-codex-weekly").classList.remove("warning");
+    // Unified tone thresholds (<=15 critical, 15-35 caution) instead of the
+    // old hard-coded <20% warning.
+    $("bar-codex-weekly").classList.toggle("warning", codexWeekly !== undefined && capacityTone(clamp(pct, 0, 100)) !== "healthy");
   }
 
   const codexTag = $("codex-status-tag");
@@ -865,7 +881,7 @@ function bindEvents() {
   if (pollSelect) {
     pollSelect.value = String(state.pollInterval);
     pollSelect.onchange = (e) => {
-      const newInterval = Number(e.target.value) || 5000;
+      const newInterval = clampPollInterval(Number(e.target.value));
       setPollInterval(newInterval);
     };
   }
