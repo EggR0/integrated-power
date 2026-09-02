@@ -227,13 +227,29 @@ A8 분기(Active/Idle/Offline + tone), `localLoadedModelLabel`, CC 배선(localS
 import + `lcs.status` 기반 배지 제거 확인). reuse-gate P4 마커. tsc exit 0, CC
 `vite build` 통과 (10 modules).
 
+### P5 완료 (B2 force refresh 클라이언트 배선)
+
+P2에서 broker는 `GET /v1/tokens/status?force=1`을 이미 처리 — `?force=1`이면
+`setForceRefreshHandler`로 IDE의 5초 TTL 캐시를 우회하는 in-process live refresh를
+트리거하고 그 다음에 state 파일을 재읽는다. P5는 이 엔드포인트를 control-center의
+**수동 새로고침** 버튼이 실제로 호출하게 배선한 것(이전: 일반 폴링과 동일한
+`/v1/tokens/status`만 호출 → IDE TTL 캐시 갱신 불가).
+
+`control-center/src/main.js`:
+- `refresh({ force = false } = {})` — `force`만 true일 때 토큰 fetch 경로를
+  `/v1/tokens/status?force=1`으로, 그 외엔 `/v1/tokens/status`. 토큰 fetch뿐 아니라
+  capabilities/tasks/approvals/runs/metrics는 그대로(변경 없음).
+- `token-refresh-btn.onclick` → `refresh({ force: true })`. 자동 폴링
+  (인터벌, 재연결, 초기 로드)은 `refresh()` 그대로 — force 미사용.
+
+검증: `test-quota-core.js` CC wiring — CC가 `refresh({ force: true })`를 호출하고,
+`?force=1` 토큰 경로를 가져옴을 단언. tsc exit 0, CC `vite build` 통과.
+(실제 force 응답의 `forced` 플래그는 P2의 `run-broker-tests.js`가 검증.)
+
 ### 남은 단계
 
-- P5: B2 force refresh **클라이언트 배선** — broker는 `?force=1`을 이미 처리(P2).
-  control-center의 수동 새로고침 버튼이 `/v1/tokens/status?force=1`을 부르게 배선
 - P6: A10 출처 구분 표시, B5 provider 블록 토글
 - A9(반응형 3단계 축약)는 데스크톱 고정 폭이라 제외 (명세 확정)
-
 ## 5. 검증 기준
 
 - P1: codex weekly=71% 상태(현재 실측)에서 5h 바가 `71×4.0=100 → cap 없음`으로

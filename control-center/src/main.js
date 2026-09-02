@@ -750,17 +750,22 @@ async function refreshAutoStart() {
   }
 }
 
-async function refresh() {
+async function refresh({ force = false } = {}) {
   try {
     await api("/health");
     setConnection("online", "브로커 정상 (37241)");
     if ($("status")) $("status").textContent = "브로커 정상 가동 중 (127.0.0.1:37241)";
 
+    // P5: a manual "refresh now" passes ?force=1 so the broker triggers an
+    // in-process live IDE refresh (setForceRefreshHandler) before re-reading
+    // the token state — bypassing the IDE's 5s TTL cache. Normal polling does
+    // not force.
+    const tokenPath = force ? "/v1/tokens/status?force=1" : "/v1/tokens/status";
     const [capRes, taskRes, appRes, tokenRes, runsRes, metricsRes] = await Promise.all([
       api("/v1/capabilities").catch(() => ({ capabilities: [] })),
       api("/v1/tasks").catch(() => ({ tasks: [] })),
       api("/v1/approvals").catch(() => ({ approvals: [] })),
-      api("/v1/tokens/status").catch(() => ({ tokenStatus: null })),
+      api(tokenPath).catch(() => ({ tokenStatus: null })),
       api("/v1/runs").catch(() => ({ runs: [], activeCount: 0 })),
       api("/v1/metrics/local-llm").catch(() => ({ metrics: [] })),
     ]);
@@ -846,7 +851,7 @@ function bindEvents() {
   if ($("connection-refresh")) $("connection-refresh").onclick = () => void refresh();
   if ($("token-refresh-btn")) $("token-refresh-btn").onclick = async () => {
     showToast("실시간 쿼터를 갱신 중입니다…");
-    await refresh();
+    await refresh({ force: true });
     showToast("AI 모델 쿼터가 최신 상태로 갱신되었습니다.");
   };
 

@@ -381,6 +381,10 @@ test("control-center imports the shared quota source (no duplicated K logic)", (
   // not the old (always-false) lcs.status === "online"|"busy" check.
   assert.ok(cc.includes("localServerBadge"), "control-center must import localServerBadge (A8)");
   assert.ok(!/lcs\??\.status === "online"/.test(cc), "control-center still keys its badge off lcs.status (always-false)");
+  // P5: the manual "refresh now" must request the broker force endpoint
+  // (?force=1), while normal polling must not.
+  assert.ok(/force[^;]*\/v1\/tokens\/status\?force=1/.test(cc), "control-center must call /v1/tokens/status?force=1 on manual refresh (B2)");
+  assert.ok(cc.includes("refresh({ force: true })"), "control-center token-refresh button must call refresh({ force: true })");
 });
 
 if (failures) {
