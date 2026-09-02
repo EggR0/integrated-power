@@ -33,6 +33,12 @@ requireText("webview\\main.js", "window.IPQuota");
 forbidText("webview\\main.js", "const K_CAPACITY_RATIOS = Object.freeze");
 if (!read("src\\DashboardProvider.ts").includes("quota-core.js")) failures.push("webview HTML does not load quota-core.js");
 if (!read("scripts\\build-extension.js").includes("index.ts")) failures.push("build does not regenerate webview/quota-core.js from shared/quota");
+// P2: broker force-refresh must be wired to the live IDE (extension.ts) and
+// the endpoint must read the ?force=1 query param. The schema passthrough is
+// proven by run-broker-tests.js; these markers pin the force wiring.
+requireText("src\\broker\\server.ts", "force");
+requireText("src\\broker\\tokenScanner.ts", "setForceRefreshHandler");
+requireText("src\\extension.ts", "setForceRefreshHandler");
 
 if (failures.length) { console.error(failures.join("\n")); process.exit(1); }
 console.log("reuse gate passed");

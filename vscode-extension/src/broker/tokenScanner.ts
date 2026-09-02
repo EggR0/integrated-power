@@ -14,30 +14,62 @@ export interface GpuStatus {
   powerLimitW?: number;
 }
 
+export interface QuotaPoolInfo {
+  id: string;
+  provider: string;
+  remainingPercentage: number;
+  resetTime?: string;
+  source?: string;
+  confidence?: string;
+}
+
 export interface LiveTokenStatus {
   antigravityPercentage?: number;
   antigravityResetTime?: string;
   antigravityWeeklyPercentage?: number;
   antigravityWeeklyResetTime?: string;
+  antigravityTokensLeft?: number;
+  antigravityMax?: number;
+  antigravityWeeklyTokensLeft?: number;
+  antigravityWeeklyMax?: number;
+  antigravityEstimatedAbsolute?: number;
 
   opusPercentage?: number;
   opusResetTime?: string;
   opusWeeklyPercentage?: number;
   opusWeeklyResetTime?: string;
+  opusTokensLeft?: number;
+  opusMax?: number;
+  opusWeeklyTokensLeft?: number;
+  opusWeeklyMax?: number;
+  opusEstimatedAbsolute?: number;
+  opusWeeklyEstimatedAbsolute?: number;
 
   codexPercentage?: number;
   codexResetTime?: string;
   codexWeeklyPercentage?: number;
   codexWeeklyResetTime?: string;
+  codexTokensLeft?: number;
+  codexMax?: number;
+  codexWeeklyTokensLeft?: number;
+  codexWeeklyMax?: number;
+  codexEstimatedAbsolute?: number;
+  codexWeeklyEstimatedAbsolute?: number;
+  codexStatus?: string;
 
   taskRouting: "normal" | "degraded" | "critical";
   lastSync: string;
+  errors?: string[];
+  quotaPools?: QuotaPoolInfo[];
   localComputeStatus: {
     status: "online" | "offline" | "busy";
     modelName: string;
     vramUsedMb: number;
     vramTotalMb: number;
     gpus: GpuStatus[];
+    endpointHealth?: string;
+    loadedModels?: string[];
+    programName?: string;
   };
   directUsage?: {
     todayTokens: number;
@@ -46,8 +78,31 @@ export interface LiveTokenStatus {
     sevenDaysTokens: number;
     sevenDaysPaidTokens: number;
     eventCount: number;
+    status?: string;
+    sources?: string[];
+    lastUsedAt?: string;
+    lastMeasuredAt?: string;
+    errors?: string[];
   };
   activity?: string[];
+}
+
+// In-process force-refresh hook. The broker runs in the same Node process as
+// the VS Code extension host, so it can ask the live IDE TokenManager to run a
+// forced (cache-bypassing) refresh before the broker re-reads the state file.
+// Registered by the extension entry point; a no-op when the IDE is not running.
+let forceRefreshHandler: (() => Promise<void>) | undefined;
+export function setForceRefreshHandler(handler: (() => Promise<void>) | undefined): void {
+  forceRefreshHandler = handler;
+}
+export async function requestForceRefresh(): Promise<void> {
+  if (!forceRefreshHandler) return;
+  try {
+    await forceRefreshHandler();
+  } catch {
+    // A force refresh is best-effort: never fail the token-status endpoint
+    // because the live IDE refresh errored.
+  }
 }
 
 export async function scanGpuMetrics(): Promise<GpuStatus[]> {
@@ -201,7 +256,13 @@ function findTokenStatusJsonPath(): string | undefined {
   return undefined;
 }
 
-export async function scanLiveTokenStatus(): Promise<LiveTokenStatus> {
+export async function scanLiveTokenStatus(options: { force?: boolean } = {}): Promise<LiveTokenStatus> {
+  // Force refresh: ask the live IDE TokenManager (same process) to bypass its
+  // 5s cache and re-probe, then re-read the state file it rewrites.
+  if (options.force) {
+    await requestForceRefresh();
+  }
+
   // 1. Primary source of truth: Live token_status.json written by IDE TokenManager
   const statePath = findTokenStatusJsonPath();
   if (statePath) {
@@ -248,7 +309,9 @@ export async function scanLiveTokenStatus(): Promise<LiveTokenStatus> {
           }
         }
 
-        // Direct usage
+        // Direct usage — pass through the original claudeDirectUsage detail
+        // (status/sources/errors/lastUsedAt/lastMeasuredAt) alongside the
+        // flattened token counts so the desktop can show "Measured/No data".
         const cdu = data.claudeDirectUsage;
         const directUsage = {
           todayTokens: cdu?.today?.totalTokens ?? 0,
@@ -257,6 +320,11 @@ export async function scanLiveTokenStatus(): Promise<LiveTokenStatus> {
           sevenDaysTokens: cdu?.sevenDays?.totalTokens ?? 0,
           sevenDaysPaidTokens: cdu?.sevenDays?.billableTokens ?? 0,
           eventCount: cdu?.today?.eventCount ?? cdu?.sevenDays?.eventCount ?? 0,
+          status: typeof cdu?.status === "string" ? cdu.status : undefined,
+          sources: Array.isArray(cdu?.sources) ? cdu.sources : undefined,
+          lastUsedAt: typeof cdu?.lastUsedAt === "string" ? cdu.lastUsedAt : undefined,
+          lastMeasuredAt: typeof cdu?.lastMeasuredAt === "string" ? cdu.lastMeasuredAt : undefined,
+          errors: Array.isArray(cdu?.errors) ? cdu.errors : undefined,
         };
 
         // GPUs
@@ -277,27 +345,79 @@ export async function scanLiveTokenStatus(): Promise<LiveTokenStatus> {
           taskRouting = "degraded";
         }
 
+        // Pass-through of the original absolute-token and estimated-absolute
+        // values from the state file. These are the fields the IDE webview
+        // renders as "left / max" and the desktop needs for A4/A5.
+        const numOrUndef = (v: unknown): number | undefined =>
+          typeof v === "number" && Number.isFinite(v) ? v : undefined;
+        const strOrUndef = (v: unknown): string | undefined =>
+          typeof v === "string" && v.length > 0 ? v : undefined;
+
+        // Quota pools with source/confidence for A10 source distinction.
+        const quotaPools: QuotaPoolInfo[] | undefined = Array.isArray(data.quotaPools)
+          ? data.quotaPools
+              .filter((p: any) => p && typeof p === "object" && typeof p.id === "string" && typeof p.remainingPercentage === "number")
+              .map((p: any) => ({
+                id: p.id,
+                provider: typeof p.provider === "string" ? p.provider : "",
+                remainingPercentage: p.remainingPercentage,
+                resetTime: strOrUndef(p.resetTime),
+                source: strOrUndef(p.source),
+                confidence: strOrUndef(p.confidence),
+              }))
+          : undefined;
+
+        // Top-level errors array (from TokenManager fallback / fetch errors).
+        const errors = Array.isArray(data.errors)
+          ? data.errors.filter((e: unknown): e is string => typeof e === "string")
+          : undefined;
+
+        const localLcs = data.localComputeStatus;
+
         return {
           antigravityPercentage,
           antigravityResetTime,
           antigravityWeeklyPercentage,
           antigravityWeeklyResetTime,
+          antigravityTokensLeft: numOrUndef(data.antigravityTokensLeft),
+          antigravityMax: numOrUndef(data.antigravityMax),
+          antigravityWeeklyTokensLeft: numOrUndef(data.antigravityWeeklyTokensLeft),
+          antigravityWeeklyMax: numOrUndef(data.antigravityWeeklyMax),
+          antigravityEstimatedAbsolute: numOrUndef(data.antigravityEstimatedAbsolute),
           opusPercentage,
           opusResetTime,
           opusWeeklyPercentage,
           opusWeeklyResetTime,
+          opusTokensLeft: numOrUndef(data.opusTokensLeft),
+          opusMax: numOrUndef(data.opusMax),
+          opusWeeklyTokensLeft: numOrUndef(data.opusWeeklyTokensLeft),
+          opusWeeklyMax: numOrUndef(data.opusWeeklyMax),
+          opusEstimatedAbsolute: numOrUndef(data.opusEstimatedAbsolute),
+          opusWeeklyEstimatedAbsolute: numOrUndef(data.opusWeeklyEstimatedAbsolute),
           codexPercentage,
           codexResetTime,
           codexWeeklyPercentage,
           codexWeeklyResetTime,
+          codexTokensLeft: numOrUndef(data.codexTokensLeft),
+          codexMax: numOrUndef(data.codexMax),
+          codexWeeklyTokensLeft: numOrUndef(data.codexWeeklyTokensLeft),
+          codexWeeklyMax: numOrUndef(data.codexWeeklyMax),
+          codexEstimatedAbsolute: numOrUndef(data.codexEstimatedAbsolute),
+          codexWeeklyEstimatedAbsolute: numOrUndef(data.codexWeeklyEstimatedAbsolute),
+          codexStatus: strOrUndef(data.codexStatus),
           taskRouting,
           lastSync: new Date().toISOString(),
+          errors,
+          quotaPools,
           localComputeStatus: {
             status: isOnline ? (isBusy ? "busy" : "online") : "offline",
-            modelName: data.localComputeStatus?.loadedModels?.[0] || "qwen3.8:27b",
+            modelName: localLcs?.loadedModels?.[0] || "qwen3.8:27b",
             vramUsedMb,
             vramTotalMb,
             gpus,
+            endpointHealth: strOrUndef(localLcs?.endpointHealth),
+            loadedModels: Array.isArray(localLcs?.loadedModels) ? localLcs.loadedModels : [],
+            programName: strOrUndef(localLcs?.programName),
           },
           directUsage,
           activity: Array.isArray(data.activity) ? data.activity : undefined,

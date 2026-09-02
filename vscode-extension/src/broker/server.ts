@@ -136,8 +136,9 @@ export async function startBrokerServer(
         return send(response, 200, result);
       }
       if (request.method === "GET" && url.pathname === "/v1/tokens/status") {
-        const tokenStatus = await scanLiveTokenStatus();
-        return send(response, 200, { ok: true, tokenStatus });
+        const force = url.searchParams.get("force") === "1" || url.searchParams.get("force") === "true";
+        const tokenStatus = await scanLiveTokenStatus({ force });
+        return send(response, 200, { ok: true, forced: force, tokenStatus });
       }
       if (request.method === "GET" && url.pathname === "/v1/tasks") {
         return send(response, 200, { tasks: broker.listTasks() });

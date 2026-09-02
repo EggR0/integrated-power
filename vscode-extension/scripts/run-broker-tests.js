@@ -333,6 +333,122 @@ async function main() {
     } finally {
       await httpServer.close();
     }
+
+    // --- /v1/tokens/status: schema passthrough + ?force=1 -------------------
+    // The broker must surface the original token_status.json fields (absolute
+    // token counts, quota pools with source/confidence, endpoint health, Claude
+    // direct-usage status/sources, errors) instead of collapsing them. And
+    // ?force=1 must trigger the in-process live IDE refresh hook before
+    // re-reading the state file.
+    const stateRoot = path.join(temp, "token-state");
+    const stateDir = path.join(stateRoot, "IntegratedPower", "state");
+    fs.mkdirSync(stateDir, { recursive: true });
+    const tokenFile = path.join(stateDir, "token_status.json");
+    const baseFixture = {
+      antigravityTokensLeft: 12345,
+      antigravityMax: 50000,
+      antigravityWeeklyTokensLeft: 999,
+      antigravityWeeklyMax: 1000,
+      antigravityEstimatedAbsolute: 4321,
+      opusEstimatedAbsolute: 777,
+      opusWeeklyEstimatedAbsolute: 888,
+      codexTokensLeft: 111,
+      codexMax: 500,
+      codexWeeklyTokensLeft: 222,
+      codexWeeklyMax: 500,
+      codexEstimatedAbsolute: 333,
+      codexWeeklyEstimatedAbsolute: 444,
+      codexStatus: "working",
+      errors: ["telemetry hiccup"],
+      quotaPools: [
+        { id: "codex.5h", provider: "codex", remainingPercentage: 100, resetTime: "2026-09-01T14:41:19.000Z", source: "cli-json", confidence: "reported-quota" },
+        { id: "antigravity.default", provider: "antigravity", remainingPercentage: 91.3, resetTime: "2026-09-02T06:09:28Z", source: "cli-text", confidence: "reported-quota" },
+      ],
+      localComputeStatus: {
+        endpointHealth: "ok",
+        programName: "Ollama",
+        loadedModels: ["qwen3.8:27b"],
+        gpus: [{ id: 0, name: "Test GPU", utilizationPercentage: 5, vramUsedMb: 1000, vramTotalMb: 8000 }],
+      },
+      claudeDirectUsage: {
+        status: "measured",
+        today: { totalTokens: 10, billableTokens: 4, eventCount: 1 },
+        sevenDays: { totalTokens: 20, billableTokens: 8, eventCount: 2 },
+        sources: ["claude-cli"],
+        lastMeasuredAt: "2026-09-02T01:29:30.260Z",
+        errors: [],
+      },
+      activity: ["Token manager initialized."],
+    };
+    fs.writeFileSync(tokenFile, JSON.stringify(baseFixture), "utf8");
+    const savedLocalAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = stateRoot;
+    let forceHandlerCalls = 0;
+    try {
+      const { setForceRefreshHandler, startBrokerServer: startTokenServer } = require("../out/broker");
+      setForceRefreshHandler(async () => {
+        forceHandlerCalls++;
+        // Simulate the live IDE re-probing and rewriting the state file. Codex
+        // percentage is derived from quotaPools, so rewrite that pool too.
+        fs.writeFileSync(
+          tokenFile,
+          JSON.stringify({
+            ...baseFixture,
+            codexPercentage: 55,
+            codexTokensLeft: 777,
+            quotaPools: baseFixture.quotaPools.map((p) =>
+              p.id === "codex.5h" ? { ...p, remainingPercentage: 55 } : p,
+            ),
+          }),
+          "utf8",
+        );
+      });
+      const tokenServer = await startTokenServer(broker, 0);
+      try {
+        const normal = await fetch(`http://127.0.0.1:${tokenServer.port}/v1/tokens/status`).then((r) => r.json());
+        assert.strictEqual(normal.ok, true);
+        assert.strictEqual(normal.forced, false);
+        const ts = normal.tokenStatus;
+        // Absolute token passthrough
+        assert.strictEqual(ts.antigravityTokensLeft, 12345);
+        assert.strictEqual(ts.antigravityMax, 50000);
+        assert.strictEqual(ts.antigravityEstimatedAbsolute, 4321);
+        assert.strictEqual(ts.opusEstimatedAbsolute, 777);
+        assert.strictEqual(ts.codexTokensLeft, 111);
+        assert.strictEqual(ts.codexWeeklyEstimatedAbsolute, 444);
+        // codexStatus passthrough
+        assert.strictEqual(ts.codexStatus, "working");
+        // quota pools keep source/confidence
+        assert.ok(Array.isArray(ts.quotaPools));
+        const agyPool = ts.quotaPools.find((p) => p.id === "antigravity.default");
+        assert.strictEqual(agyPool.source, "cli-text");
+        assert.strictEqual(agyPool.confidence, "reported-quota");
+        // endpoint health / loaded models / program name
+        assert.strictEqual(ts.localComputeStatus.endpointHealth, "ok");
+        assert.deepStrictEqual(ts.localComputeStatus.loadedModels, ["qwen3.8:27b"]);
+        assert.strictEqual(ts.localComputeStatus.programName, "Ollama");
+        // Claude direct usage status/sources
+        assert.strictEqual(ts.directUsage.status, "measured");
+        assert.deepStrictEqual(ts.directUsage.sources, ["claude-cli"]);
+        assert.strictEqual(ts.directUsage.lastMeasuredAt, "2026-09-02T01:29:30.260Z");
+        // top-level errors passthrough
+        assert.deepStrictEqual(ts.errors, ["telemetry hiccup"]);
+
+        const forced = await fetch(`http://127.0.0.1:${tokenServer.port}/v1/tokens/status?force=1`).then((r) => r.json());
+        assert.strictEqual(forced.ok, true);
+        assert.strictEqual(forced.forced, true);
+        assert.strictEqual(forceHandlerCalls, 1);
+        // The handler rewrote the file; the broker re-read it (codex now 55/777).
+        assert.strictEqual(forced.tokenStatus.codexPercentage, 55);
+        assert.strictEqual(forced.tokenStatus.codexTokensLeft, 777);
+      } finally {
+        await tokenServer.close();
+        setForceRefreshHandler(undefined);
+      }
+    } finally {
+      if (savedLocalAppData === undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA = savedLocalAppData;
+      fs.rmSync(stateRoot, { recursive: true, force: true });
+    }
     console.log("broker tests passed");
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });

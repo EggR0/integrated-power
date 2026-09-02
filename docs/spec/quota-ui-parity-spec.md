@@ -108,7 +108,7 @@ UI만 만들고 데이터가 없으면 모든 항목이 "Waiting" 상태에 묶�
 
 ---
 
-## 4. 구현 가이드 (재사용 순서 준수) — AS-BUILT (2026-09-02, P1·구조 완료)
+## 4. 구현 가이드 (재사용 순서 준수) — AS-BUILT (2026-09-02, P1·구조 + P2 broker 완료)
 
 ### 완료된 구조
 
@@ -149,17 +149,33 @@ control-center/
 - `pnpm run test`에 `test-quota-core.js` 등록.
 - tsc 컴파일 통과, control-center `vite build` 통과 (8 modules transformed).
 
+### P2 완료 (broker 스키마 확장 + force)
+
+`broker/tokenScanner.ts` `scanLiveTokenStatus(options?: { force })`:
+- json 원본 필드를 그대로 통과 — 12종 `*TokensLeft/*Max`, `*EstimatedAbsolute`,
+  `codexStatus`, `quotaPools[]`(id/provider/remainingPercentage/resetTime/source/confidence),
+  `localComputeStatus.{endpointHealth,loadedModels,programName}`,
+  `directUsage.{status,sources,lastUsedAt,lastMeasuredAt,errors}`, 상위 `errors[]`.
+  (이전: percentage만 압축 변환 → 데스크톱이 절대량/출처/서버 배지 못 봄)
+- `force`: `setForceRefreshHandler`가 등록한 인프로세스 훅을 호출 — 확장 진입점
+  (`extension.ts`)가 `provider.refresh(true)`를 연결해 IDE가 5초 TTL 캐시를
+  우회하고 live probe로 `token_status.json`을 재기록. 이후 broker가 파일 재읽기.
+  (IDE 미실행 시 no-op — broker 단독 폴백 유지)
+
+`broker/server.ts`: `GET /v1/tokens/status?force=1` → `{ ok, forced, tokenStatus }`.
+
+검증: `run-broker-tests.js` — 실제 `startBrokerServer`로 기동 후 `/v1/tokens/status`
+응답이 fixture의 절대량·quotaPools(source/confidence)·endpointHealth/loadedModels/
+programName·directUsage.status/sources·errors를 그대로 반환, `?force=1`이
+핸들러 1회 호출 + 재기록된 파일(codex 55/777)을 재읽기함을 단언.
+
 ### 남은 단계 (다음 세션)
 
-- P2: broker `tokenScanner.scanLiveTokenStatus()` 스키마 확장
-  (§1.1의 ❌ 필드: `*TokensLeft/*Max`, `quotaPools`(source/confidence),
-  `endpointHealth`/`loadedModels`, claude status/sources/errors,
-  상위 `errors[]`). `?force=1` 파라미터 처리도 여기에 포함.
-- P3: A4 절대 토큰 표시, A5 Best/Lowest 요약, A7 tooltip (P2 의존)
+- P3: A4 절대 토큰 표시, A5 Best/Lowest 요약, A7 tooltip (P2 데이터 이제 있음)
 - P4: A8 로컬 LLM 서버 배지 — control-center에 미커밋된 IDE 배지 로직과
   동일한 기준(`endpointHealth`+`loadedModels`)으로 P2 후 적용
-- P5: B2 force refresh 클라이언트 배선 (broker가 `?force=1`을 받으면 IDE
-  캐시 무시 → live probe)
+- P5: B2 force refresh **클라이언트 배선** — broker는 `?force=1`을 이미 처리(P2).
+  control-center의 수동 새로고침 버튼이 `/v1/tokens/status?force=1`을 부르게 배선
 - P6: A10 출처 구분 표시, B5 provider 블록 토글
 - A9(반응형 3단계 축약)는 데스크톱 고정 폭이라 제외 (명세 확정)
 

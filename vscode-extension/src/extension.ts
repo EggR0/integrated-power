@@ -14,6 +14,7 @@ import {
 } from "./storagePath";
 import { offerFirstRunSetup } from "./configurationModel";
 import { BrokerController } from "./BrokerController";
+import { setForceRefreshHandler } from "./broker";
 
 async function installOrUpdateEggROrchestrator(
   context: vscode.ExtensionContext,
@@ -40,6 +41,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const provider = new DashboardProvider(context);
   const brokerController = new BrokerController();
   context.subscriptions.push(brokerController);
+
+  // Broker `GET /v1/tokens/status?force=1` asks the live IDE to bypass its 5s
+  // quota cache and re-probe, then re-read the state file it rewrites. This
+  // reuses the validated provider.refresh(true) path (no new refresh logic).
+  setForceRefreshHandler(async () => {
+    await provider.refresh(true);
+  });
   const openConfigurationCenter = (section: ConfigurationSection = "overview") =>
     ConfigurationCenter.open(
       context,
@@ -139,4 +147,5 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   // Disposables registered in activate are disposed by VS Code.
+  setForceRefreshHandler(undefined);
 }
