@@ -385,6 +385,21 @@ test("control-center imports the shared quota source (no duplicated K logic)", (
   // (?force=1), while normal polling must not.
   assert.ok(/force[^;]*\/v1\/tokens\/status\?force=1/.test(cc), "control-center must call /v1/tokens/status?force=1 on manual refresh (B2)");
   assert.ok(cc.includes("refresh({ force: true })"), "control-center token-refresh button must call refresh({ force: true })");
+  // B5: the four provider blocks each have a header toggle, persisted under
+  // one localStorage key (mirrors the IDE viewConfig.show* semantics), plus a
+  // "show all" reset. The toggle must live in the HTML markup, not be created
+  // via innerHTML at runtime.
+  assert.ok(cc.includes("applyProviderVisibility"), "control-center must apply provider-block visibility (B5)");
+  assert.ok(cc.includes("ip_provider_visibility"), "control-center must persist provider visibility in localStorage (B5)");
+  const ccHtml = fs.readFileSync(path.resolve(extensionRoot, "..", "control-center", "index.html"), "utf8");
+  for (const key of ["antigravity", "openai", "claude", "local"]) {
+    assert.ok(
+      ccHtml.includes(`data-provider="${key}"`),
+      `control-center index.html must have a provider toggle for "${key}" (B5)`
+    );
+    assert.ok(ccHtml.includes(`id="provider-${key}"`), `control-center index.html must keep the provider-${key} card (B5)`);
+  }
+  assert.ok(ccHtml.includes('id="provider-visibility-reset"'), "control-center index.html must keep the show-all reset button (B5)");
 });
 
 if (failures) {

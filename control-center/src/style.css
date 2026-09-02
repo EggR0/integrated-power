@@ -393,6 +393,27 @@ textarea { min-height: 56px; resize: vertical; }
   border: 1px solid rgba(56, 189, 248, 0.25);
 }
 
+.provider-toggle {
+  margin-left: 8px;
+  padding: 2px 9px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.provider-toggle:hover {
+  color: #e2e8f0;
+  border-color: rgba(56, 189, 248, 0.5);
+}
+.provider-toggle.is-off {
+  color: #64748b;
+  border-style: dashed;
+}
+
 .provider-models {
   display: flex;
   flex-direction: column;

@@ -855,6 +855,62 @@ function bindEvents() {
     showToast("AI 모델 쿼터가 최신 상태로 갱신되었습니다.");
   };
 
+  // ── B5: provider block visibility (per-card toggle, persisted) ──────────
+  // Control-center has no panel-level View Settings, so the four provider
+  // blocks on the tokens tab each carry a header toggle. State is persisted
+  // in localStorage under one key (default: all visible), mirroring the IDE
+  // viewConfig.{showAntigravity,showCodex,showClaude,showLocalLlm} semantics.
+  const PROVIDER_VIS_KEY = "ip_provider_visibility";
+  const PROVIDER_KEYS = ["antigravity", "openai", "claude", "local"];
+
+  const loadProviderVisibility = () => {
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(PROVIDER_VIS_KEY) || "{}");
+    } catch {
+      stored = null;
+    }
+    const out = {};
+    for (const k of PROVIDER_KEYS) out[k] = stored && typeof stored[k] === "boolean" ? stored[k] : true;
+    return out;
+  };
+  const persistProviderVisibility = (v) => {
+    try {
+      localStorage.setItem(PROVIDER_VIS_KEY, JSON.stringify(v));
+    } catch {
+      /* storage unavailable — visibility is non-critical */
+    }
+  };
+  const applyProviderVisibility = (v) => {
+    for (const k of PROVIDER_KEYS) {
+      const card = $(`provider-${k}`);
+      if (!card) continue;
+      card.style.display = v[k] ? "" : "none";
+      const btn = document.querySelector(`.provider-toggle[data-provider="${k}"]`);
+      if (btn) {
+        btn.textContent = v[k] ? "숨기기" : "보기";
+        btn.classList.toggle("is-off", !v[k]);
+      }
+    }
+  };
+  const providerVisibility = loadProviderVisibility();
+  const syncProviderVisibility = (k, visible) => {
+    providerVisibility[k] = visible;
+    persistProviderVisibility(providerVisibility);
+    applyProviderVisibility(providerVisibility);
+  };
+  document.querySelectorAll(".provider-toggle[data-provider]").forEach((btn) => {
+    const k = btn.dataset.provider;
+    btn.onclick = () => syncProviderVisibility(k, !providerVisibility[k]);
+  });
+  if ($("provider-visibility-reset")) $("provider-visibility-reset").onclick = () => {
+    for (const k of PROVIDER_KEYS) providerVisibility[k] = true;
+    persistProviderVisibility(providerVisibility);
+    applyProviderVisibility(providerVisibility);
+    showToast("모든 제공자 블록을 표시합니다.");
+  };
+  applyProviderVisibility(providerVisibility);
+
   // Notification Toggles (Quick and Settings)
   const syncNotifyToggles = (checked) => {
     state.notifyOnFullTokens = checked;

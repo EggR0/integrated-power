@@ -246,10 +246,34 @@ P2에서 broker는 `GET /v1/tokens/status?force=1`을 이미 처리 — `?force=
 `?force=1` 토큰 경로를 가져옴을 단언. tsc exit 0, CC `vite build` 통과.
 (실제 force 응답의 `forced` 플래그는 P2의 `run-broker-tests.js`가 검증.)
 
+### P6 완료 (B5 provider 블록 토글 — A10은 제외 확정)
+
+**A10 (출처 구분 표시) — 제외 (명세 확정)**: `quotaPools[].source`/`confidence`,
+`claudeDirectUsage.status` 등 출처 데이터는 P2에서 broker가 그대로 passthrough
+하므로 state에는 존재하지만, 현재 IDE webview에도 표시 UI가 없고 사용자 결정으로
+표시 불필요 — 데이터는 보존된 채 표시하지 않는다.
+
+**B5 (provider 블록 토글) — control-center에만 추가**: CC는 IDE처럼 패널 단위
+View Settings가 아니라 데스크톱 고정 레이아웃이라, 토큰 탭의 4개 제공자
+블록(Antigravity / OpenAI / Claude / Local LLM) 헤더에 각각 표시/숨김 토글을
+붙였다. 상태는 `localStorage["ip_provider_visibility"]`에 하나의 키(JSON)로
+영속하며, 기본값은 전부 표시(IDE `viewConfig.show*`의 `!== false` 의미와 동일).
+`#provider-visibility-reset`("모두 표시") 버튼으로 초기화.
+`control-center/index.html` — 4개 `.provider-toggle[data-provider]` 버튼 +
+리셋 버튼(정적 마크업, innerHTML 0). `control-center/src/main.js` —
+`loadProviderVisibility`/`persistProviderVisibility`/`applyProviderVisibility`
++ 토글/리셋 연결(`bindEvents` 내). `control-center/src/style.css` —
+`.provider-toggle`(+`.is-off`) 스타일.
+검증: `test-quota-core.js` CC wiring — 4개 provider의 토글/카드/리셋 마크업 존재,
+`applyProviderVisibility`·`ip_provider_visibility` 사용 단언. CC `vite build` 통과.
+(A10·B5는 신규 UI라 shared/quota 재사용 대상 아님; 동적 innerHTML 금지는
+reuse-gate에서 전역 강제.)
+
 ### 남은 단계
 
-- P6: A10 출처 구분 표시, B5 provider 블록 토글
-- A9(반응형 3단계 축약)는 데스크톱 고정 폭이라 제외 (명세 확정)
+- 없음 — P1~P6 완료. A9(반응형 3단계 축약)·A10은 데스크톱 고정 폭·표시 불필요로
+  명세 확정으로 제외.
+
 ## 5. 검증 기준
 
 - P1: codex weekly=71% 상태(현재 실측)에서 5h 바가 `71×4.0=100 → cap 없음`으로
