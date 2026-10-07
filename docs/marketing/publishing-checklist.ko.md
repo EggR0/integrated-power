@@ -2,8 +2,12 @@
 
 ## 공급 상태
 
-- [ ] 게시물의 설치 링크가 동일한 최신 릴리스를 가리킨다.
-- [ ] `.vsix` 버전과 `package.json` 버전이 일치한다.
+- [ ] 게시물의 설치 링크가 검증된 동일 artifact를 가리킨다(현재 공개 기준은 GitHub `v0.7.4`).
+- [ ] 게시하려는 `.vsix`의 내부 manifest, 파일명, tag/release 버전이 서로 일치한다.
+- [ ] 소스 `package.json` 버전이 공개 artifact와 다르면 두 버전을 명시적으로 구분한다.
+- [ ] publisher와 extension ID가 `EggR` / `EggR.integrated-power`로 일치한다.
+- [ ] Open VSX listing은 canonical publisher/ID가 확인된 경우에만 설치 링크로 사용한다.
+- [ ] Control Center는 별도 제품·저장소·release 상태로 검증하고 VSIX와 합쳐 표현하지 않는다.
 - [ ] 수동 설치 안내가 실제 Antigravity 메뉴 이름과 일치한다.
 - [ ] 지원 환경을 Antigravity IDE on Windows 11로 명확히 표시했다.
 

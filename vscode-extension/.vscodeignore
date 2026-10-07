@@ -1,4 +1,5 @@
 .vscode-test/
+.test-eggr-state/
 src/
 scripts/run-headless-tests.js
 scripts/build-extension.js

@@ -115,11 +115,12 @@ test("formatRefreshCountdown stages", () => {
   const hourish = shared.formatRefreshCountdown(new Date(Date.now() + (1 * 60 + 4) * 60 * 1000 + 30e3).toISOString());
   assert.strictEqual(hourish.full, "· Refreshes in 1h 4m");
   assert.strictEqual(hourish.medium, "· 1h 4m");
-  assert.strictEqual(hourish.short, "· 1h");
+  assert.strictEqual(hourish.short, "· 1:04");
 
   const far = shared.formatRefreshCountdown(new Date(Date.now() + (26 * 60 + 10) * 60 * 1000 + 30e3).toISOString());
   assert.strictEqual(far.full, "· Refreshes in 26h 10m");
-  assert.strictEqual(far.medium, "· 26h");
+  assert.strictEqual(far.medium, "· 26h 10m");
+  assert.strictEqual(far.short, "· 26:10");
 
   const past = shared.formatRefreshCountdown(new Date(Date.now() - 60 * 1000).toISOString());
   assert.strictEqual(past.full, "· Refreshes soon");

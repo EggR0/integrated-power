@@ -12,9 +12,9 @@ import { toFiniteNumber } from "./capacity";
  * Three-stage refresh countdown for a reset ISO timestamp.
  * Returns undefined when the value is missing or unparseable.
  *
- * - `full`:   "· Refreshes in 1h 4m" / "· Refreshes in 151h" / "· Refreshes soon"
- * - `medium`: "· 1h 4m" / "· 151h" / "· Soon"
- * - `short`:  "· 1h" / "· 151h" / "· Soon"
+ * - `full`:   "· Refreshes in 1h 4m" / "· Refreshes in 151h 20m" / "· Refreshes soon"
+ * - `medium`: "· 1h 4m" / "· 151h 20m" / "· Soon"
+ * - `short`:  "· 1:04" / "· 151:20" / "· Soon"
  */
 export function formatRefreshCountdown(value: string | Date | number | null | undefined): {
   full: string;
@@ -31,18 +31,20 @@ export function formatRefreshCountdown(value: string | Date | number | null | un
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
+  const padMins = String(diffMins).padStart(2, "0");
+
   if (diffHours >= 24) {
     return {
       full: `· Refreshes in ${diffHours}h ${diffMins}m`,
-      medium: `· ${diffHours}h`,
-      short: `· ${diffHours}h`,
+      medium: `· ${diffHours}h ${diffMins}m`,
+      short: `· ${diffHours}:${padMins}`,
     };
   }
   if (diffHours > 0) {
     return {
       full: `· Refreshes in ${diffHours}h ${diffMins}m`,
       medium: `· ${diffHours}h ${diffMins}m`,
-      short: `· ${diffHours}h`,
+      short: `· ${diffHours}:${padMins}`,
     };
   }
   return {

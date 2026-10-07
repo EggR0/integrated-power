@@ -314,7 +314,9 @@ test("webview preserves token status and integrates Anthropic Claude submenu", (
   assert.ok(webview.includes("Anthropic Claude"));
   assert.ok(webview.includes("renderClaudeTokenSection"));
   assert.ok(!webview.includes("renderCapacityGroup(\"Claude Opus 4.6 Thinking\""));
-  assert.ok(webview.includes("Opus 4.6 Thinking via Antigravity"));
+  assert.ok(!webview.includes("renderCapacityGroup(\"Opus 4.6 Thinking\""));
+  assert.ok(webview.includes("renderCapacityGroup(\"Claude\""));
+  assert.ok(webview.includes("renderCapacityGroup(\"Gemini\""));
   assert.ok(!styles.includes(".loading-strip"));
   assert.match(styles, /body\s*\{[\s\S]*min-width:\s*0;/);
   assert.match(styles, /\.dashboard-shell\.is-loading \.progress-fill\s*\{[\s\S]*var\(--vscode-descriptionForeground\)/);

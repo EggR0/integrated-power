@@ -3,8 +3,12 @@
 ## Supported environment
 
 The first public release of Integrated Power targets Antigravity IDE on
-Windows 11. Open VSX is the distribution channel, not a declaration of support
-for every editor that can install an Open VSX package.
+Windows 11. The canonical extension identity is `EggR.integrated-power`.
+
+As of 2026-09-19, the repository source manifest is `0.9.1`, while the latest
+verified public GitHub VSIX is `v0.7.4`. The visible Open VSX listing is the
+legacy `integratedpower.integrated-power` `0.7.1` identity and is not a
+canonical installation path until its publisher and extension ID are aligned.
 
 Linux, macOS, Visual Studio Code, Cursor, the separate Antigravity application
 and modified third-party IDE builds are outside the initial support scope.
@@ -12,9 +16,10 @@ and modified third-party IDE builds are outside the initial support scope.
 ## Before requesting help
 
 1. Confirm that the installed product is **Integrated Power** from Publisher
-   **EggR**.
+   **EggR**, with extension ID **`EggR.integrated-power`**.
 2. Run `Developer: Reload Window` in Antigravity IDE.
-3. Open `Integrated Power: Open Configuration Center` and review the three
+3. Open the Integrated Power Dashboard from the activity bar, then run
+   `Integrated Power: Open Configuration Center` and review the three
    independent status sections.
 4. Verify that optional tools needed by the selected feature are installed.
 5. Reproduce the issue without modifying `GEMINI.md` or moving a Knowledge
@@ -41,10 +46,17 @@ must use the private process in [SECURITY.md](SECURITY.md), never a public issue
 
 ## Dependency support
 
-Integrated Power diagnoses but does not automatically install Antigravity IDE,
+The Dashboard and Configuration Center are supplied by the VSIX itself; the
+separate Tauri Control Center is not required to open either view. Integrated
+Power diagnoses but does not automatically install Antigravity IDE,
 Git, Codex CLI, Agy, Ollama, vLLM, GPU drivers or models. Installation,
 authentication and service failures inside those products remain under their
 respective support channels.
+
+The separate `integrated-power-control-center` repository has its own package
+and support scope. No public GitHub binary release for that Control Center was
+verified on 2026-09-19, so it must not be described as part of the VSIX
+installation.
 
 Agy users can inspect their own usage through the official TUI `/usage`
 command. On Windows, Integrated Power also reads the signed-in user's local Agy

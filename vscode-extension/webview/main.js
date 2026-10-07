@@ -4,6 +4,7 @@ let dashboardState = emptyState();
 
 const root = document.getElementById("app") || document.body;
 let refreshRenderTimer;
+let lastRenderedHtml = "";
 
 window.addEventListener("message", (event) => {
   const message = event.data;
@@ -52,17 +53,6 @@ window.addEventListener("message", (event) => {
     persistState();
     render();
   }
-});
-
-document.addEventListener("DOMContentLoaded", () => {
-  const previousState = vscode?.getState?.();
-  if (previousState) {
-    dashboardState = normalizeState(previousState);
-    dashboardState.isTokenLoading = true;
-  }
-
-  render();
-  postCommand("ready");
 });
 
 function emptyTokenStatus() {
@@ -269,8 +259,6 @@ function normalizeUsageSummary(value) {
   };
 }
 
-let lastRenderedHtml = "";
-
 function render() {
   captureDomSectionStates();
   const isRefreshing = dashboardState.isLoading;
@@ -392,10 +380,10 @@ function renderTokenStatus(tokenStatus) {
   }
 
   const status = tokenStatus || {};
-  const antigravity = buildTokenMetric("5Hours", status, "antigravity", "Gemini 3.1 Pro 5Hours", "antigravityWeekly");
-  const antigravityWeekly = buildTokenMetric("Weekly", status, "antigravityWeekly", "Gemini 3.1 Pro Weekly");
-  const opus = buildTokenMetric("5Hours", status, "opus", "Opus 4.6 Thinking via Antigravity 5Hours", "opusWeekly");
-  const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Opus 4.6 Thinking via Antigravity Weekly");
+  const antigravity = buildTokenMetric("5Hours", status, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+  const antigravityWeekly = buildTokenMetric("Weekly", status, "antigravityWeekly", "Gemini Weekly");
+  const opus = buildTokenMetric("5Hours", status, "opus", "Claude 5Hours", "opusWeekly");
+  const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Claude Weekly");
   const codex = buildTokenMetric("5Hours", status, "codex", "ChatGPT 5Hours", "codexWeekly");
   const codexWeekly = buildTokenMetric("Weekly", status, "codexWeekly", "ChatGPT Weekly");
   const sectionStates = normalizeSectionStates(dashboardState.sectionStates);
@@ -403,7 +391,7 @@ function renderTokenStatus(tokenStatus) {
 
   const sections = [];
 
-  // Section 1: Antigravity IDE (Gemini + Opus)
+  // Section 1: Antigravity IDE (Gemini + Claude)
   if (dashboardState.viewConfig?.showAntigravity !== false) {
     const hasAntigravity = Boolean(antigravity?.percentage !== undefined || antigravityWeekly?.percentage !== undefined);
     sections.push(`
@@ -411,7 +399,7 @@ function renderTokenStatus(tokenStatus) {
         <summary>
           <span class="section-title">
             <span class="text-full">Antigravity IDE</span>
-            <span class="text-medium">Antigravity IDE</span>
+            <span class="text-medium">Antigravity</span>
             <span class="text-short">Antigravity</span>
           </span>
           <span class="status-pill ${hasAntigravity ? "status-ok" : "status-neutral"}">
@@ -421,8 +409,8 @@ function renderTokenStatus(tokenStatus) {
           </span>
         </summary>
         <div class="capacity-groups">
-          ${renderCapacityGroup("Gemini 3.1 Pro", [antigravity, antigravityWeekly])}
-          ${renderCapacityGroup("Opus 4.6 Thinking", [opus, opusWeekly])}
+          ${renderCapacityGroup("Gemini", [antigravity, antigravityWeekly])}
+          ${renderCapacityGroup("Claude", [opus, opusWeekly])}
         </div>
       </details>
     `);
@@ -436,7 +424,7 @@ function renderTokenStatus(tokenStatus) {
         <summary>
           <span class="section-title">
             <span class="text-full">OpenAI (ChatGPT · Codex)</span>
-            <span class="text-medium">OpenAI (ChatGPT · Codex)</span>
+            <span class="text-medium">OpenAI (ChatGPT)</span>
             <span class="text-short">OpenAI</span>
           </span>
           <span class="status-pill ${hasCodex ? "status-ok" : "status-neutral"}">
@@ -515,7 +503,7 @@ function renderClaudeTokenSection(status, isOpen) {
       <summary>
         <span class="section-title">
           <span class="text-full">Anthropic Claude</span>
-          <span class="text-medium">Anthropic Claude</span>
+          <span class="text-medium">Claude</span>
           <span class="text-short">Claude</span>
         </span>
         <span class="status-pill ${isConnected ? "status-ok" : "status-neutral"}">
@@ -737,13 +725,9 @@ function renderTokenSkeleton() {
 }
 
 // Quota calculation/formatting now lives in shared/quota (bundled to
-// webview/quota-core.js, exposed as window.IPQuota — the same source the
-// control-center desktop UI consumes via vite). Thin delegation keeps the
-// existing call sites unchanged.
-const IPQuota = window.IPQuota;
-const K_CAPACITY_RATIOS = IPQuota.K_CAPACITY_RATIOS;
-const K_DEFAULT_RATIO = IPQuota.K_DEFAULT_RATIO;
-const calculateEffective5HourQuota = IPQuota.calculateEffective5HourQuota;
+// webview/quota-core.js, exposed globally as IPQuota / window.IPQuota).
+// Use safe fallback reference to avoid SyntaxError in classic script scopes.
+var IPQuota = window.IPQuota || (typeof IPQuota !== "undefined" ? IPQuota : undefined);
 
 function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) {
   // A4 absolute-token availability + A7 tooltip live in shared/quota
@@ -1225,4 +1209,21 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function initialize() {
+  const previousState = vscode?.getState?.();
+  if (previousState) {
+    dashboardState = normalizeState(previousState);
+    dashboardState.isTokenLoading = true;
+  }
+
+  render();
+  postCommand("ready");
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initialize);
+} else {
+  initialize();
 }

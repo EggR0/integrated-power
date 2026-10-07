@@ -311,18 +311,19 @@ var IPQuota = (() => {
     if (diffMs <= 0) return { full: "\xB7 Refreshes soon", medium: "\xB7 Soon", short: "\xB7 Soon" };
     const diffHours = Math.floor(diffMs / (1e3 * 60 * 60));
     const diffMins = Math.floor(diffMs % (1e3 * 60 * 60) / (1e3 * 60));
+    const padMins = String(diffMins).padStart(2, "0");
     if (diffHours >= 24) {
       return {
         full: `\xB7 Refreshes in ${diffHours}h ${diffMins}m`,
-        medium: `\xB7 ${diffHours}h`,
-        short: `\xB7 ${diffHours}h`
+        medium: `\xB7 ${diffHours}h ${diffMins}m`,
+        short: `\xB7 ${diffHours}:${padMins}`
       };
     }
     if (diffHours > 0) {
       return {
         full: `\xB7 Refreshes in ${diffHours}h ${diffMins}m`,
         medium: `\xB7 ${diffHours}h ${diffMins}m`,
-        short: `\xB7 ${diffHours}h`
+        short: `\xB7 ${diffHours}:${padMins}`
       };
     }
     return {
@@ -512,8 +513,8 @@ var IPQuota = (() => {
     const entries = [
       capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
       capacitySummaryEntry("Gemini Weekly", "Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
-      capacitySummaryEntry("Opus 5Hours", "Opus 5Hours", "Opus 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax),
-      capacitySummaryEntry("Opus Weekly", "Opus Weekly", "Opus W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
+      capacitySummaryEntry("Claude 5Hours", "Claude 5Hours", "Claude 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax),
+      capacitySummaryEntry("Claude Weekly", "Claude Weekly", "Claude W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
       capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax),
       capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax)
     ].filter((entry) => entry !== void 0);

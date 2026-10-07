@@ -353,6 +353,8 @@ button:focus-visible {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .token-section summary::-webkit-details-marker {
@@ -379,7 +381,8 @@ button:focus-visible {
 }
 
 .token-section summary .section-title {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -391,6 +394,7 @@ button:focus-visible {
 
 .token-section summary span.status-pill {
   flex: 0 0 auto;
+  flex-shrink: 0;
   margin-left: auto;
   white-space: nowrap;
 }

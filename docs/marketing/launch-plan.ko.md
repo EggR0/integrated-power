@@ -1,6 +1,8 @@
 # Integrated Power 공급·홍보 실행안
 
-기준 릴리스: `0.7.14`  
+기준 소스 manifest: `0.9.1`
+확인된 최신 공개 GitHub VSIX: `v0.7.4`
+Open VSX listing: legacy `integratedpower.integrated-power` `0.7.1` (정렬 전 보류)
 주 대상: Antigravity IDE를 Windows 11에서 사용하며, AI 사용량·로컬 GPU·여러 실행 경로를 함께 관리해야 하는 개발자
 
 ## 1. 한 문장 포지셔닝
@@ -26,7 +28,9 @@ Integrated Power는 단순 quota 표시기가 아니라, Antigravity·Codex·로
 - 30초 화면 녹화 1개: `Dashboard → quota 부족 → GPU/로컬 LLM 확인 → 실행 경로 선택`.
 - 기능을 세 장면으로 나눈 스크린샷 3개: Dashboard, Configuration Center, 실행 경로/로컬 상태.
 - README 첫 화면에 설치 명령, 개인정보 경계, “quota-only 확장과 다른 점”을 배치한다.
-- VSIX 직접 설치 경로를 최신 릴리스 기준으로 점검한다.
+- VSIX 직접 설치 경로는 확인된 GitHub `v0.7.4` artifact 기준으로 점검한다.
+- 소스 `0.9.1`을 공개 최신 릴리스라고 쓰지 않고, Open VSX publisher/ID가 정렬될
+  때까지 해당 listing을 공식 설치 링크로 사용하지 않는다.
 
 ### 2주차: 문제 중심 공개
 
@@ -70,3 +74,5 @@ Integrated Power는 단순 quota 표시기가 아니라, Antigravity·Codex·로
 - 모든 게시물은 최신 릴리스 설치 경로 하나만 가리킨다.
 - 기능 설명과 보안·데이터 경계가 README 및 지원 문서와 일치한다.
 - 외부 게시 전에는 각 커뮤니티 규칙과 링크 상태를 사람이 최종 확인한다.
+- GitHub 공개 artifact, VSIX 내부 manifest, Open VSX publisher/ID, 별도 Control
+  Center release 상태가 서로 일치할 때까지 새 배포를 보류한다.

@@ -69,18 +69,20 @@ function formatRefreshCountdown(value) {
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
   
+  const padMins = String(diffMins).padStart(2, "0");
+
   if (diffHours >= 24) {
     return {
       full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
-      medium: `\u00B7 ${diffHours}h`,
-      short: `\u00B7 ${diffHours}h`,
+      medium: `\u00B7 ${diffHours}h ${diffMins}m`,
+      short: `\u00B7 ${diffHours}:${padMins}`,
     };
   }
   if (diffHours > 0) {
     return {
       full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
       medium: `\u00B7 ${diffHours}h ${diffMins}m`,
-      short: `\u00B7 ${diffHours}h`,
+      short: `\u00B7 ${diffHours}:${padMins}`,
     };
   }
   return {

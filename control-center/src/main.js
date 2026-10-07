@@ -27,7 +27,7 @@ const API = "http://127.0.0.1:" + BROKER_PORT;
 // ?broker= override in dev) so the label never lies about which process is up.
 {
   const _footer = document.getElementById("broker-footer");
-  if (_footer) _footer.textContent = `v0.9.1 · loopback ${BROKER_PORT}`;
+  if (_footer) _footer.textContent = `v0.9.2 · loopback ${BROKER_PORT}`;
   // Every endpoint label in the settings tab reflects the actual broker port
   // (BROKER_PORT), so dev ?broker=<port> runs never show a stale 37241 URL.
   const _setEndpoint = (id, value) => {
@@ -334,10 +334,10 @@ function renderTokens() {
   // the IDE webview consumes) — this carries A4 absolute-token availability,
   // the A6 tone, the A3 K-sync, and the A7 tooltip in one place.
   const windows = {
-    "gemini-5h": buildTokenMetric("5Hours", ts, "antigravity", "Gemini 3.1 Pro 5Hours", "antigravityWeekly"),
-    "gemini-weekly": buildTokenMetric("Weekly", ts, "antigravityWeekly", "Gemini 3.1 Pro Weekly"),
-    "opus-5h": buildTokenMetric("5Hours", ts, "opus", "Opus 4.6 Thinking 5Hours", "opusWeekly"),
-    "opus-weekly": buildTokenMetric("Weekly", ts, "opusWeekly", "Opus 4.6 Thinking Weekly"),
+    "gemini-5h": buildTokenMetric("5Hours", ts, "antigravity", "Gemini 5Hours", "antigravityWeekly"),
+    "gemini-weekly": buildTokenMetric("Weekly", ts, "antigravityWeekly", "Gemini Weekly"),
+    "opus-5h": buildTokenMetric("5Hours", ts, "opus", "Claude 5Hours", "opusWeekly"),
+    "opus-weekly": buildTokenMetric("Weekly", ts, "opusWeekly", "Claude Weekly"),
     "codex-5h": buildTokenMetric("5Hours", ts, "codex", "ChatGPT 5Hours", "codexWeekly"),
     "codex-weekly": buildTokenMetric("Weekly", ts, "codexWeekly", "ChatGPT Weekly"),
   };

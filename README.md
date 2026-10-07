@@ -1,23 +1,35 @@
 
 # Integrated Power
 
-현재 릴리스: `0.9.1`
+소스 manifest: `0.9.1` · 최신 공개 GitHub VSIX: `0.7.4` (2026-09-19 확인)
 
 Integrated Power는 AI 엔지니어링 및 멀티 에이전트 작업을 위한 **2-Track 에코시스템**을 제공합니다:
 
-1. **Integrated Power VSX Extension (이 저장소)**: **Antigravity IDE / VS Code 전용 확장 프로그램**. Windows 11에서 에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고, Integrated Orchestrator와 Private Git Knowledge를 이어 주는 IDE 전용 대시보드와 진입점을 제공합니다.
-2. **[Integrated Power Control Center & Multi-AI Broker](https://github.com/EggR0/integrated-power-control-center) (독립 실행 저장소)**: IDE 설치 여부와 상관없이 ChatGPT Desktop, Claude Desktop, Antigravity CLI, Local LLM(Ollama/Qwen 3.8 27B), Codex 등 **어떤 AI 환경과도 연결·중계·호환하는 독립형 관제 데스크톱 앱 및 범용 Loopback Broker**.
+1. **Integrated Power VSIX Extension (이 저장소)**: **Antigravity IDE 우선 지원 확장 프로그램**. Windows 11에서 에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고, Integrated Orchestrator와 Private Git Knowledge를 이어 주는 IDE 전용 대시보드와 진입점을 제공합니다. VS Code 호환성은 manifest의 실행 조건일 뿐 별도 지원 약속이 아닙니다.
+2. **[Integrated Power Control Center & Multi-AI Broker](https://github.com/EggR0/integrated-power-control-center) (별도 저장소)**: Tauri Control Center와 loopback broker의 독립 소스 프로젝트입니다. 이 저장소의 VSIX에 포함되지 않으며, 설치·릴리스·지원 범위도 별도로 확인해야 합니다.
 
 | 항목 | 값 |
 |---|---|
 | 제품 표시명 | Integrated Power |
 | Publisher | EggR |
 | 확장 ID | `EggR.integrated-power` |
-| 공개 배포 채널 | Open VSX Registry / GitHub Releases |
+| 확인된 공개 설치 경로 | GitHub Releases `v0.7.4` |
 | 우선 지원 환경 | Antigravity IDE on Windows 11 |
 
-Open VSX는 배포 채널이다. Open VSX에 게시되더라도 Visual Studio Code, Cursor 또는
-다른 VS Code 파생 IDE까지 지원한다는 뜻은 아니다.
+## 공개 배포 상태
+
+- 현재 main 소스 manifest는 `0.9.1`, canonical publisher/extension ID는
+  `EggR.integrated-power`, VS Code engine은 `^1.80.0`이다.
+- [GitHub Releases의 최신 공개 VSIX](https://github.com/EggR0/integrated-power/releases/tag/v0.7.4)는
+  `0.7.4`이며 내부 manifest도 `EggR.integrated-power`와 일치한다. 공개 파일은
+  [`integrated-power-0.7.4.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.7.4/integrated-power-0.7.4.vsix)이고
+  SHA-256은 `e2902535d565ab9a28ce7368f0f2a033dde19a51fb27793573de2cbc4f3e298c`이다.
+- [Open VSX의 현재 listing](https://open-vsx.org/extension/integratedpower/integrated-power)은
+  `0.7.1` / `integratedpower.integrated-power`인 legacy identity라서 이 저장소의
+  canonical 설치 경로로 취급하지 않는다. publisher/ID가 정렬되기 전에는 설치·지원
+  링크로 사용하지 않는다.
+- 따라서 소스 `0.9.1`을 공개 `0.9.1` 릴리스라고 부르지 않는다. 소스에서 만든 VSIX는
+  로컬 검증용 artifact이고, 공개 설치 문서의 기준은 검증된 `v0.7.4`이다.
 
 > 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
 > Codex, Agy, Claude, Ollama(Qwen 3.8 27B)와 vLLM은 사용자가 선택할 수 있는 외부 실행 경로다.
@@ -29,12 +41,15 @@ Antigravity·Codex·Claude·로컬 LLM·GPU 상태를 나눠 보여 주고, 다�
 
 ### 시작하기
 
-1. Antigravity IDE의 Extensions에서 `Integrated Power`를 검색한다.
-2. Publisher가 `EggR`인지 확인하고 설치한다.
+1. 아래의 검증된 GitHub VSIX를 받는다. 현재 Open VSX listing은 canonical ID가 아니므로
+   marketplace 검색 결과만으로 설치하지 않는다.
+2. VSIX manifest의 Publisher가 `EggR`, extension ID가 `EggR.integrated-power`인지
+   확인하고 설치한다.
 3. Dashboard와 Configuration Center를 열어 사용할 실행 경로를 선택한다.
 
-마켓 검색이 불가능한 환경에서는 [GitHub Releases](https://github.com/EggR0/integrated-power/releases)에서 최신
-`.vsix`를 받은 뒤 `Extensions: Install from VSIX...`로 설치한다.
+검증된 공개 파일은 [GitHub Releases v0.7.4](https://github.com/EggR0/integrated-power/releases/tag/v0.7.4)의
+`integrated-power-0.7.4.vsix`이다. 받은 파일의 SHA-256을 위 값과 비교한 뒤
+`Extensions: Install from VSIX...`로 설치한다.
 
 공급·홍보 실행안과 채널별 게시 문안은 [`docs/marketing`](docs/marketing/)에 정리되어 있다.
 
@@ -143,21 +158,22 @@ Integrated Power는 전역 또는 프로젝트 `GEMINI.md`를 생성, 추가, �
 
 ## 설치
 
-### Open VSX 검색 설치
+### Open VSX 검색 설치 (현재 보류)
 
-Antigravity IDE의 Extensions 화면에서 `Integrated Power`를 검색하고 제품명
-`Integrated Power`와 Publisher `EggR`를 함께 확인한 뒤 설치한다.
+현재 Open VSX listing은 `integratedpower.integrated-power` `0.7.1`로 canonical
+`EggR.integrated-power`와 다르다. publisher와 extension ID가 외부 listing에서
+정렬되기 전에는 이 경로를 공식 설치 경로로 사용하지 않는다.
 
 ### VSIX 직접 설치
 
-검증이나 직접 배포에서는
-[GitHub Releases](https://github.com/EggR0/integrated-power/releases)의 VSIX를
-Antigravity IDE 전용 CLI wrapper로 설치한다. `<version>`은 받은 파일의 버전으로
-바꾼다.
+검증된 공개 설치에서는
+[`integrated-power-0.7.4.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.7.4/integrated-power-0.7.4.vsix)를
+받아 Antigravity IDE 전용 CLI wrapper로 설치한다. 소스 `0.9.1`을 직접 빌드한
+VSIX는 공개 릴리스와 별개의 로컬 검증 artifact다.
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\integrated-power-<version>.vsix" `
+  --install-extension ".\integrated-power-0.7.4.vsix" `
   --force
 ```
 
@@ -175,6 +191,10 @@ Developer: Reload Window
 
 ## 설정 센터와 명령
 
+Dashboard와 Configuration Center는 이 VSIX가 제공하는 webview다. 별도 Tauri
+Control Center나 loopback broker를 설치하지 않아도 두 화면을 열 수 있으며, 외부
+도구는 각 기능의 상태를 수집하거나 실제 작업을 실행할 때만 필요하다.
+
 명령 팔레트에서 다음 명령을 사용할 수 있다. 표시 제목은 현재 `package.json`과
 일치한다.
 
@@ -186,10 +206,6 @@ Developer: Reload Window
 | `Integrated Power: Configure Integrated Orchestrator` | Integrated Orchestrator 설정 영역 열기 |
 | `Integrated Power: Configure Private Git Knowledge` | 사용자 Knowledge 설정 영역 열기 |
 | `Integrated Power: Install or Update Integrated Orchestrator` | 설치 계획과 충돌 상태 확인 |
-| `Integrated Power: Open All Background Terminals in IDE` | IDE 내 백그라운드 터미널(Broker, Ollama, Web UI) 일괄 실행 및 포커스 |
-| `Integrated Power: Show Broker Terminal` | 브로커 서버 터미널 탭 포커스 |
-| `Integrated Power: Show Ollama Local LLM Terminal` | Ollama 로컬 LLM 터미널 탭 포커스 |
-| `Integrated Power: Show Web UI Terminal` | Web UI 대시보드 터미널 탭 포커스 |
 
 명령의 내부 `integratedPower.*` ID와 `ip-orchestrator` 기계 식별자는 호환성을
 위해 유지한다.
@@ -379,10 +395,10 @@ Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integra
 라이선스, 보안 신고, 지원 범위와 변경 이력은 각각 [LICENSE](LICENSE),
 [COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md), [SECURITY.md](SECURITY.md),
 [SUPPORT.md](SUPPORT.md), [CHANGELOG.md](CHANGELOG.md)에서 확인한다.
-## Control Center cross-platform note
+## Control Center 구분
 
-The standalone Tauri Control Center is packaged for Windows, macOS, and Linux
-through the matrix workflow at `.github/workflows/control-center.yml`. The
-VSIX remains a host extension; cross-platform broker packaging belongs to the
-Tauri application. CI builds each platform and runs the bundled broker smoke
-test before uploading its installer artifacts.
+독립 [Control Center 저장소](https://github.com/EggR0/integrated-power-control-center)의
+local package version은 `0.9.1`이지만, 2026-09-19 현재 GitHub Releases에 공개된
+Control Center binary release는 확인되지 않았다. 이 저장소의 VSIX가 Tauri
+installer나 broker를 함께 배포한다고 해석하지 않는다. Control Center의 실행·외부
+의존성·라이선스는 해당 저장소의 문서를 별도로 따른다.

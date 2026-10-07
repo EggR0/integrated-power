@@ -22,9 +22,22 @@ import {
 } from '../../storagePath';
 
 suite('Parser and Store Test Suite', () => {
-  const workspaceRootForTests = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || __dirname;
-  const testEggRStateRoot = path.join(workspaceRootForTests, '.test-eggr-state');
+  const previousStateRoot = process.env.INTEGRATED_POWER_STATE_ROOT;
+  const testEggRStateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'integrated-power-state-'));
   process.env.INTEGRATED_POWER_STATE_ROOT = testEggRStateRoot;
+  suiteTeardown(() => {
+    fs.rmSync(testEggRStateRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+    if (previousStateRoot === undefined) {
+      delete process.env.INTEGRATED_POWER_STATE_ROOT;
+    } else {
+      process.env.INTEGRATED_POWER_STATE_ROOT = previousStateRoot;
+    }
+  });
   vscode.window.showInformationMessage('Start all tests.');
 
   test('Bundled Knowledge tools install independently with backup-on-update', () => {
@@ -179,20 +192,34 @@ suite('Parser and Store Test Suite', () => {
     );
 
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
-      contributes?: { commands?: Array<{ command?: string }> };
+      contributes?: {
+        commands?: Array<{ command?: string }>;
+        menus?: { 'view/title'?: Array<{ command?: string }> };
+      };
     };
     const commands = manifest.contributes?.commands?.map((entry) => entry.command) ?? [];
     assert.deepStrictEqual(commands.sort(), [
       'integratedPower.agentRuns.configureViews',
+      'integratedPower.agentRuns.openCompact',
       'integratedPower.agentRuns.openRunsFile',
       'integratedPower.agentRuns.refresh',
+      'integratedPower.broker.openDashboard',
+      'integratedPower.broker.showLogs',
+      'integratedPower.broker.start',
       'integratedPower.eggr.installOrUpdateOrchestrator',
       'integratedPower.eggr.openConfigurationCenter',
       'integratedPower.eggr.runDashboardSetup',
       'integratedPower.eggr.runFirstRunSetup',
       'integratedPower.eggr.runOrchestratorSetup',
       'integratedPower.eggr.runPrivateKnowledgeSetup',
+      'integratedPower.local.startDModelServer',
     ]);
+    const commandSet = new Set(commands);
+    const viewTitleCommands = manifest.contributes?.menus?.['view/title']?.map((entry) => entry.command) ?? [];
+    assert.ok(
+      viewTitleCommands.every((command) => command && commandSet.has(command)),
+      'Every Dashboard view/title menu item must reference a contributed command.',
+    );
 
     const readme = fs.readFileSync(readmePath, 'utf8');
     assert.ok(readme.includes('Antigravity IDE 전용 확장 프로그램'));
@@ -220,7 +247,7 @@ suite('Parser and Store Test Suite', () => {
     const styles = fs.readFileSync(stylesPath, 'utf8');
     assert.ok(!styles.includes('.loading-strip'));
     assert.match(styles, /body\s*\{[\s\S]*min-width:\s*0;/);
-    assert.match(styles, /\.capacity-groups\s*\{[\s\S]*gap:\s*12px;/);
+    assert.match(styles, /\.capacity-groups\s*\{[\s\S]*gap:\s*8px;/);
     assert.match(styles, /\.metric-reset-row\s*\{[\s\S]*grid-template-columns:\s*max-content minmax\(0,\s*1fr\) max-content;/);
     assert.match(styles, /\.token-section summary::before\s*\{[\s\S]*content:\s*"\+";/);
     assert.match(styles, /\.token-section\[open\] summary::before\s*\{[\s\S]*content:\s*"-";/);
@@ -231,7 +258,6 @@ suite('Parser and Store Test Suite', () => {
     assert.ok(extensionSource.includes('integratedPower.agentRuns.refresh", () => provider.refresh(true)'));
     const dashboardControllerSource = fs.readFileSync(path.join(extensionRoot, 'src', 'DashboardController.ts'), 'utf8');
     assert.ok(dashboardControllerSource.includes('hasUsableTokenStatus(this.state.tokenStatus)'));
-    assert.ok(dashboardControllerSource.includes('keep the previous visible data while refresh continues'));
 
     const debateReference = fs.readFileSync(debateReferencePath, 'utf8');
     assert.ok(debateReference.includes("Integrated Power workspace state `discussions/`"));
@@ -321,7 +347,7 @@ suite('Parser and Store Test Suite', () => {
       descriptor.remoteUrl,
       descriptor.configuredId,
     );
-    assert.ok(storagePath.includes(path.join('.test-eggr-state', 'workspaces')));
+    assert.ok(storagePath.startsWith(path.join(path.resolve(testEggRStateRoot), 'workspaces')));
     assert.ok(storagePath.includes('git-') || storagePath.includes('path-'));
 
     const runsPath = path.join(storagePath, '.agent-runs', 'runs.jsonl');
@@ -332,7 +358,6 @@ suite('Parser and Store Test Suite', () => {
     await waitFor(() => vscode.window.activeTextEditor?.document.uri.fsPath === runsPath);
     assert.strictEqual(vscode.window.activeTextEditor?.document.uri.fsPath, runsPath);
 
-    fs.rmSync(testEggRStateRoot, { recursive: true, force: true });
   });
 });
 

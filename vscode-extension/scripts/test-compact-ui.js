@@ -41,6 +41,60 @@ try {
   assert(css.includes("max-width: 390px"), "VSIX compact CSS is missing its width limit.");
   assert(css.includes(":focus-visible"), "VSIX compact CSS is missing focus-visible styling.");
   assert(packageJson.contributes?.commands?.some((command) => command.command === "integratedPower.agentRuns.openCompact"), "VSIX package is missing the compact-panel command.");
+
+  // Regression test: verify quota-core.js and main.js evaluate together without SyntaxError
+  const vm = require("vm");
+  const quotaCoreCode = readFile("vscode-extension/webview/quota-core.js");
+  const mainJsCode = readFile("vscode-extension/webview/main.js");
+  const mockElement = {
+    innerHTML: "",
+    style: {},
+    dataset: {},
+    addEventListener: () => {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    closest: () => null,
+    focus: () => {},
+  };
+  const webviewSandbox = {
+    console,
+    Date,
+    Math,
+    Number,
+    String,
+    Array,
+    Object,
+    Boolean,
+    RegExp,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    window: {
+      addEventListener: () => {},
+      scrollTo: () => {},
+    },
+    document: {
+      getElementById: () => mockElement,
+      body: mockElement,
+      documentElement: { scrollTop: 0 },
+      activeElement: null,
+      readyState: "complete",
+      addEventListener: () => {},
+    },
+    acquireVsCodeApi: () => ({
+      getState: () => undefined,
+      setState: () => {},
+      postMessage: () => {},
+    }),
+  };
+  webviewSandbox.window.window = webviewSandbox.window;
+  webviewSandbox.window.document = webviewSandbox.document;
+  vm.createContext(webviewSandbox);
+  vm.runInContext(quotaCoreCode, webviewSandbox);
+  webviewSandbox.window.IPQuota = webviewSandbox.IPQuota;
+  vm.runInContext(mainJsCode, webviewSandbox);
+
   console.log("compact UI regression passed");
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
