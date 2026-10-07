@@ -30,6 +30,7 @@ var IPQuota = (() => {
     K_DEFAULT_RATIO: () => K_DEFAULT_RATIO,
     MAX_POLL_INTERVAL_MS: () => MAX_POLL_INTERVAL_MS,
     MIN_POLL_INTERVAL_MS: () => MIN_POLL_INTERVAL_MS,
+    QUOTA_NOTIFICATION_TARGETS: () => QUOTA_NOTIFICATION_TARGETS,
     QUOTA_SETTINGS_DEFAULTS: () => QUOTA_SETTINGS_DEFAULTS,
     absoluteTokenText: () => absoluteTokenText,
     buildTokenMetric: () => buildTokenMetric,
@@ -39,6 +40,7 @@ var IPQuota = (() => {
     capacityTone: () => capacityTone,
     clamp: () => clamp,
     clampPollInterval: () => clampPollInterval,
+    detectRefilledQuotaWindows: () => detectRefilledQuotaWindows,
     formatNumber: () => formatNumber,
     formatRefreshCountdown: () => formatRefreshCountdown,
     formatResetTime: () => formatResetTime,
@@ -523,6 +525,170 @@ var IPQuota = (() => {
     }
     const sorted = entries.slice().sort((a, b) => a.percentage - b.percentage);
     return { entries, lowest: sorted[0], strongest: sorted[sorted.length - 1] };
+  }
+
+  // shared/quota/notifications.ts
+  var QUOTA_NOTIFICATION_TARGETS = [
+    // 1 & 2: Antigravity IDE Gemini (5h, Weekly)
+    {
+      id: "antigravity-gemini-5h",
+      configKey: "notifications.antigravityGemini5h",
+      model: "Antigravity Gemini",
+      window: "5Hours",
+      title: "Antigravity IDE Gemini (5\uC2DC\uAC04)",
+      message: "Antigravity IDE Gemini 5\uC2DC\uAC04 \uCFFC\uD130\uAC00 100%\uB85C \uC644\uCDA9\uB418\uC5C8\uC2B5\uB2C8\uB2E4!",
+      getPercentage: (s) => {
+        if (!s) return void 0;
+        if (typeof s.antigravityPercentage === "number") return s.antigravityPercentage;
+        if (s.antigravityMax > 0 && typeof s.antigravityTokensLeft === "number") {
+          return s.antigravityTokensLeft / s.antigravityMax * 100;
+        }
+        return void 0;
+      }
+    },
+    {
+      id: "antigravity-gemini-weekly",
+      configKey: "notifications.antigravityGeminiWeekly",
+      model: "Antigravity Gemini",
+      window: "Weekly",
+      title: "Antigravity IDE Gemini (\uC8FC\uAC04)",
+      message: "Antigravity IDE Gemini \uC8FC\uAC04 \uCFFC\uD130\uAC00 100%\uB85C \uC644\uCDA9\uB418\uC5C8\uC2B5\uB2C8\uB2E4!",
+      getPercentage: (s) => {
+        if (!s) return void 0;
+        if (typeof s.antigravityWeeklyPercentage === "number") return s.antigravityWeeklyPercentage;
+        if (s.antigravityWeeklyMax > 0 && typeof s.antigravityWeeklyTokensLeft === "number") {
+          return s.antigravityWeeklyTokensLeft / s.antigravityWeeklyMax * 100;
+        }
+        return void 0;
+      }
+    },
+    // 3 & 4: Antigravity IDE Claude (5h, Weekly)
+    {
+      id: "antigravity-claude-5h",
+      configKey: "notifications.antigravityClaude5h",
+      model: "Antigravity Claude",
+      window: "5Hours",
+      title: "Antigravity IDE Claude (5\uC2DC\uAC04)",
+      message: "Antigravity IDE Claude 5\uC2DC\uAC04 \uCFFC\uD130\uAC00 100%\uB85C \uC644\uCDA9\uB418\uC5C8\uC2B5\uB2C8\uB2E4!",
+      getPercentage: (s) => {
+        if (!s) return void 0;
+        if (typeof s.opusPercentage === "number") return s.opusPercentage;
+        if (s.opusMax > 0 && typeof s.opusTokensLeft === "number") {
+          return s.opusTokensLeft / s.opusMax * 100;
+        }
+        return void 0;
+      }
+    },
+    {
+      id: "antigravity-claude-weekly",
+      configKey: "notifications.antigravityClaudeWeekly",
+      model: "Antigravity Claude",
+      window: "Weekly",
+      title: "Antigravity IDE Claude (\uC8FC\uAC04)",
+      message: "Antigravity IDE Claude \uC8FC\uAC04 \uCFFC\uD130\uAC00 100%\uB85C \uC644\uCDA9\uB418\uC5C8\uC2B5\uB2C8\uB2E4!",
+      getPercentage: (s) => {
+        if (!s) return void 0;
+        if (typeof s.opusWeeklyPercentage === "number") return s.opusWeeklyPercentage;
+        if (s.opusWeeklyMax > 0 && typeof s.opusWeeklyTokensLeft === "number") {
+          return s.opusWeeklyTokensLeft / s.opusWeeklyMax * 100;
+        }
+        return void 0;
+      }
+    },
+    // 5 & 6: ChatGPT (OpenAI / Codex) (5h, Weekly)
+    {
+      id: "chatgpt-5h",
+      configKey: "notifications.chatgpt5h",
+      model: "ChatGPT",
+      window: "5Hours",
+      title: "ChatGPT (5\uC2DC\uAC04)",
+      message: "ChatGPT 5\uC2DC\uAC04 \uCFFC\uD130\uAC00 100%\uB85C \uC644\uCDA9\uB418\uC5C8\uC2B5\uB2C8\uB2E4!",
+      getPercentage: (s) => {
+        if (!s) return void 0;
+        if (typeof s.codexPercentage === "number") return s.codexPercentage;
+        if (s.codexMax > 0 && typeof s.codexTokensLeft === "number") {
+          return s.codexTokensLeft / s.codexMax * 100;
+        }
+        return void 0;
+      }
+    },
+    {
+      id: "chatgpt-weekly",
+      configKey: "notifications.chatgptWeekly",
+      model: "ChatGPT",
+      window: "Weekly",
+      title: "ChatGPT (\uC8FC\uAC04)",
+      message: "ChatGPT \uC8FC\uAC04 \uCFFC\uD130\uAC00 100%\uB85C \uC644\uCDA9\uB418\uC5C8\uC2B5\uB2C8\uB2E4!",
+      getPercentage: (s) => {
+        if (!s) return void 0;
+        if (typeof s.codexWeeklyPercentage === "number") return s.codexWeeklyPercentage;
+        if (s.codexWeeklyMax > 0 && typeof s.codexWeeklyTokensLeft === "number") {
+          return s.codexWeeklyTokensLeft / s.codexWeeklyMax * 100;
+        }
+        return void 0;
+      }
+    },
+    // 7 & 8: Claude (Anthropic Direct API / CLI / Cowork) (5h, Weekly)
+    {
+      id: "claude-5h",
+      configKey: "notifications.claude5h",
+      model: "Claude",
+      window: "5Hours",
+      title: "Claude (5\uC2DC\uAC04)",
+      message: "Claude 5\uC2DC\uAC04 \uCFFC\uD130\uAC00 100%\uB85C \uC644\uCDA9\uB418\uC5C8\uC2B5\uB2C8\uB2E4!",
+      getPercentage: (s) => {
+        if (!s) return void 0;
+        if (typeof s.claudePercentage === "number") return s.claudePercentage;
+        if (s.claudeMax > 0 && typeof s.claudeTokensLeft === "number") {
+          return s.claudeTokensLeft / s.claudeMax * 100;
+        }
+        return void 0;
+      }
+    },
+    {
+      id: "claude-weekly",
+      configKey: "notifications.claudeWeekly",
+      model: "Claude",
+      window: "Weekly",
+      title: "Claude (\uC8FC\uAC04)",
+      message: "Claude \uC8FC\uAC04 \uCFFC\uD130\uAC00 100%\uB85C \uC644\uCDA9\uB418\uC5C8\uC2B5\uB2C8\uB2E4!",
+      getPercentage: (s) => {
+        if (!s) return void 0;
+        if (typeof s.claudeWeeklyPercentage === "number") return s.claudeWeeklyPercentage;
+        if (s.claudeWeeklyMax > 0 && typeof s.claudeWeeklyTokensLeft === "number") {
+          return s.claudeWeeklyTokensLeft / s.claudeWeeklyMax * 100;
+        }
+        return void 0;
+      }
+    }
+  ];
+  function detectRefilledQuotaWindows(previous, current, alreadyNotifiedSet) {
+    const updatedSet = new Set(alreadyNotifiedSet);
+    const notifications = [];
+    if (!current) {
+      return { notifications, updatedNotifiedSet: updatedSet };
+    }
+    for (const target of QUOTA_NOTIFICATION_TARGETS) {
+      const currPct = target.getPercentage(current);
+      const prevPct = previous ? target.getPercentage(previous) : void 0;
+      if (typeof currPct !== "number" || !Number.isFinite(currPct)) {
+        continue;
+      }
+      if (currPct < 100) {
+        updatedSet.delete(target.id);
+      } else if (currPct >= 100) {
+        const wasDepleted = typeof prevPct === "number" && prevPct < 100;
+        if (wasDepleted && !updatedSet.has(target.id)) {
+          updatedSet.add(target.id);
+          notifications.push({
+            target,
+            previousPercent: prevPct,
+            currentPercent: currPct
+          });
+        }
+      }
+    }
+    return { notifications, updatedNotifiedSet: updatedSet };
   }
 
   // shared/quota/settings.ts

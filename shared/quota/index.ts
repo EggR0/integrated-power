@@ -12,4 +12,5 @@ export * from "./external";
 export * from "./format";
 export * from "./local";
 export * from "./metric";
+export * from "./notifications";
 export * from "./settings";

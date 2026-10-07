@@ -558,6 +558,53 @@ test("control-center imports the shared quota source (no duplicated K logic)", (
   assert.ok(cc.includes("setSkipTaskbar"), "control-center must drive Tauri setSkipTaskbar for the taskbar toggle");
 });
 
+// ---------------------------------------------------------------------------
+console.log("quota-core: 8-window 100% full quota notification tests");
+
+test("QUOTA_NOTIFICATION_TARGETS: exactly 8 distinct windows (4 models x 2 windows)", () => {
+  assert.strictEqual(shared.QUOTA_NOTIFICATION_TARGETS.length, 8);
+  const ids = shared.QUOTA_NOTIFICATION_TARGETS.map((t) => t.id);
+  assert.strictEqual(new Set(ids).size, 8);
+  assert.ok(ids.includes("antigravity-gemini-5h"));
+  assert.ok(ids.includes("antigravity-gemini-weekly"));
+  assert.ok(ids.includes("antigravity-claude-5h"));
+  assert.ok(ids.includes("antigravity-claude-weekly"));
+  assert.ok(ids.includes("chatgpt-5h"));
+  assert.ok(ids.includes("chatgpt-weekly"));
+  assert.ok(ids.includes("claude-5h"));
+  assert.ok(ids.includes("claude-weekly"));
+});
+
+test("detectRefilledQuotaWindows detects transitions from <100% to >=100%", () => {
+  const prev = {
+    antigravityPercentage: 80,
+    antigravityWeeklyPercentage: 100,
+    opusPercentage: 50,
+    codexPercentage: 99,
+  };
+  const curr = {
+    antigravityPercentage: 100,
+    antigravityWeeklyPercentage: 100,
+    opusPercentage: 80,
+    codexPercentage: 100,
+  };
+
+  const { notifications, updatedNotifiedSet } = shared.detectRefilledQuotaWindows(prev, curr, new Set());
+  assert.strictEqual(notifications.length, 2);
+  const notifiedIds = notifications.map((n) => n.target.id);
+  assert.ok(notifiedIds.includes("antigravity-gemini-5h"));
+  assert.ok(notifiedIds.includes("chatgpt-5h"));
+  assert.ok(!notifiedIds.includes("antigravity-gemini-weekly"));
+  assert.ok(!notifiedIds.includes("antigravity-claude-5h"));
+
+  const second = shared.detectRefilledQuotaWindows(curr, curr, updatedNotifiedSet);
+  assert.strictEqual(second.notifications.length, 0);
+
+  const depleted = { ...curr, antigravityPercentage: 20 };
+  const third = shared.detectRefilledQuotaWindows(curr, depleted, updatedNotifiedSet);
+  assert.strictEqual(third.updatedNotifiedSet.has("antigravity-gemini-5h"), false);
+});
+
 if (failures) {
   console.error(`\n${failures} quota-core test(s) failed`);
   process.exit(1);

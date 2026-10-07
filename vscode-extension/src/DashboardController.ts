@@ -6,6 +6,7 @@ import { RunStore } from "./RunStore";
 import { TokenManager } from "./TokenManager";
 import { WorkspacePaths } from "./WorkspacePaths";
 import { resolveIntegratedPowerStateRoot } from "./storagePath";
+import { detectRefilledQuotaWindows } from "./quotaNotifications";
 
 type PostMessage = (message: DashboardOutboundMessage) => void;
 
@@ -23,7 +24,7 @@ export class DashboardController implements vscode.Disposable {
   private isRefreshing = false;
   private pendingRefreshForce: boolean | undefined = undefined;
   private tokenRefreshGeneration = 0;
-  private lastFullTokenNotified = false;
+  private notifiedFullWindows = new Set<string>();
   private state: DashboardState = this.emptyState();
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly postMessage: PostMessage) {
@@ -389,29 +390,23 @@ export class DashboardController implements vscode.Disposable {
   ): void {
     if (!current) return;
     const config = vscode.workspace.getConfiguration("integratedPower");
-    const enabled = config.get<boolean>("notifications.notifyOnFullTokens", true);
-    if (!enabled) return;
+    const masterEnabled = config.get<boolean>("notifications.notifyOnFullTokens", true);
+    if (!masterEnabled) return;
 
-    const agyPercent = current.antigravityPercentage ?? 100;
-    const opusPercent = current.opusPercentage ?? 100;
-    const codexPercent = current.codexPercentage ?? 100;
+    const { notifications, updatedNotifiedSet } = detectRefilledQuotaWindows(
+      previous,
+      current,
+      this.notifiedFullWindows,
+    );
+    this.notifiedFullWindows = updatedNotifiedSet;
 
-    const isAllFull = agyPercent >= 100 && opusPercent >= 100 && codexPercent >= 100;
-    const wasAnyDepleted = previous
-      ? (previous.antigravityPercentage !== undefined && previous.antigravityPercentage < 100) ||
-        (previous.opusPercentage !== undefined && previous.opusPercentage < 100) ||
-        (previous.codexPercentage !== undefined && previous.codexPercentage < 100)
-      : false;
-
-    if (isAllFull) {
-      if (wasAnyDepleted && !this.lastFullTokenNotified) {
-        this.lastFullTokenNotified = true;
+    for (const item of notifications) {
+      const targetEnabled = config.get<boolean>(item.target.configKey, true);
+      if (targetEnabled) {
         void vscode.window.showInformationMessage(
-          "🎉 [Integrated Power] 모든 AI 모델 쿼터가 100%로 완충되었습니다! 작업을 최대 용량으로 시작할 수 있습니다.",
+          `⚡ [Integrated Power] ${item.target.message}`,
         );
       }
-    } else {
-      this.lastFullTokenNotified = false;
     }
   }
 

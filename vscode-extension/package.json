@@ -93,7 +93,47 @@
         "integratedPower.notifications.notifyOnFullTokens": {
           "type": "boolean",
           "default": true,
-          "description": "Send a desktop/VS Code notification when token quotas recharge to 100%."
+          "description": "Send an IDE notification when individual AI model token quotas recharge to 100%."
+        },
+        "integratedPower.notifications.antigravityGemini5h": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Antigravity IDE Gemini 5-hour quota recharges to 100%."
+        },
+        "integratedPower.notifications.antigravityGeminiWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Antigravity IDE Gemini weekly quota recharges to 100%."
+        },
+        "integratedPower.notifications.antigravityClaude5h": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Antigravity IDE Claude 5-hour quota recharges to 100%."
+        },
+        "integratedPower.notifications.antigravityClaudeWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Antigravity IDE Claude weekly quota recharges to 100%."
+        },
+        "integratedPower.notifications.chatgpt5h": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when ChatGPT 5-hour quota recharges to 100%."
+        },
+        "integratedPower.notifications.chatgptWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when ChatGPT weekly quota recharges to 100%."
+        },
+        "integratedPower.notifications.claude5h": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Claude 5-hour quota recharges to 100%."
+        },
+        "integratedPower.notifications.claudeWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Claude weekly quota recharges to 100%."
         },
         "integratedPower.system.autoStartOnBoot": {
           "type": "boolean",

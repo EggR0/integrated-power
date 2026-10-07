@@ -13,6 +13,7 @@ import {
   parseModelList,
   modelDiscoveryUrls,
   EXTERNAL_POLL_MIN_MS,
+  detectRefilledQuotaWindows,
 } from "@shared/quota";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -262,41 +263,21 @@ function playFullChime() {
 function checkTokenFullNotification(previous, current) {
   if (!current || !state.notifyOnFullTokens) return;
 
-  // The "all full" chime must cover every window shown on the tokens tab
-  // (6: Gemini 5h/Weekly, Claude Opus 5h/Weekly, Codex 5h/Weekly) — the old
-  // check only looked at three of them (and mixed a 5h value with a weekly
-  // value), so it could chime "모든 모델 완충" while the other gauges still
-  // showed room. A window counts as full only when it REPORTS a full value;
-  // a missing number (provider not installed / no data) must not be assumed
-  // full, otherwise an absent Codex fakes the all-full chime.
-  const build = buildTokenMetric.bind(null);
-  const winFull = {
-    "gemini-5h": build("5Hours", current, "antigravity", "g5", "antigravityWeekly"),
-    "gemini-weekly": build("Weekly", current, "antigravityWeekly", "gw", undefined),
-    "opus-5h": build("5Hours", current, "opus", "o5", "opusWeekly"),
-    "opus-weekly": build("Weekly", current, "opusWeekly", "ow", undefined),
-    "codex-5h": build("5Hours", current, "codex", "c5", "codexWeekly"),
-    "codex-weekly": build("Weekly", current, "codexWeekly", "cw", undefined),
-  };
-  const fullIds = Object.entries(winFull)
-    .filter(([, m]) => m.percentage >= 100)
-    .map(([id]) => id);
-  const isAllFull = fullIds.length === 6;
-  const wasAnyDepleted = previous
-    ? [previous.antigravityPercentage, previous.opusPercentage, previous.codexWeeklyPercentage]
-      .some((v) => typeof v === "number" && v < 100)
-    : false;
+  state.notifiedFullWindows = state.notifiedFullWindows || new Set();
 
-  if (isAllFull) {
-    if (wasAnyDepleted && !state.lastFullNotified) {
-      state.lastFullNotified = true;
-      playFullChime();
-      const msg = "모든 AI 모델 쿼터 창(Gemini, Claude, Codex 5h + Weekly 6개)이 100%로 완충되었습니다! 작업을 최대 속도로 진행할 수 있습니다.";
-      showToast(`🎉 [100% 완충] ${msg}`);
-      sendDesktopNotification("🎉 [Integrated Power] AI 토큰 100% 충전 완료", msg);
+  const { notifications, updatedNotifiedSet } = detectRefilledQuotaWindows(
+    previous,
+    current,
+    state.notifiedFullWindows,
+  );
+  state.notifiedFullWindows = updatedNotifiedSet;
+
+  if (notifications.length > 0) {
+    playFullChime();
+    for (const item of notifications) {
+      showToast(`⚡ [100% 완충] ${item.target.message}`);
+      sendDesktopNotification("⚡ [Integrated Power] 100% 충전 완료", item.target.message);
     }
-  } else {
-    state.lastFullNotified = false;
   }
 }
 
