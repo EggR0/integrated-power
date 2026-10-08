@@ -38,14 +38,10 @@ VSIX 빌드 후 `npx ovsx publish`를 실행합니다:
 cd "d:\Workspace\Integrated POWER\vscode-extension"
 .\node_modules\.bin\vsce.cmd package --no-dependencies
 
-# 2. Open VSX로 배포
-npx ovsx publish ".\integrated-power-0.9.2.vsix" -p $env:OVSX_PAT
+# 2. Open VSX로 배포 (.ovsx-token 파일 사용 시)
+$pat = (Get-Content "..\.ovsx-token").Trim()
+npx ovsx publish (Get-Item .\*.vsix | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName -p $pat --skip-duplicate
 ```
-
-> **Tip**: 이미 발행된 버전인 경우 `--skip-duplicate` 플래그를 추가하면 중복 배포 에러를 조용히 넘깁니다:
-> ```powershell
-> npx ovsx publish ".\integrated-power-0.9.2.vsix" -p $env:OVSX_PAT --skip-duplicate
-> ```
 
 ---
 
