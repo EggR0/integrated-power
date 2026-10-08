@@ -1,7 +1,7 @@
 # Integrated Power 공급·홍보 실행안
 
-기준 소스 manifest: `0.9.2`
-확인된 최신 공개 GitHub VSIX: `v0.7.4`
+기준 소스 manifest: `0.9.4`
+확인된 최신 공개 GitHub VSIX: `v0.9.4`
 Open VSX listing: `EggR0.integrated-power` (정식 네임스페이스 정렬)
 주 대상: Antigravity IDE를 Windows 11에서 사용하며, AI 사용량·로컬 GPU·여러 실행 경로를 함께 관리해야 하는 개발자
 

@@ -5,8 +5,8 @@
 The first public release of Integrated Power targets Antigravity IDE on
 Windows 11. The canonical extension identity is `EggR0.integrated-power`.
 
-As of 2026-10-08, the repository source manifest is `0.9.2`, while the latest
-verified public GitHub VSIX is `v0.7.4`. The aligned Open VSX listing is
+As of 2026-10-08, the repository source manifest is `0.9.4`, while the latest
+verified public GitHub VSIX is `v0.9.4`. The aligned Open VSX listing is
 `EggR0.integrated-power`.
 
 Linux, macOS, Visual Studio Code, Cursor, the separate Antigravity application

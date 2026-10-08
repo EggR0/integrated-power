@@ -47,15 +47,11 @@ npx ovsx publish (Get-Item .\*.vsix | Sort-Object LastWriteTime -Descending | Se
 
 ## 3. GitHub Actions CI를 통한 완전 자동 배포
 
-GitHub에 태그 또는 Release가 생성될 때마다 Open VSX에 자동으로 업로드하려면 다음 단계를 적용합니다.
+GitHub에 Release가 생성/발행(`published`)될 때마다 Open VSX에 자동으로 업로드되는 CI 워크플로우가 구성되어 있습니다.
 
-### 3.1 GitHub Secret 등록
-1. GitHub 저장소 (`EggR0/integrated-power`) 접속
-2. **Settings** → **Secrets and variables** → **Actions** 이동
-3. **New repository secret** 클릭
-   * **Name**: `OVSX_PAT`
-   * **Secret**: `<YOUR_OPEN_VSX_PAT>`
-4. **Add secret** 저장
+### 3.1 GitHub Secret 등록 완료
+* **Secret 이름**: `OVSX_PAT` (저장소 `EggR0/integrated-power`의 GitHub Actions Secret에 등록 완료)
+* 이제 `gh release create` 또는 웹에서 Release를 발행하면 자동으로 VSIX를 감지/빌드하여 Open VSX로 배포합니다.
 
 ### 3.2 워크플로우 연동 예시 (`.github/workflows/publish-openvsx.yml`)
 ```yaml

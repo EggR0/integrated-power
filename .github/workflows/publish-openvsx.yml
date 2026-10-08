@@ -1,0 +1,71 @@
+name: Publish to Open VSX
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish VSIX to Open VSX
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download VSIX from Release asset
+        id: check-asset
+        if: github.event_name == 'release'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ./release-assets
+          gh release download "${{ github.event.release.tag_name }}" --pattern "*.vsix" --dir ./release-assets
+          if ls ./release-assets/*.vsix 1> /dev/null 2>&1; then
+            echo "asset_found=true" >> "$GITHUB_OUTPUT"
+            echo "Found release VSIX asset:"
+            ls -la ./release-assets/*.vsix
+          else
+            echo "asset_found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm (fallback build)
+        if: steps.check-asset.outputs.asset_found != 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: ${{ steps.check-asset.outputs.asset_found != 'true' && 'pnpm' || '' }}
+          cache-dependency-path: vscode-extension/pnpm-lock.yaml
+
+      - name: Build and Package VSIX from source
+        if: steps.check-asset.outputs.asset_found != 'true'
+        working-directory: vscode-extension
+        run: |
+          pnpm install --frozen-lockfile
+          node ./scripts/build-extension.js
+          pnpm run compile
+          npx @vscode/vsce package --no-dependencies
+          mkdir -p ../release-assets
+          cp ./*.vsix ../release-assets/
+
+      - name: Publish to Open VSX Registry
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          VSIX_FILE=$(ls ./release-assets/*.vsix | head -n 1)
+          if [ -z "$VSIX_FILE" ]; then
+            echo "Error: No VSIX file found to publish."
+            exit 1
+          fi
+          echo "Publishing $VSIX_FILE to Open VSX Registry (EggR0.integrated-power)..."
+          npx ovsx publish "$VSIX_FILE" -p "$OVSX_PAT" --skip-duplicate
+          echo "Successfully published to Open VSX!"
