@@ -13,23 +13,18 @@ Integrated Power는 AI 엔지니어링 및 멀티 에이전트 작업을 위한 
 | 제품 표시명 | Integrated Power |
 | Publisher | EggR0 |
 | 확장 ID | `EggR0.integrated-power` |
-| 확인된 공개 설치 경로 | GitHub Releases `v0.7.4` |
+| 확인된 공개 설치 경로 | GitHub Releases `v0.9.2` · Open VSX `v0.9.2` |
 | 우선 지원 환경 | Antigravity IDE on Windows 11 |
 
 ## 공개 배포 상태
 
 - 현재 main 소스 manifest는 `0.9.2`, canonical publisher/extension ID는
   `EggR0.integrated-power`, VS Code engine은 `^1.80.0`이다.
-- [GitHub Releases의 최신 공개 VSIX](https://github.com/EggR0/integrated-power/releases/tag/v0.7.4)는
-  `0.7.4`이며 내부 manifest도 `EggR.integrated-power`와 일치한다. 공개 파일은
-  [`integrated-power-0.7.4.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.7.4/integrated-power-0.7.4.vsix)이고
-  SHA-256은 `e2902535d565ab9a28ce7368f0f2a033dde19a51fb27793573de2cbc4f3e298c`이다.
-- [Open VSX의 현재 listing](https://open-vsx.org/extension/integratedpower/integrated-power)은
-  `0.7.1` / `integratedpower.integrated-power`인 legacy identity라서 이 저장소의
-  canonical 설치 경로로 취급하지 않는다. publisher/ID가 정렬되기 전에는 설치·지원
-  링크로 사용하지 않는다.
-- 따라서 소스 `0.9.1`을 공개 `0.9.1` 릴리스라고 부르지 않는다. 소스에서 만든 VSIX는
-  로컬 검증용 artifact이고, 공개 설치 문서의 기준은 검증된 `v0.7.4`이다.
+- [GitHub Releases의 최신 공개 VSIX](https://github.com/EggR0/integrated-power/releases/tag/v0.9.2)는
+  `0.9.2`이며 내부 manifest도 `EggR0.integrated-power`와 일치한다. 직접 파일은
+  [`integrated-power-0.9.2.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.9.2/integrated-power-0.9.2.vsix)이다.
+- [Open VSX Registry의 공식 listing](https://open-vsx.org/extension/EggR0/integrated-power)은
+  `EggR0.integrated-power` `0.9.2`로 등록되어 있으며, IDE 내 검색 및 확장을 통해 즉시 설치할 수 있다.
 
 > 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
 > Codex, Agy, Claude, Ollama(Qwen 3.8 27B)와 vLLM은 사용자가 선택할 수 있는 외부 실행 경로다.
