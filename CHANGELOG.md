@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.3] - 2026-10-08
+
+### Changed
+
+- Revamped marketplace documentation: placed Quick Start, Open VSX installation instructions, and core real-world use cases at the top of the README.
+- Preserved complete deep-dive technical architecture, security boundaries, and runtime specifications in the dedicated reference section.
+- Synchronized Open VSX package metadata and release distribution assets.
+
 ## [0.9.2] - 2026-10-08
 
 ### Added
