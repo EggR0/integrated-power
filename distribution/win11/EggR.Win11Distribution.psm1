@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:ExpectedExtensionId = 'EggR.integrated-power'
+$script:ExpectedExtensionId = 'EggR0.integrated-power'
 $script:AllowedKnowledgeTargets = @(
     'eggr-roots.ps1',
     'set-eggr-roots.ps1',

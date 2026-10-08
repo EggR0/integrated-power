@@ -214,11 +214,11 @@ test("package commands exclude removed Athena workflow and legacy terminals", ()
   ].sort());
 });
 
-test("package uses the EggR publisher and canonical public repository", () => {
+test("package uses the EggR0 publisher and canonical public repository", () => {
   const manifest = JSON.parse(readText("package.json"));
   const readme = readText("README.md");
 
-  assert.strictEqual(`${manifest.publisher}.${manifest.name}`, "EggR.integrated-power");
+  assert.strictEqual(`${manifest.publisher}.${manifest.name}`, "EggR0.integrated-power");
   assert.strictEqual(
     manifest.repository?.url,
     "https://github.com/EggR0/integrated-power.git",

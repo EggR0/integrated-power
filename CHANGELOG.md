@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.9.2] - 2026-10-08
+
+### Added
+
+- Added per-window 100% full recharge notifications for 8 distinct targets:
+  - Antigravity IDE Gemini (5-Hour & Weekly)
+  - Antigravity IDE Claude (5-Hour & Weekly)
+  - ChatGPT / Codex (5-Hour & Weekly)
+  - Anthropic Claude Direct (5-Hour & Weekly)
+- Configurable notification settings in settings (`integratedPower.notifications.*`) allowing users to toggle notifications per target.
+
+### Changed
+
+- Aligned publisher and extension identity to `EggR0` / `EggR0.integrated-power` for Open VSX verified publisher compatibility.
+- Standardized quota model labels under Antigravity IDE: simplified to `Gemini` and `Claude` without version number noise.
+- Hardened compact UI layout to prevent line wraps and overflow when reset hours are 2-3 digits (e.g. `151h`).
+- Standardized time and minute formatting across full, medium, and compact webview displays.
+- Strengthened shared quota calculation logic (`shared/quota`) and verified parity across webview and desktop control-center.
+- Hardened local LLM probe stability, GPU caching, and shared capacity summary.
+
 ## [0.7.4] - 2026-07-28
 
 ### Changed

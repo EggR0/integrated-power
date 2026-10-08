@@ -3,12 +3,11 @@
 ## Supported environment
 
 The first public release of Integrated Power targets Antigravity IDE on
-Windows 11. The canonical extension identity is `EggR.integrated-power`.
+Windows 11. The canonical extension identity is `EggR0.integrated-power`.
 
-As of 2026-09-19, the repository source manifest is `0.9.1`, while the latest
-verified public GitHub VSIX is `v0.7.4`. The visible Open VSX listing is the
-legacy `integratedpower.integrated-power` `0.7.1` identity and is not a
-canonical installation path until its publisher and extension ID are aligned.
+As of 2026-10-08, the repository source manifest is `0.9.2`, while the latest
+verified public GitHub VSIX is `v0.7.4`. The aligned Open VSX listing is
+`EggR0.integrated-power`.
 
 Linux, macOS, Visual Studio Code, Cursor, the separate Antigravity application
 and modified third-party IDE builds are outside the initial support scope.
@@ -16,7 +15,7 @@ and modified third-party IDE builds are outside the initial support scope.
 ## Before requesting help
 
 1. Confirm that the installed product is **Integrated Power** from Publisher
-   **EggR**, with extension ID **`EggR.integrated-power`**.
+   **EggR0**, with extension ID **`EggR0.integrated-power`**.
 2. Run `Developer: Reload Window` in Antigravity IDE.
 3. Open the Integrated Power Dashboard from the activity bar, then run
    `Integrated Power: Open Configuration Center` and review the three

@@ -1,7 +1,7 @@
 
 # Integrated Power
 
-소스 manifest: `0.9.1` · 최신 공개 GitHub VSIX: `0.7.4` (2026-09-19 확인)
+소스 manifest: `0.9.2` · 최신 공개 GitHub VSIX: `0.7.4` (2026-10-08 확인)
 
 Integrated Power는 AI 엔지니어링 및 멀티 에이전트 작업을 위한 **2-Track 에코시스템**을 제공합니다:
 
@@ -11,15 +11,15 @@ Integrated Power는 AI 엔지니어링 및 멀티 에이전트 작업을 위한 
 | 항목 | 값 |
 |---|---|
 | 제품 표시명 | Integrated Power |
-| Publisher | EggR |
-| 확장 ID | `EggR.integrated-power` |
+| Publisher | EggR0 |
+| 확장 ID | `EggR0.integrated-power` |
 | 확인된 공개 설치 경로 | GitHub Releases `v0.7.4` |
 | 우선 지원 환경 | Antigravity IDE on Windows 11 |
 
 ## 공개 배포 상태
 
-- 현재 main 소스 manifest는 `0.9.1`, canonical publisher/extension ID는
-  `EggR.integrated-power`, VS Code engine은 `^1.80.0`이다.
+- 현재 main 소스 manifest는 `0.9.2`, canonical publisher/extension ID는
+  `EggR0.integrated-power`, VS Code engine은 `^1.80.0`이다.
 - [GitHub Releases의 최신 공개 VSIX](https://github.com/EggR0/integrated-power/releases/tag/v0.7.4)는
   `0.7.4`이며 내부 manifest도 `EggR.integrated-power`와 일치한다. 공개 파일은
   [`integrated-power-0.7.4.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.7.4/integrated-power-0.7.4.vsix)이고
@@ -43,7 +43,7 @@ Antigravity·Codex·Claude·로컬 LLM·GPU 상태를 나눠 보여 주고, 다�
 
 1. 아래의 검증된 GitHub VSIX를 받는다. 현재 Open VSX listing은 canonical ID가 아니므로
    marketplace 검색 결과만으로 설치하지 않는다.
-2. VSIX manifest의 Publisher가 `EggR`, extension ID가 `EggR.integrated-power`인지
+2. VSIX manifest의 Publisher가 `EggR0`, extension ID가 `EggR0.integrated-power`인지
    확인하고 설치한다.
 3. Dashboard와 Configuration Center를 열어 사용할 실행 경로를 선택한다.
 
@@ -90,7 +90,12 @@ Antigravity·Codex·Claude·로컬 LLM·GPU 상태를 나눠 보여 주고, 다�
 배포할 때 각자의 경로·계정·도구 설치 상태를 Configuration Center에서 다시 정할
 수 있게 한다.
 
-## 주요 기능 (v0.9.0)
+## 주요 기능 (v0.9.2)
+
+- **8종 대상 100% 쿼터 완충 실시간 알림 (Full Recharge Notifications)**: Antigravity IDE Gemini (5h / 주간), Antigravity IDE Claude (5h / 주간), ChatGPT / Codex (5h / 주간), Anthropic Claude Direct (5h / 주간) 4대 핵심 모델 × 2개 시간창(5시간, 주간)에 대해 100% 완충 시 IDE 네이티브 알림 발송 및 설정(`integratedPower.notifications.*`)별 개별 토글 지원
+- **컴팩트 UI 텍스트 오버플로우 방지 및 포맷 통일**: 리셋 시간이 2~3자리(예: `151h`)인 경우에도 글자가 잘리거나 칸을 넘어가지 않도록 유연 렌더링, 시간/분 단위 포맷 일관성 확보
+- **Antigravity 하위 모델 표기 정규화**: 불필요한 버전 숫자 표기를 덜어내고 직관적인 `Gemini`, `Claude` 레이블로 통일
+- **공식 퍼블리셔 정렬 (`EggR0.integrated-power`)**: Open VSX의 계정(@EggR0)과 1:1로 일치시켜 인증 경고 없는 클린 퍼블리싱 및 네임스페이스 소유권 확립
 
 - **3단계 점진적 반응형 UI (Progressive 3-Stage Truncation)**: 사이드바 폭에 맞춰 Full (> 290px), Medium (215px ~ 290px), Short (< 215px) 3단계로 텍스트와 라벨이 짝짝이 없이 균일하게 축약되며, 170px 이하의 극단적인 슬림 사이드바에서도 가로 스크롤 및 우측 글자 잘림 없는 무결점 레이아웃 제공
 - **100% 대칭형 메트릭 & 하드웨어 레이아웃**: 모든 Provider의 `5Hours` / `Weekly` 시간창 지표와 GPU / VRAM 하드웨어 행(`[GPU] 35% load | 170.8W / 370W`, `[VRAM] 32.8% used | 7.9GB / 24GB`)의 좌우 구조, 프로그레스 바, 리셋 타이머 서식이 완벽한 시각적 대칭을 이룸
@@ -161,14 +166,14 @@ Integrated Power는 전역 또는 프로젝트 `GEMINI.md`를 생성, 추가, �
 ### Open VSX 검색 설치 (현재 보류)
 
 현재 Open VSX listing은 `integratedpower.integrated-power` `0.7.1`로 canonical
-`EggR.integrated-power`와 다르다. publisher와 extension ID가 외부 listing에서
+`EggR0.integrated-power`와 다르다. publisher와 extension ID가 외부 listing에서
 정렬되기 전에는 이 경로를 공식 설치 경로로 사용하지 않는다.
 
 ### VSIX 직접 설치
 
 검증된 공개 설치에서는
 [`integrated-power-0.7.4.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.7.4/integrated-power-0.7.4.vsix)를
-받아 Antigravity IDE 전용 CLI wrapper로 설치한다. 소스 `0.9.1`을 직접 빌드한
+받아 Antigravity IDE 전용 CLI wrapper로 설치한다. 소스 `0.9.2`를 직접 빌드한
 VSIX는 공개 릴리스와 별개의 로컬 검증 artifact다.
 
 ```powershell

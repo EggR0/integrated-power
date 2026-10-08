@@ -1,7 +1,7 @@
 # Commercial Licensing
 
 This document applies to the software in this repository, including the
-`EggR.integrated-power` VSIX. Integrated Power is offered under the
+`EggR0.integrated-power` VSIX. Integrated Power is offered under the
 [PolyForm Strict License 1.0.0](LICENSE). That license permits use for
 noncommercial purposes under its terms, but does not grant permission to
 distribute copies or make changes or new works based on the software.

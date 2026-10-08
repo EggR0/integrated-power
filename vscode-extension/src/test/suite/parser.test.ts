@@ -326,7 +326,7 @@ suite('Parser and Store Test Suite', () => {
 
   test('Extension commands use the Integrated Power workspace state Open Runs target', async function () {
     this.timeout(10_000);
-    const extension = vscode.extensions.getExtension('EggR.integrated-power');
+    const extension = vscode.extensions.getExtension('EggR0.integrated-power');
     assert.ok(extension, 'Dashboard extension should be available in the extension host.');
     await extension.activate();
 

@@ -1,6 +1,6 @@
 # Integrated Power
 
-소스 manifest: `0.9.1` · 최신 공개 GitHub VSIX: `0.7.4` (2026-09-19 확인)
+소스 manifest: `0.9.2` · 최신 공개 GitHub VSIX: `0.7.4` (2026-10-08 확인)
 
 Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Windows 11에서
 에이전트 사용량, 작업 상태, GPU와 로컬 연산 상태를 한 화면에 표시하고,
@@ -12,15 +12,15 @@ Integrated Orchestrator와 사용자 소유 Private Git Knowledge를 이어 주�
 | 항목 | 값 |
 |---|---|
 | 제품 표시명 | Integrated Power |
-| Publisher | EggR |
-| 확장 ID | `EggR.integrated-power` |
+| Publisher | EggR0 |
+| 확장 ID | `EggR0.integrated-power` |
 | 확인된 공개 설치 경로 | GitHub Releases `v0.7.4` |
 | 우선 지원 환경 | Antigravity IDE on Windows 11 |
 
 ## 공개 배포 상태
 
-- canonical publisher/extension ID는 `EggR.integrated-power`이고 현재 소스 manifest는
-  `0.9.1`, VS Code engine은 `^1.80.0`이다.
+- canonical publisher/extension ID는 `EggR0.integrated-power`이고 현재 소스 manifest는
+  `0.9.2`, VS Code engine은 `^1.80.0`이다.
 - 최신 공개 GitHub VSIX는 [`v0.7.4`](https://github.com/EggR0/integrated-power/releases/tag/v0.7.4)이며
   내부 manifest도 `EggR.integrated-power`와 일치한다. 직접 파일은
   [`integrated-power-0.7.4.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.7.4/integrated-power-0.7.4.vsix)이다.
@@ -40,8 +40,8 @@ Antigravity·Codex·Claude·로컬 LLM·GPU 상태를 나눠 보여 주고, 다�
 
 ### 시작하기
 
-1. 검증된 GitHub VSIX를 받고 Publisher가 `EggR`, extension ID가
-   `EggR.integrated-power`인지 확인한다.
+1. 검증된 GitHub VSIX를 받고 Publisher가 `EggR0`, extension ID가
+   `EggR0.integrated-power`인지 확인한다.
 2. Dashboard와 Configuration Center를 열어 사용할 실행 경로를 선택한다.
 
 현재 검증된 공개 파일은 `integrated-power-0.7.4.vsix`이며, SHA-256은
@@ -164,7 +164,7 @@ Integrated Power는 전역 또는 프로젝트 `GEMINI.md`를 생성, 추가, �
 
 ### Open VSX 검색 설치 (현재 보류)
 
-현재 listing은 canonical `EggR.integrated-power`가 아닌
+현재 listing은 canonical `EggR0.integrated-power`가 아닌
 `integratedpower.integrated-power` `0.7.1`이다. 외부 publisher/ID가 정렬되기
 전에는 공식 설치 경로로 사용하지 않는다.
 
@@ -172,7 +172,7 @@ Integrated Power는 전역 또는 프로젝트 `GEMINI.md`를 생성, 추가, �
 
 검증된 공개 설치에서는
 [`integrated-power-0.7.4.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.7.4/integrated-power-0.7.4.vsix)를
-Antigravity IDE 전용 CLI wrapper로 설치한다. 소스 `0.9.1`을 직접 빌드한 VSIX는
+Antigravity IDE 전용 CLI wrapper로 설치한다. 소스 `0.9.2`를 직접 빌드한 VSIX는
 공개 release와 별개의 로컬 artifact다.
 
 ```powershell
