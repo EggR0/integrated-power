@@ -15,6 +15,9 @@ token*.json
 credentials*.json
 *.key
 *.pem
+*.token
+.ovsx-token
+secrets/
 .npmrc
 .vscode/
 
