@@ -277,6 +277,7 @@ Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integra
 ---
 
 ## 📚 관련 문서
+* [통합 배포 및 릴리스 가이드](https://github.com/EggR0/integrated-power/blob/main/docs/distribution/release-and-deployment-guide.ko.md)
 * [Open VSX 자동 배포 가이드](https://github.com/EggR0/integrated-power/blob/main/docs/distribution/open-vsx-publishing.ko.md)
 * [변경 이력 (CHANGELOG.md)](https://github.com/EggR0/integrated-power/blob/main/CHANGELOG.md)
 * [상세 지원 정책 (SUPPORT.md)](https://github.com/EggR0/integrated-power/blob/main/SUPPORT.md)

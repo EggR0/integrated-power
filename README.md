@@ -277,6 +277,7 @@ Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integra
 ---
 
 ## 📚 관련 문서
+* [통합 배포 및 릴리스 가이드](docs/distribution/release-and-deployment-guide.ko.md)
 * [Open VSX 자동 배포 가이드](docs/distribution/open-vsx-publishing.ko.md)
 * [변경 이력 (CHANGELOG.md)](CHANGELOG.md)
 * [상세 지원 정책 (SUPPORT.md)](SUPPORT.md)

@@ -96,3 +96,11 @@ npx ovsx verify-pat EggR0 -p $env:OVSX_PAT
 # 현재 배포된 최신 버전 및 메타데이터 확인
 npx ovsx show EggR0.integrated-power
 ```
+
+---
+
+## 5. 관련 문서
+
+* [Integrated Power 통합 배포 및 릴리스 가이드](release-and-deployment-guide.ko.md)
+* [변경 이력 (CHANGELOG.md)](../../CHANGELOG.md)
+
