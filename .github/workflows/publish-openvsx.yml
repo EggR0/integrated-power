@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to download VSIX from (optional, e.g. v0.9.4)'
+        required: false
+        default: 'v0.9.4'
 
 permissions:
   contents: read
@@ -18,19 +23,23 @@ jobs:
 
       - name: Download VSIX from Release asset
         id: check-asset
-        if: github.event_name == 'release'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           mkdir -p ./release-assets
-          gh release download "${{ github.event.release.tag_name }}" --pattern "*.vsix" --dir ./release-assets
+          if [ -n "$TAG_NAME" ]; then
+            echo "Attempting to download release asset for tag $TAG_NAME..."
+            gh release download "$TAG_NAME" --pattern "*.vsix" --dir ./release-assets || true
+          fi
           if ls ./release-assets/*.vsix 1> /dev/null 2>&1; then
             echo "asset_found=true" >> "$GITHUB_OUTPUT"
             echo "Found release VSIX asset:"
             ls -la ./release-assets/*.vsix
           else
             echo "asset_found=false" >> "$GITHUB_OUTPUT"
+            echo "No existing release asset found. Will build from source."
           fi
 
       - name: Setup pnpm (fallback build)
@@ -42,7 +51,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: ${{ steps.check-asset.outputs.asset_found != 'true' && 'pnpm' || '' }}
           cache-dependency-path: vscode-extension/pnpm-lock.yaml
 
