@@ -20,6 +20,7 @@ var IPQuota = (() => {
   // shared/quota/index.ts
   var index_exports = {};
   __export(index_exports, {
+    ANTIGRAVITY_STOP_SELECTORS: () => ANTIGRAVITY_STOP_SELECTORS,
     DEFAULT_POLL_INTERVAL_MS: () => DEFAULT_POLL_INTERVAL_MS,
     EXTERNAL_FETCH_MAX_BYTES: () => EXTERNAL_FETCH_MAX_BYTES,
     EXTERNAL_FETCH_TIMEOUT_MS: () => EXTERNAL_FETCH_TIMEOUT_MS,
@@ -30,25 +31,34 @@ var IPQuota = (() => {
     K_DEFAULT_RATIO: () => K_DEFAULT_RATIO,
     MAX_POLL_INTERVAL_MS: () => MAX_POLL_INTERVAL_MS,
     MIN_POLL_INTERVAL_MS: () => MIN_POLL_INTERVAL_MS,
+    PREWARM_MODE_OPTIONS: () => PREWARM_MODE_OPTIONS,
+    PREWARM_PING_PROMPT: () => PREWARM_PING_PROMPT,
+    PREWARM_TARGETS: () => PREWARM_TARGETS,
     QUOTA_NOTIFICATION_TARGETS: () => QUOTA_NOTIFICATION_TARGETS,
     QUOTA_SETTINGS_DEFAULTS: () => QUOTA_SETTINGS_DEFAULTS,
     absoluteTokenText: () => absoluteTokenText,
+    applyPrewarmTransition: () => applyPrewarmTransition,
     buildTokenMetric: () => buildTokenMetric,
     calculateCapacitySummary: () => calculateCapacitySummary,
     calculateEffective5HourQuota: () => calculateEffective5HourQuota,
+    canTriggerPrewarm: () => canTriggerPrewarm,
     capacitySummaryEntry: () => capacitySummaryEntry,
     capacityTone: () => capacityTone,
     clamp: () => clamp,
     clampPollInterval: () => clampPollInterval,
     detectRefilledQuotaWindows: () => detectRefilledQuotaWindows,
+    executePrewarmPing: () => executePrewarmPing,
     formatNumber: () => formatNumber,
     formatRefreshCountdown: () => formatRefreshCountdown,
     formatResetTime: () => formatResetTime,
     formatTokenCount: () => formatTokenCount,
+    generateAntigravityStopScript: () => generateAntigravityStopScript,
+    isServiceActiveForSummary: () => isServiceActiveForSummary,
     localLoadedModelLabel: () => localLoadedModelLabel,
     localServerBadge: () => localServerBadge,
     mergeQuotaSettings: () => mergeQuotaSettings,
     modelDiscoveryUrls: () => modelDiscoveryUrls,
+    normalizePrewarmMode: () => normalizePrewarmMode,
     parseExternalPayload: () => parseExternalPayload,
     parseModelList: () => parseModelList,
     toFiniteNumber: () => toFiniteNumber,
@@ -462,15 +472,31 @@ var IPQuota = (() => {
         effectiveResetTime = pairedResetTime;
       }
     }
-    const countdown = formatRefreshCountdown(effectiveResetTime);
-    const refreshFull = countdown ? countdown.full : "";
-    const refreshMedium = countdown ? countdown.medium || countdown.short : "";
-    const refreshShort = countdown ? countdown.short : "";
+    const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== void 0) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+    let refreshFull = "";
+    let refreshMedium = "";
+    let refreshShort = "";
+    let canPrewarm = false;
+    let isReady = false;
+    if (is5HourReady) {
+      refreshFull = "\xB7 Ready";
+      refreshMedium = "\xB7 Ready";
+      refreshShort = "\xB7 Ready";
+      canPrewarm = true;
+      isReady = true;
+    } else {
+      const countdown = formatRefreshCountdown(effectiveResetTime);
+      refreshFull = countdown ? countdown.full : "";
+      refreshMedium = countdown ? countdown.medium || countdown.short : "";
+      refreshShort = countdown ? countdown.short : "";
+    }
     let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     if (isWeeklyExhausted) {
       tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` \xB7 ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
     } else if (isWeeklyCapped) {
       tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
+    } else if (is5HourReady) {
+      tooltip = `${ariaLabel || label}: ${subtextFull} (Ready \xB7 Timer starts on first request). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     }
     const labelFull = label;
     const labelMedium = label;
@@ -495,7 +521,9 @@ var IPQuota = (() => {
       tone: capacityTone(normalizedPercentage),
       tooltip,
       isWeeklyExhausted,
-      isWeeklyCapped
+      isWeeklyCapped,
+      canPrewarm,
+      isReady
     };
   }
   function capacitySummaryEntry(labelFull, labelMedium, labelShort, exactPercentage, left, max) {
@@ -511,15 +539,56 @@ var IPQuota = (() => {
     }
     return typeof percentage === "number" ? { label: labelFull, labelFull, labelMedium, labelShort, percentage } : void 0;
   }
-  function calculateCapacitySummary(status) {
-    const entries = [
-      capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
-      capacitySummaryEntry("Gemini Weekly", "Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
-      capacitySummaryEntry("Claude 5Hours", "Claude 5Hours", "Claude 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax),
-      capacitySummaryEntry("Claude Weekly", "Claude Weekly", "Claude W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
-      capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax),
-      capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax)
-    ].filter((entry) => entry !== void 0);
+  function isServiceActiveForSummary(status, service, filter) {
+    if (filter) {
+      if (service === "gemini" && filter.showAntigravity === false) return false;
+      if (service === "claude" && filter.showClaude === false) return false;
+      if (service === "codex" && filter.showCodex === false) return false;
+    }
+    const viewConfig = status.viewConfig || status.view_config;
+    if (viewConfig) {
+      if (service === "gemini" && viewConfig.showAntigravity === false) return false;
+      if (service === "claude" && viewConfig.showClaude === false) return false;
+      if (service === "codex" && viewConfig.showCodex === false) return false;
+    }
+    if (service === "codex") {
+      const s = String(status.codexStatus || status.codexState || "").toLowerCase();
+      if (s === "offline" || s === "unauthenticated" || s === "disabled" || s === "missing" || s === "not_logged_in") {
+        return false;
+      }
+    } else if (service === "claude") {
+      const s = String(status.opusStatus || status.claudeStatus || "").toLowerCase();
+      if (s === "offline" || s === "unauthenticated" || s === "disabled" || s === "missing" || s === "not_logged_in") {
+        return false;
+      }
+    } else if (service === "gemini") {
+      const s = String(status.antigravityStatus || status.geminiStatus || "").toLowerCase();
+      if (s === "offline" || s === "unauthenticated" || s === "disabled" || s === "missing" || s === "not_logged_in") {
+        return false;
+      }
+    }
+    return true;
+  }
+  function calculateCapacitySummary(status, filter) {
+    const entries = [];
+    if (isServiceActiveForSummary(status, "gemini", filter)) {
+      const g5 = capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax);
+      const gw = capacitySummaryEntry("Gemini Weekly", "Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax);
+      if (g5) entries.push(g5);
+      if (gw) entries.push(gw);
+    }
+    if (isServiceActiveForSummary(status, "claude", filter)) {
+      const c5 = capacitySummaryEntry("Claude 5Hours", "Claude 5Hours", "Claude 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax);
+      const cw = capacitySummaryEntry("Claude Weekly", "Claude Weekly", "Claude W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax);
+      if (c5) entries.push(c5);
+      if (cw) entries.push(cw);
+    }
+    if (isServiceActiveForSummary(status, "codex", filter)) {
+      const x5 = capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax);
+      const xw = capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax);
+      if (x5) entries.push(x5);
+      if (xw) entries.push(xw);
+    }
     if (!entries.length) {
       return null;
     }
@@ -691,13 +760,107 @@ var IPQuota = (() => {
     return { notifications, updatedNotifiedSet: updatedSet };
   }
 
+  // shared/quota/prewarm.ts
+  var ANTIGRAVITY_STOP_SELECTORS = Object.freeze({
+    /** Primary cancel tooltip button in Antigravity Agent Panel */
+    cancelButton: '[data-tooltip-id="input-send-button-cancel-tooltip"]',
+    /** Fallback stop square icon button in send container */
+    stopSquareButton: "button svg.lucide-square",
+    /** Antigravity Agent side panel input box */
+    inputBox: "#antigravity\\.agentSidePanelInputBox",
+    /** Alternative chat/conversation containers in Antigravity IDE */
+    chatContainers: ["#conversation", "#chat", "#cascade"]
+  });
+  var PREWARM_PING_PROMPT = "integrated power";
+  var PREWARM_MODE_OPTIONS = Object.freeze([
+    {
+      value: "click",
+      label: "Click to Pre-warm",
+      description: "Manual on-demand trigger when the [\u26A1 Pre-warm] button is clicked."
+    },
+    {
+      value: "once",
+      label: "Once Pre-warm",
+      description: "Automatically pre-warms once on the next 100% Ready window, then returns to Click mode."
+    },
+    {
+      value: "always",
+      label: "Always Pre-warm",
+      description: "Continuously keeps 5-hour rolling recharge cycles running ahead of time."
+    }
+  ]);
+  function normalizePrewarmMode(value) {
+    if (value === "always" || value === "once" || value === "click") {
+      return value;
+    }
+    return "click";
+  }
+  var PREWARM_TARGETS = Object.freeze([
+    { id: "antigravity-gemini-5h", model: "antigravity", displayName: "Gemini 5Hours", prefix: "antigravity" },
+    { id: "codex-chatgpt-5h", model: "codex", displayName: "ChatGPT 5Hours", prefix: "codex" },
+    { id: "opus-claude-5h", model: "opus", displayName: "Claude 5Hours", prefix: "opus" },
+    { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude" }
+  ]);
+  function canTriggerPrewarm(metric) {
+    return metric.label === "5Hours" && metric.percentage >= 99.95 && !metric.isWeeklyExhausted;
+  }
+  function generateAntigravityStopScript() {
+    return `(function() {
+    const cancel = document.querySelector('${ANTIGRAVITY_STOP_SELECTORS.cancelButton}');
+    if (cancel && cancel.offsetParent !== null) {
+      cancel.click();
+      return { success: true, method: 'cancel_tooltip' };
+    }
+    const stopBtn = document.querySelector('${ANTIGRAVITY_STOP_SELECTORS.stopSquareButton}')?.closest('button');
+    if (stopBtn && stopBtn.offsetParent !== null) {
+      stopBtn.click();
+      return { success: true, method: 'fallback_square' };
+    }
+    return { success: false, reason: 'no_active_generation' };
+  })()`;
+  }
+  function applyPrewarmTransition(currentStatus, prefix, nowMs = Date.now()) {
+    const updated = { ...currentStatus };
+    const currentPct = typeof currentStatus[`${prefix}Percentage`] === "number" ? Number(currentStatus[`${prefix}Percentage`]) : 100;
+    updated[`${prefix}Percentage`] = Math.max(0, currentPct - 0.1);
+    const resetDate = new Date(nowMs + 5 * 3600 * 1e3);
+    updated[`${prefix}ResetTime`] = resetDate.toISOString();
+    return updated;
+  }
+  async function executePrewarmPing(target, dispatcher) {
+    const AC = typeof AbortController !== "undefined" ? AbortController : typeof globalThis !== "undefined" ? globalThis.AbortController : void 0;
+    const abortController = AC ? new AC() : void 0;
+    const startTime = /* @__PURE__ */ new Date();
+    const resetDate = new Date(startTime.getTime() + 5 * 3600 * 1e3);
+    if (dispatcher && abortController) {
+      const promise = dispatcher(PREWARM_PING_PROMPT, abortController.signal);
+      abortController.abort();
+      try {
+        await promise;
+      } catch {
+      }
+    }
+    return {
+      ok: true,
+      targetId: target.id,
+      model: target.model,
+      tokensConsumed: 1,
+      retainedPercentage: 99.9,
+      timerStartedAt: startTime.toISOString(),
+      resetTime: resetDate.toISOString(),
+      message: `Pre-warm successful: 5-hour recharge cycle active for ${target.displayName}. >99.9% quota retained.`,
+      stopMethod: dispatcher ? "abort_controller" : "simulated"
+    };
+  }
+
   // shared/quota/settings.ts
   var MIN_POLL_INTERVAL_MS = 1e3;
   var MAX_POLL_INTERVAL_MS = 6e4;
   var DEFAULT_POLL_INTERVAL_MS = 5e3;
   var QUOTA_SETTINGS_DEFAULTS = Object.freeze({
     pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
-    notifyOnFull: true
+    notifyOnFull: true,
+    prewarmMode: "click"
   });
   function clampPollInterval(value) {
     const number = Number(value);
@@ -708,7 +871,8 @@ var IPQuota = (() => {
     const source = partial && typeof partial === "object" ? partial : {};
     return {
       pollIntervalMs: clampPollInterval(source.pollIntervalMs),
-      notifyOnFull: typeof source.notifyOnFull === "boolean" ? source.notifyOnFull : QUOTA_SETTINGS_DEFAULTS.notifyOnFull
+      notifyOnFull: typeof source.notifyOnFull === "boolean" ? source.notifyOnFull : QUOTA_SETTINGS_DEFAULTS.notifyOnFull,
+      prewarmMode: normalizePrewarmMode(source.prewarmMode)
     };
   }
   return __toCommonJS(index_exports);

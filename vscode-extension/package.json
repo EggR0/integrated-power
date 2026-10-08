@@ -3,7 +3,7 @@
   "publisher": "EggR0",
   "displayName": "Integrated Power",
   "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "author": {
     "name": "EggR0"
   },
@@ -139,6 +139,21 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically launch Integrated Power background broker on Windows startup."
+        },
+        "integratedPower.quota.prewarmMode": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "enumDescriptions": [
+            "Click to Pre-warm: manual trigger on demand via [⚡ Pre-warm] button.",
+            "Always Pre-warm: automatically trigger pre-warm whenever 5-hour quota reaches 100% Ready.",
+            "Once Pre-warm: automatically trigger pre-warm once on the next 100% Ready window, then revert to Click."
+          ],
+          "default": "click",
+          "description": "5-hour quota pre-warm automation mode (Click, Always, or Once)."
         }
       }
     },

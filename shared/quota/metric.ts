@@ -55,6 +55,8 @@ export interface TokenMetric {
   tooltip: string;
   isWeeklyExhausted: boolean;
   isWeeklyCapped: boolean;
+  canPrewarm: boolean;
+  isReady: boolean;
 }
 
 /** One entry in the Best / Lowest summary (a single window). */
@@ -180,16 +182,33 @@ export function buildTokenMetric(
     }
   }
 
-  const countdown = formatRefreshCountdown(effectiveResetTime);
-  const refreshFull = countdown ? countdown.full : "";
-  const refreshMedium = countdown ? (countdown.medium || countdown.short) : "";
-  const refreshShort = countdown ? countdown.short : "";
+  const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+  let refreshFull = "";
+  let refreshMedium = "";
+  let refreshShort = "";
+  let canPrewarm = false;
+  let isReady = false;
+
+  if (is5HourReady) {
+    refreshFull = "· Ready";
+    refreshMedium = "· Ready";
+    refreshShort = "· Ready";
+    canPrewarm = true;
+    isReady = true;
+  } else {
+    const countdown = formatRefreshCountdown(effectiveResetTime);
+    refreshFull = countdown ? countdown.full : "";
+    refreshMedium = countdown ? (countdown.medium || countdown.short) : "";
+    refreshShort = countdown ? countdown.short : "";
+  }
 
   let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   if (isWeeklyExhausted) {
     tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` · ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
   } else if (isWeeklyCapped) {
     tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
+  } else if (is5HourReady) {
+    tooltip = `${ariaLabel || label}: ${subtextFull} (Ready · Timer starts on first request). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   }
 
   const labelFull = label;
@@ -217,6 +236,8 @@ export function buildTokenMetric(
     tooltip,
     isWeeklyExhausted,
     isWeeklyCapped,
+    canPrewarm,
+    isReady,
   };
 }
 
@@ -246,20 +267,84 @@ export function capacitySummaryEntry(
   return typeof percentage === "number" ? { label: labelFull, labelFull, labelMedium, labelShort, percentage } : undefined;
 }
 
+export interface CapacitySummaryFilter {
+  showAntigravity?: boolean;
+  showClaude?: boolean;
+  showCodex?: boolean;
+}
+
 /**
- * Rank the six quota windows and pick the Best (highest remaining) and the
- * Lowest (lowest remaining). Returns null when no window has usable data.
- * The DOM rendering (the summary pills) stays in each program.
+ * Checks if a provider service is active, authenticated, and enabled.
+ * Excludes services that are offline, unauthenticated, disabled, or hidden by viewConfig.
  */
-export function calculateCapacitySummary(status: TokenStatus): CapacitySummary | null {
-  const entries = [
-    capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax),
-    capacitySummaryEntry("Gemini Weekly", "Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax),
-    capacitySummaryEntry("Claude 5Hours", "Claude 5Hours", "Claude 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax),
-    capacitySummaryEntry("Claude Weekly", "Claude Weekly", "Claude W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax),
-    capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax),
-    capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax),
-  ].filter((entry): entry is CapacitySummaryEntry => entry !== undefined);
+export function isServiceActiveForSummary(
+  status: TokenStatus,
+  service: "gemini" | "claude" | "codex",
+  filter?: CapacitySummaryFilter
+): boolean {
+  if (filter) {
+    if (service === "gemini" && filter.showAntigravity === false) return false;
+    if (service === "claude" && filter.showClaude === false) return false;
+    if (service === "codex" && filter.showCodex === false) return false;
+  }
+  const viewConfig = (status.viewConfig || (status as Record<string, unknown>).view_config) as Record<string, unknown> | undefined;
+  if (viewConfig) {
+    if (service === "gemini" && viewConfig.showAntigravity === false) return false;
+    if (service === "claude" && viewConfig.showClaude === false) return false;
+    if (service === "codex" && viewConfig.showCodex === false) return false;
+  }
+
+  if (service === "codex") {
+    const s = String(status.codexStatus || (status as Record<string, unknown>).codexState || "").toLowerCase();
+    if (s === "offline" || s === "unauthenticated" || s === "disabled" || s === "missing" || s === "not_logged_in") {
+      return false;
+    }
+  } else if (service === "claude") {
+    const s = String((status as Record<string, unknown>).opusStatus || (status as Record<string, unknown>).claudeStatus || "").toLowerCase();
+    if (s === "offline" || s === "unauthenticated" || s === "disabled" || s === "missing" || s === "not_logged_in") {
+      return false;
+    }
+  } else if (service === "gemini") {
+    const s = String((status as Record<string, unknown>).antigravityStatus || (status as Record<string, unknown>).geminiStatus || "").toLowerCase();
+    if (s === "offline" || s === "unauthenticated" || s === "disabled" || s === "missing" || s === "not_logged_in") {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Rank the quota windows and pick the Best (highest remaining) and the
+ * Lowest (lowest remaining). Returns null when no window has usable data.
+ * Unauthenticated, offline, or disabled services are excluded from the ranking.
+ */
+export function calculateCapacitySummary(
+  status: TokenStatus,
+  filter?: CapacitySummaryFilter
+): CapacitySummary | null {
+  const entries: CapacitySummaryEntry[] = [];
+
+  if (isServiceActiveForSummary(status, "gemini", filter)) {
+    const g5 = capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax);
+    const gw = capacitySummaryEntry("Gemini Weekly", "Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax);
+    if (g5) entries.push(g5);
+    if (gw) entries.push(gw);
+  }
+
+  if (isServiceActiveForSummary(status, "claude", filter)) {
+    const c5 = capacitySummaryEntry("Claude 5Hours", "Claude 5Hours", "Claude 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax);
+    const cw = capacitySummaryEntry("Claude Weekly", "Claude Weekly", "Claude W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax);
+    if (c5) entries.push(c5);
+    if (cw) entries.push(cw);
+  }
+
+  if (isServiceActiveForSummary(status, "codex", filter)) {
+    const x5 = capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax);
+    const xw = capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax);
+    if (x5) entries.push(x5);
+    if (xw) entries.push(xw);
+  }
 
   if (!entries.length) {
     return null;

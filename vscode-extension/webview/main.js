@@ -87,10 +87,18 @@ function emptyState() {
     isStale: false,
     sectionStates: { antigravity: true, codex: true, openai: true, claude: true, localLlm: true },
     viewConfig: undefined,
+    prewarmMode: "click",
     updatedAt: new Date().toISOString(),
     refreshStartedAt: undefined,
     tokenStatus: emptyTokenStatus(),
   };
+}
+
+function normalizePrewarmMode(mode) {
+  if (mode === "always" || mode === "once" || mode === "click") {
+    return mode;
+  }
+  return "click";
 }
 
 function normalizeState(state) {
@@ -117,6 +125,7 @@ function normalizeState(state) {
     isStale: Boolean(safeState.isStale),
     sectionStates,
     viewConfig: safeState.viewConfig && typeof safeState.viewConfig === "object" ? safeState.viewConfig : undefined,
+    prewarmMode: normalizePrewarmMode(safeState.prewarmMode),
     updatedAt: stringValue(safeState.updatedAt) || new Date().toISOString(),
     refreshStartedAt: stringValue(safeState.refreshStartedAt),
   };
@@ -324,6 +333,21 @@ function render() {
     root.__delegationInitialized = true;
 
     root.addEventListener("click", (e) => {
+      const setModeBtn = e.target.closest("[data-set-prewarm-mode]");
+      if (setModeBtn && setModeBtn.dataset.setPrewarmMode && vscode) {
+        const newMode = setModeBtn.dataset.setPrewarmMode;
+        dashboardState.prewarmMode = newMode;
+        render();
+        vscode.postMessage({ type: "setPrewarmMode", mode: newMode });
+        return;
+      }
+
+      const prewarmBtn = e.target.closest("[data-prewarm]");
+      if (prewarmBtn && prewarmBtn.dataset.prewarm && vscode) {
+        vscode.postMessage({ type: "prewarm", model: prewarmBtn.dataset.prewarm });
+        return;
+      }
+
       const cmdBtn = e.target.closest("[data-command]");
       if (cmdBtn && cmdBtn.dataset.command) {
         postCommand(cmdBtn.dataset.command);
@@ -456,6 +480,7 @@ function renderTokenStatus(tokenStatus) {
       </div>
 
       ${renderCapacitySummary(status)}
+      ${renderPrewarmToolbar(dashboardState.prewarmMode)}
 
       ${sections.join('\n      <hr class="section-divider" />\n')}
 
@@ -669,7 +694,7 @@ function renderLocalComputeStatus(tokenStatus) {
 function renderCapacitySummary(status) {
   // A5 Best/Lowest selection lives in shared/quota (window.IPQuota) — the
   // same source the control-center consumes. Only the DOM stays here.
-  const summary = IPQuota.calculateCapacitySummary(status);
+  const summary = IPQuota.calculateCapacitySummary(status, dashboardState.viewConfig);
   if (!summary) {
     return "";
   }
@@ -691,6 +716,27 @@ function renderCapacitySummary(status) {
         <span class="text-short">${escapeHtml(lowest.labelShort)}</span>
         ${lowest.percentage.toFixed(0)}%
       </span>
+    </div>
+  `;
+}
+
+function renderPrewarmToolbar(mode) {
+  const currentMode = normalizePrewarmMode(mode);
+  const badgeText = currentMode === "always" ? "Always" : currentMode === "once" ? "Once" : "Click";
+  const badgeClass = `prewarm-badge prewarm-mode-${currentMode}`;
+
+  return `
+    <div class="prewarm-toolbar" title="${escapeAttr("5-hour quota pre-warm automation: starts 5h recharge timer with >99.9% capacity retained")}">
+      <div class="prewarm-title-group">
+        <span class="prewarm-icon">⚡</span>
+        <span class="prewarm-label">Pre-warm</span>
+        <span class="${badgeClass}">${badgeText}</span>
+      </div>
+      <div class="prewarm-mode-options" role="radiogroup" aria-label="Pre-warm Mode">
+        <button type="button" class="prewarm-mode-btn ${currentMode === "click" ? "active" : ""}" data-set-prewarm-mode="click" title="${escapeAttr("Click to Pre-warm: Manual trigger on demand via [⚡ Pre-warm] button")}">Click</button>
+        <button type="button" class="prewarm-mode-btn ${currentMode === "once" ? "active" : ""}" data-set-prewarm-mode="once" title="${escapeAttr("Once Pre-warm: Auto-prewarm once on next ready window, then revert to Click")}">Once</button>
+        <button type="button" class="prewarm-mode-btn ${currentMode === "always" ? "active" : ""}" data-set-prewarm-mode="always" title="${escapeAttr("Always Pre-warm: Continuous auto-prewarm whenever 5-hour quota is 100% Ready")}">Always</button>
+      </div>
     </div>
   `;
 }
@@ -762,6 +808,10 @@ function renderCapacityGroup(title, metrics) {
 }
 
 function renderCapacityMetric(metric) {
+  const prewarmBtn = metric.canPrewarm
+    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(metric.labelShort || metric.label)}" title="${escapeAttr("5-hour quota pre-warm: starts 5h recharge timer with >99.9% capacity retained")}">⚡ Pre-warm</button>`
+    : "";
+
   return `
     <div class="capacity-metric-row token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}" title="${escapeAttr(metric.tooltip || "")}">
       <div class="metric-reset-row">
@@ -776,6 +826,7 @@ function renderCapacityMetric(metric) {
           <span class="text-short">${escapeHtml(metric.subtextShort || metric.subtext)}</span>
         </span>
         <span class="reset-right">
+          ${prewarmBtn}
           <span class="text-full">${escapeHtml(metric.refreshFull || metric.refreshText || "")}</span>
           <span class="text-medium">${escapeHtml(metric.refreshMedium || metric.refreshText || "")}</span>
           <span class="text-short">${escapeHtml(metric.refreshShort || metric.refreshText || "")}</span>

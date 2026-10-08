@@ -304,6 +304,40 @@ test("calculateCapacitySummary picks best/lowest across the six windows (A5)", (
   assert.strictEqual(shared.calculateCapacitySummary({}), null);
 });
 
+test("calculateCapacitySummary excludes unauthenticated / offline services from Best and Lowest", () => {
+  // If Codex is offline, even if codex has a 0% entry, it must NOT be picked as Lowest!
+  const s = {
+    antigravityPercentage: 70, antigravityWeeklyPercentage: 90,
+    opusPercentage: 85, opusWeeklyPercentage: 95,
+    codexPercentage: 0, codexWeeklyPercentage: 0,
+    codexStatus: "offline",
+  };
+  const r = shared.calculateCapacitySummary(s);
+  assert.strictEqual(r.entries.length, 4, "Codex windows must be excluded when codexStatus is offline");
+  assert.strictEqual(r.lowest.label, "Gemini 5Hours", "Lowest must be Gemini 70%, not offline ChatGPT 0%");
+  assert.strictEqual(r.lowest.percentage, 70);
+  assert.strictEqual(r.strongest.label, "Claude Weekly");
+
+  // If Claude is unauthenticated
+  const s2 = {
+    antigravityPercentage: 50, antigravityWeeklyPercentage: 80,
+    opusPercentage: 0, opusWeeklyPercentage: 0,
+    opusStatus: "unauthenticated",
+  };
+  const r2 = shared.calculateCapacitySummary(s2);
+  assert.strictEqual(r2.entries.length, 2);
+  assert.strictEqual(r2.lowest.label, "Gemini 5Hours");
+
+  // If filtered by viewConfig / options
+  const s3 = {
+    antigravityPercentage: 60, antigravityWeeklyPercentage: 80,
+    codexPercentage: 40, codexWeeklyPercentage: 50,
+  };
+  const r3 = shared.calculateCapacitySummary(s3, { showCodex: false });
+  assert.strictEqual(r3.entries.length, 2);
+  assert.strictEqual(r3.lowest.label, "Gemini 5Hours");
+});
+
 test("absoluteTokenText: left/max, estimated fallback, left-only, none (A4)", () => {
   assert.strictEqual(shared.absoluteTokenText(500, 1000, undefined), "500 tokens / 1.00K tokens");
   assert.strictEqual(shared.absoluteTokenText(1234567, 2000000, undefined), "1.23M tokens / 2.00M tokens");
@@ -603,6 +637,48 @@ test("detectRefilledQuotaWindows detects transitions from <100% to >=100%", () =
   const depleted = { ...curr, antigravityPercentage: 20 };
   const third = shared.detectRefilledQuotaWindows(curr, depleted, updatedNotifiedSet);
   assert.strictEqual(third.updatedNotifiedSet.has("antigravity-gemini-5h"), false);
+});
+
+test("phantom countdown eliminated for 100% quota", () => {
+  const base = Date.now();
+  const resetIn = (hours) => new Date(base + hours * 3600e3).toISOString();
+
+  // 100% 5Hours quota has no phantom countdown; displays Ready and canPrewarm is true
+  const ready5h = shared.buildTokenMetric("5Hours", {
+    antigravityPercentage: 100,
+    antigravityResetTime: resetIn(3),
+    antigravityWeeklyPercentage: 100,
+    antigravityWeeklyResetTime: resetIn(48),
+  }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+
+  assert.strictEqual(ready5h.isReady, true);
+  assert.strictEqual(ready5h.canPrewarm, true);
+  assert.strictEqual(ready5h.refreshFull, "· Ready");
+  assert.strictEqual(ready5h.refreshMedium, "· Ready");
+  assert.strictEqual(ready5h.refreshShort, "· Ready");
+  assert.ok(ready5h.tooltip.includes("Ready · Timer starts on first request"));
+
+  // Once tokens are consumed (< 99.95%), rolling countdown activates
+  const active5h = shared.buildTokenMetric("5Hours", {
+    antigravityPercentage: 90,
+    antigravityResetTime: resetIn(3),
+    antigravityWeeklyPercentage: 100,
+    antigravityWeeklyResetTime: resetIn(48),
+  }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+
+  assert.strictEqual(active5h.isReady, false);
+  assert.strictEqual(active5h.canPrewarm, false);
+  assert.strictEqual(active5h.refreshFull, "· Refreshes in 3h 0m");
+
+  // Weekly 100% window still shows normal calendar reset, cannot prewarm
+  const weekly = shared.buildTokenMetric("Weekly", {
+    antigravityWeeklyPercentage: 100,
+    antigravityWeeklyResetTime: resetIn(48),
+  }, "antigravityWeekly", "Gemini Weekly");
+
+  assert.strictEqual(weekly.isReady, false);
+  assert.strictEqual(weekly.canPrewarm, false);
+  assert.ok(weekly.refreshFull.includes("47h") || weekly.refreshFull.includes("48h"));
 });
 
 if (failures) {

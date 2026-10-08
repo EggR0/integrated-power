@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.9.4] - 2026-10-08
+
+### Added
+
+- **3-Mode Quota Pre-Warm Strategy** (`click`, `once`, `always`):
+  - Pre-warm window activation: triggers an instantaneous cancellation ping on idle 100% quota windows to arm the 5-hour recharge cycle early while retaining >99.9% token capacity.
+  - Three user-selectable automation modes:
+    - `click`: On-demand manual trigger via the UI toolbar.
+    - `once`: Automatically arms the 5-hour countdown once on initial ready state, then returns to manual mode.
+    - `always`: Continuously monitors and arms fresh 100% quota windows with strict throttle protection.
+  - Pre-warm interactive UI toolbar with live state badges (`Ready`, `Armed`, `Prewarming...`, `Success`, `Error`) and mode switcher in both Extension Webview and Control Center.
+- Added `integratedPower.quota.prewarmMode` configuration property in `package.json`.
+
+### Changed & Fixed
+
+- **Hardened Lowest / Strongest Capacity Metric**:
+  - Filtered out unauthenticated (`unauthenticated`, `offline`, `disabled`) and viewConfig-hidden providers from `calculateCapacitySummary`.
+  - Prevents logged-out or disabled services from falsely reporting as 0% "Lowest" remaining quota.
+- **Phantom Countdown Elimination**:
+  - Quota windows at 100% capacity no longer display active countdown timers prior to user activity, showing `Ready` and arming the Pre-warm trigger instead.
+- Cross-app synchronization and DOM XSS verification between VS Code extension and standalone Control Center.
+
 ## [0.9.3] - 2026-10-08
 
 ### Changed

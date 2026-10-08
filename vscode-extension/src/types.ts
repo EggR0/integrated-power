@@ -188,7 +188,10 @@ export interface DashboardState {
     showMetrics?: boolean;
     showErrors?: boolean;
   };
+  prewarmMode?: PrewarmMode;
 }
+
+export type PrewarmMode = "click" | "always" | "once";
 
 export type WebviewToExtensionMessage =
   | { type: "ready"; state?: Partial<DashboardState> }
@@ -200,7 +203,9 @@ export type WebviewToExtensionMessage =
   | { type: "openTerminals" }
   | { type: "showBroker" }
   | { type: "showOllama" }
-  | { type: "showWebUI" };
+  | { type: "showWebUI" }
+  | { type: "prewarm"; model?: string }
+  | { type: "setPrewarmMode"; mode: PrewarmMode };
 
 export type ExtensionToWebviewMessage =
   | { type: "state"; state: DashboardState }

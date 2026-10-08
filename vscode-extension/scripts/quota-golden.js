@@ -64,7 +64,7 @@ function formatRefreshCountdown(value) {
   if (Number.isNaN(date.getTime())) return undefined;
   
   const diffMs = date.getTime() - Date.now();
-  if (diffMs <= 0) return { full: "\u00B7 Refreshes soon", medium: "\u00B7 Soon", short: "\u00B7 Soon" };
+  if (diffMs <= 0) return { full: "· Refreshes soon", medium: "· Soon", short: "· Soon" };
   
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -73,22 +73,22 @@ function formatRefreshCountdown(value) {
 
   if (diffHours >= 24) {
     return {
-      full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
-      medium: `\u00B7 ${diffHours}h ${diffMins}m`,
-      short: `\u00B7 ${diffHours}:${padMins}`,
+      full: `· Refreshes in ${diffHours}h ${diffMins}m`,
+      medium: `· ${diffHours}h ${diffMins}m`,
+      short: `· ${diffHours}:${padMins}`,
     };
   }
   if (diffHours > 0) {
     return {
-      full: `\u00B7 Refreshes in ${diffHours}h ${diffMins}m`,
-      medium: `\u00B7 ${diffHours}h ${diffMins}m`,
-      short: `\u00B7 ${diffHours}:${padMins}`,
+      full: `· Refreshes in ${diffHours}h ${diffMins}m`,
+      medium: `· ${diffHours}h ${diffMins}m`,
+      short: `· ${diffHours}:${padMins}`,
     };
   }
   return {
-    full: `\u00B7 Refreshes in ${diffMins}m`,
-    medium: `\u00B7 ${diffMins}m`,
-    short: `\u00B7 ${diffMins}m`,
+    full: `· Refreshes in ${diffMins}m`,
+    medium: `· ${diffMins}m`,
+    short: `· ${diffMins}m`,
   };
 }
 
@@ -182,16 +182,33 @@ function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) 
     }
   }
 
-  const countdown = formatRefreshCountdown(effectiveResetTime);
-  const refreshFull = countdown ? countdown.full : "";
-  const refreshMedium = countdown ? (countdown.medium || countdown.short) : "";
-  const refreshShort = countdown ? countdown.short : "";
+  const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+  let refreshFull = "";
+  let refreshMedium = "";
+  let refreshShort = "";
+  let canPrewarm = false;
+  let isReady = false;
+
+  if (is5HourReady) {
+    refreshFull = "· Ready";
+    refreshMedium = "· Ready";
+    refreshShort = "· Ready";
+    canPrewarm = true;
+    isReady = true;
+  } else {
+    const countdown = formatRefreshCountdown(effectiveResetTime);
+    refreshFull = countdown ? countdown.full : "";
+    refreshMedium = countdown ? (countdown.medium || countdown.short) : "";
+    refreshShort = countdown ? countdown.short : "";
+  }
   
   let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   if (isWeeklyExhausted) {
     tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` · ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
   } else if (isWeeklyCapped) {
     tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
+  } else if (is5HourReady) {
+    tooltip = `${ariaLabel || label}: ${subtextFull} (Ready · Timer starts on first request). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   }
 
   const labelFull = label;
@@ -219,6 +236,8 @@ function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) 
     tooltip,
     isWeeklyExhausted,
     isWeeklyCapped,
+    canPrewarm,
+    isReady,
   };
 }
 

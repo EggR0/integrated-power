@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import { DashboardOutboundMessage, DashboardState, RunSummary, WebviewToExtensionMessage, TokenStatus, LocalLlmMetric } from "./types";
+import * as cp from "child_process";
+import { DashboardOutboundMessage, DashboardState, RunSummary, WebviewToExtensionMessage, TokenStatus, LocalLlmMetric, PrewarmMode } from "./types";
 import { RunStore } from "./RunStore";
 import { TokenManager } from "./TokenManager";
 import { WorkspacePaths } from "./WorkspacePaths";
@@ -109,6 +110,12 @@ export class DashboardController implements vscode.Disposable {
         return;
       case "showWebUI":
         await vscode.commands.executeCommand("integratedPower.terminals.showWebUI");
+        return;
+      case "prewarm":
+        await this.handlePrewarm((message as { model?: string }).model);
+        return;
+      case "setPrewarmMode":
+        await this.setPrewarmMode((message as { mode: PrewarmMode }).mode);
         return;
     }
   }
@@ -231,6 +238,7 @@ export class DashboardController implements vscode.Disposable {
           updatedAt: new Date().toISOString(),
         };
         this.postState();
+        void this.checkAutoPrewarm(this.state.tokenStatus);
       } catch {
         // Silent periodic background refresh
       }
@@ -338,6 +346,7 @@ export class DashboardController implements vscode.Disposable {
       refreshStartedAt: this.state.refreshStartedAt,
       updatedAt: new Date().toISOString(),
       viewConfig: this.getViewConfig(),
+      prewarmMode: this.getPrewarmMode(),
     };
   }
 
@@ -365,6 +374,7 @@ export class DashboardController implements vscode.Disposable {
         updatedAt: new Date().toISOString(),
       };
       this.postState();
+      void this.checkAutoPrewarm(safeTokenStatus);
     } catch (error) {
       if (generation !== this.tokenRefreshGeneration) {
         return;
@@ -686,12 +696,64 @@ export class DashboardController implements vscode.Disposable {
       typed.type === "refresh" ||
       typed.type === "configureViews" ||
       typed.type === "openConfigurationCenter" ||
-      typed.type === "openRunsFile"
+      typed.type === "openRunsFile" ||
+      typed.type === "prewarm" ||
+      typed.type === "setPrewarmMode"
     ) {
       return true;
     }
 
     return typed.type === "openArtifact" && typeof typed.artifactId === "string" && typed.artifactId.length > 0;
+  }
+
+  private async handlePrewarm(modelKey?: string): Promise<void> {
+    const model = modelKey || "antigravity";
+    this.output.appendLine(`[prewarm] 5-hour quota pre-warm requested for model: ${model}`);
+    vscode.window.showInformationMessage(`[Integrated Power] 5-hour quota pre-warm triggered for ${model}. Starting recharge clock via agy CLI...`);
+
+    const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
+    if (fs.existsSync(agyBin)) {
+      try {
+        const targetModel = model.toLowerCase().includes("gemini") || model.toLowerCase().includes("antigravity")
+          ? "gemini-3.8-flash-low"
+          : "claude-sonnet-5-5-low";
+
+        const proc = cp.spawn(agyBin, [
+          "-p", "integrated power",
+          "--model", targetModel,
+          "--effort", "low",
+          "--disable-slash-commands",
+          "--print-timeout", "1500ms",
+        ], { windowsHide: true });
+
+        setTimeout(() => {
+          if (!proc.killed) {
+            try { proc.kill(); } catch {}
+          }
+        }, 2000);
+
+        this.output.appendLine(`[prewarm] agy CLI minimal ping dispatched (model: ${targetModel})`);
+      } catch (err) {
+        this.output.appendLine(`[prewarm] agy spawn error: ${this.errorMessage(err)}`);
+      }
+    }
+
+    if (this.state.tokenStatus) {
+      const prefix = model.toLowerCase().includes("gemini") || model.toLowerCase().includes("antigravity")
+        ? "antigravity"
+        : model.toLowerCase().includes("codex") || model.toLowerCase().includes("chatgpt")
+        ? "codex"
+        : model.toLowerCase().includes("opus") || model.toLowerCase().includes("claude")
+        ? "opus"
+        : "antigravity";
+
+      const currentPct = typeof (this.state.tokenStatus as any)[`${prefix}Percentage`] === "number"
+        ? Number((this.state.tokenStatus as any)[`${prefix}Percentage`])
+        : 100;
+      (this.state.tokenStatus as any)[`${prefix}Percentage`] = Math.max(0, currentPct - 0.1);
+      (this.state.tokenStatus as any)[`${prefix}ResetTime`] = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+      this.postState();
+    }
   }
 
   private emptyState(): DashboardState {
@@ -726,7 +788,71 @@ export class DashboardController implements vscode.Disposable {
       },
       updatedAt: new Date().toISOString(),
       viewConfig: this.getViewConfig(),
+      prewarmMode: this.getPrewarmMode(),
     };
+  }
+
+  private getPrewarmMode(): PrewarmMode {
+    const config = vscode.workspace.getConfiguration("integratedPower.quota");
+    const mode = config.get<string>("prewarmMode", "click");
+    if (mode === "always" || mode === "once" || mode === "click") {
+      return mode;
+    }
+    return "click";
+  }
+
+  private async setPrewarmMode(mode: PrewarmMode): Promise<void> {
+    const config = vscode.workspace.getConfiguration("integratedPower.quota");
+    await config.update("prewarmMode", mode, vscode.ConfigurationTarget.Global);
+    this.state = {
+      ...this.state,
+      prewarmMode: mode,
+    };
+    this.postState();
+  }
+
+  private lastAutoPrewarmMs = 0;
+
+  private async checkAutoPrewarm(status: TokenStatus | undefined): Promise<void> {
+    if (!status) return;
+    const mode = this.getPrewarmMode();
+    if (mode === "click") return;
+
+    const now = Date.now();
+    if (now - this.lastAutoPrewarmMs < 60000) return;
+
+    const geminiPct = typeof status.antigravityPercentage === "number" ? status.antigravityPercentage : 0;
+    const isGeminiReady = geminiPct >= 99.95 && !status.antigravityResetTime;
+
+    const opusPct = typeof status.opusPercentage === "number" ? status.opusPercentage : 0;
+    const isOpusReady = opusPct >= 99.95 && !status.opusResetTime;
+
+    const codexPct = typeof status.codexPercentage === "number" ? status.codexPercentage : 0;
+    const isCodexReady = codexPct >= 99.95 && !status.codexResetTime && status.codexStatus !== "offline";
+
+    let targetToPrewarm: string | undefined;
+    if (isGeminiReady) {
+      targetToPrewarm = "antigravity";
+    } else if (isOpusReady) {
+      targetToPrewarm = "opus";
+    } else if (isCodexReady) {
+      targetToPrewarm = "codex";
+    }
+
+    if (!targetToPrewarm) return;
+
+    this.lastAutoPrewarmMs = now;
+    this.output.appendLine(`[prewarm] Auto-triggering pre-warm in mode '${mode}' for ${targetToPrewarm}`);
+
+    await this.handlePrewarm(targetToPrewarm);
+
+    if (mode === "once") {
+      this.output.appendLine(`[prewarm] 'Once Pre-warm' executed. Reverting mode back to 'click'.`);
+      await this.setPrewarmMode("click");
+      void vscode.window.showInformationMessage(
+        `[Integrated Power] Once Pre-warm executed for ${targetToPrewarm}. Mode returned to 'Click to Pre-warm'.`
+      );
+    }
   }
 
   private getViewConfig() {

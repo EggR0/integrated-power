@@ -8,11 +8,15 @@
  * behavior-identical for the keys they share.
  */
 
+import { type PrewarmMode, normalizePrewarmMode } from "./prewarm";
+
 export interface QuotaSettings {
   /** Background poll interval in milliseconds. */
   pollIntervalMs: number;
   /** Emit a one-time "100% full" notification + chime when all pools refill. */
   notifyOnFull: boolean;
+  /** 5-hour quota pre-warm automation mode: click (manual), once (arm once), or always (continuous). */
+  prewarmMode: PrewarmMode;
 }
 
 export const MIN_POLL_INTERVAL_MS = 1000;
@@ -22,6 +26,7 @@ export const DEFAULT_POLL_INTERVAL_MS = 5000;
 export const QUOTA_SETTINGS_DEFAULTS: Readonly<QuotaSettings> = Object.freeze({
   pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
   notifyOnFull: true,
+  prewarmMode: "click",
 });
 
 export function clampPollInterval(value: unknown): number {
@@ -39,5 +44,6 @@ export function mergeQuotaSettings(partial: Partial<QuotaSettings> | null | unde
   return {
     pollIntervalMs: clampPollInterval(source.pollIntervalMs),
     notifyOnFull: typeof source.notifyOnFull === "boolean" ? source.notifyOnFull : QUOTA_SETTINGS_DEFAULTS.notifyOnFull,
+    prewarmMode: normalizePrewarmMode((source as Record<string, unknown>).prewarmMode),
   };
 }
