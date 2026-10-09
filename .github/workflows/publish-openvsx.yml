@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -76,5 +77,14 @@ jobs:
             exit 1
           fi
           echo "Publishing $VSIX_FILE to Open VSX Registry (EggR0.integrated-power)..."
-          npx ovsx publish "$VSIX_FILE" -p "$OVSX_PAT" --skip-duplicate
-          echo "Successfully published to Open VSX!"
+          # Attempt Trusted Publishing (OIDC) first
+          if npx ovsx publish "$VSIX_FILE" --trusted-publishing --skip-duplicate; then
+            echo "Successfully published to Open VSX via Trusted Publishing!"
+          elif [ -n "$OVSX_PAT" ]; then
+            echo "Trusted Publishing not configured or pending; falling back to PAT..."
+            npx ovsx publish "$VSIX_FILE" -p "$OVSX_PAT" --skip-duplicate
+            echo "Successfully published to Open VSX via PAT!"
+          else
+            echo "Failed to publish."
+            exit 1
+          fi
