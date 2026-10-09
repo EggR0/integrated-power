@@ -1,7 +1,7 @@
 # Integrated Power
 
 [![Open VSX](https://img.shields.io/open-vsx/v/EggR0/integrated-power?color=blue&label=Open%20VSX)](https://open-vsx.org/extension/EggR0/integrated-power)
-[![GitHub Release](https://img.shields.io/github/v/release/EggR0/integrated-power?color=green&label=GitHub%20Release)](https://github.com/EggR0/integrated-power/releases/tag/v0.9.4)
+[![GitHub Release](https://img.shields.io/github/v/release/EggR0/integrated-power?color=green&label=GitHub%20Release)](https://github.com/EggR0/integrated-power/releases/tag/v0.9.5)
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/EggR0/integrated-power?color=orange&label=Downloads)](https://open-vsx.org/extension/EggR0/integrated-power)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2011-blue)](https://github.com/EggR0/integrated-power)
 [![Target](https://img.shields.io/badge/Target-Antigravity%20IDE-purple)](https://github.com/EggR0/integrated-power)
@@ -19,16 +19,16 @@ Antigravity IDE 또는 VS Code 확장 탭(`Ctrl+Shift+X`)에서 **`Integrated Po
 * **Open VSX 등록 페이지**: [open-vsx.org/extension/EggR0/integrated-power](https://open-vsx.org/extension/EggR0/integrated-power)
 
 ### 방법 2. GitHub Releases VSIX 다운로드 및 CLI 설치
-검증된 최신 패키지 [`integrated-power-0.9.4.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.9.4/integrated-power-0.9.4.vsix)를 다운로드한 후, 아래 명령어로 설치합니다:
+검증된 최신 패키지 [`integrated-power-0.9.5.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.9.5/integrated-power-0.9.5.vsix)를 다운로드한 후, 아래 명령어로 설치합니다:
 
 ```powershell
 # PowerShell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\integrated-power-0.9.4.vsix" `
+  --install-extension ".\integrated-power-0.9.5.vsix" `
   --force
 
 # 또는 CMD
-"%LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension ".\integrated-power-0.9.4.vsix" --force
+"%LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension ".\integrated-power-0.9.5.vsix" --force
 ```
 
 설치 또는 업데이트 후 실행 중인 Antigravity IDE에서 다음 명령을 한 번 실행합니다.
@@ -61,7 +61,7 @@ Developer: Reload Window
 
 ---
 
-## 🚀 주요 기능 (v0.9.4)
+## 🚀 주요 기능 (v0.9.5)
 
 - **3-Mode 5시간 쿼터 프리웜 (Quota Pre-warm Strategy - Click / Once / Always)**: 미사용 100% 쿼터 창에 대해 최소 토큰 핑 후 즉각 취소(Abort)를 수행하여, 잔여 용량을 99.9% 이상 보존하면서 5시간 리셋 카운트다운을 사전 개시. 작업 시작 전 미리 타이머를 굴려 작업 중 리셋 시간을 극적으로 단축. 사용 환경에 맞춰 Always(자동 감지 상시 가동), Once(세션 시작 시 1회), Click(수동 버튼) 3모드 완벽 지원
 - **프리웜 인터랙티브 UI 툴바 및 실시간 상태 배지**: Webview 대시보드 및 독립형 Control Center 상단에 프리웜 툴바(`[⚡ Pre-warm]`, 모드 셀렉터, `Ready`/`Armed`/`Prewarming...`/`Success` 상태 배지) 탑재
@@ -268,8 +268,8 @@ Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integra
 | 제품 표시명 | Integrated Power |
 | Publisher / 네임스페이스 | **EggR0** |
 | 확장 ID | **`EggR0.integrated-power`** |
-| 현재 버전 | **`0.9.4`** |
-| 공개 마켓 | [Open VSX Registry](https://open-vsx.org/extension/EggR0/integrated-power) · [GitHub Releases](https://github.com/EggR0/integrated-power/releases/tag/v0.9.4) |
+| 현재 버전 | **`0.9.5`** |
+| 공개 마켓 | [Open VSX Registry](https://open-vsx.org/extension/EggR0/integrated-power) · [GitHub Releases](https://github.com/EggR0/integrated-power/releases/tag/v0.9.5) |
 | 지원 OS | Windows 11 |
 | 주 타깃 IDE | Antigravity IDE (VS Code ^1.80.0 호환) |
 | 라이선스 | PolyForm Strict License 1.0.0 ([LICENSE](https://github.com/EggR0/integrated-power/blob/main/LICENSE)) |

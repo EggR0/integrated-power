@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.5] - 2026-10-09
+
+### Changed & Fixed
+
+- Official Open VSX Registry marketplace release of the 3-mode Pre-warm quota optimization (`click`, `once`, `always`).
+- Integrated automated GitHub Actions CI/CD pipeline for Open VSX with OIDC Trusted Publishing and PAT authentication fallback.
+- Synchronized Control Center and Webview runtime footers and version manifests across both monorepo and standalone repositories.
+
 ## [0.9.4] - 2026-10-08
 
 ### Added

@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to download VSIX from (optional, e.g. v0.9.4)'
+        description: 'Release tag to download VSIX from (optional, e.g. v0.9.5)'
         required: false
-        default: 'v0.9.4'
+        default: 'v0.9.5'
 
 permissions:
   contents: read
