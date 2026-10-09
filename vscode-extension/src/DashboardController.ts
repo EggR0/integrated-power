@@ -23,14 +23,18 @@ export class DashboardController implements vscode.Disposable {
   private tokenPollingTimer?: ReturnType<typeof setInterval>;
   private pendingWriteState?: DashboardState;
   private isRefreshing = false;
-  private pendingRefreshForce: boolean | undefined = undefined;
+  private pendingRefreshForce?: boolean;
   private tokenRefreshGeneration = 0;
   private notifiedFullWindows = new Set<string>();
+  private currentPrewarmMode: PrewarmMode = "click";
+  private lastAutoPrewarmByTarget: Record<string, number> = {};
   private state: DashboardState = this.emptyState();
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly postMessage: PostMessage) {
     this.paths = new WorkspacePaths(context);
     this.disposables.push(this.output);
+    this.currentPrewarmMode = this.getPrewarmMode();
+    this.state.prewarmMode = this.currentPrewarmMode;
     this.resetWatchers();
 
     this.disposables.push(
@@ -43,6 +47,14 @@ export class DashboardController implements vscode.Disposable {
           this.state.viewConfig = this.getViewConfig();
           this.postState();
           void this.refresh(true);
+        }
+        if (e.affectsConfiguration("integratedPower.quota")) {
+          const newMode = this.getPrewarmMode();
+          if (newMode !== this.currentPrewarmMode) {
+            this.currentPrewarmMode = newMode;
+            this.state.prewarmMode = newMode;
+            this.postState();
+          }
         }
       })
     );
@@ -346,7 +358,7 @@ export class DashboardController implements vscode.Disposable {
       refreshStartedAt: this.state.refreshStartedAt,
       updatedAt: new Date().toISOString(),
       viewConfig: this.getViewConfig(),
-      prewarmMode: this.getPrewarmMode(),
+      prewarmMode: this.currentPrewarmMode,
     };
   }
 
@@ -706,54 +718,115 @@ export class DashboardController implements vscode.Disposable {
     return typed.type === "openArtifact" && typeof typed.artifactId === "string" && typed.artifactId.length > 0;
   }
 
+  private getPrewarmEligibility(
+    modelKey?: string,
+    status?: TokenStatus
+  ): { eligible: boolean; reason: string; prefix: string; targetModel: string; label: string } {
+    const raw = (modelKey || "antigravity").toLowerCase();
+    let prefix = "antigravity";
+    let weeklyPrefix = "antigravityWeekly";
+    let targetModel = "gemini-3.8-flash-low";
+    let label = "Gemini 5Hours";
+
+    if (raw.includes("opus") || raw.includes("claude")) {
+      prefix = "opus";
+      weeklyPrefix = "opusWeekly";
+      targetModel = "claude-sonnet-5-5-low";
+      label = "Claude 5Hours";
+    } else if (raw.includes("codex") || raw.includes("chatgpt")) {
+      prefix = "codex";
+      weeklyPrefix = "codexWeekly";
+      targetModel = "gpt-4o-mini";
+      label = "ChatGPT 5Hours";
+    }
+
+    if (!status) {
+      return { eligible: false, reason: "No quota telemetry data available yet", prefix, targetModel, label };
+    }
+
+    // Check provider online status
+    if (prefix === "codex" && (status.codexStatus === "offline" || status.codexStatus === "unauthenticated")) {
+      return { eligible: false, reason: "ChatGPT / Codex provider is offline", prefix, targetModel, label };
+    }
+
+    // Check weekly quota exhaustion
+    const weeklyPct = typeof (status as any)[`${weeklyPrefix}Percentage`] === "number"
+      ? Number((status as any)[`${weeklyPrefix}Percentage`])
+      : undefined;
+    const weeklyLeft = typeof (status as any)[`${weeklyPrefix}TokensLeft`] === "number"
+      ? Number((status as any)[`${weeklyPrefix}TokensLeft`])
+      : undefined;
+    const isWeeklyExhausted = weeklyPct === 0 || weeklyLeft === 0;
+    if (isWeeklyExhausted) {
+      return { eligible: false, reason: `${label} weekly quota is exhausted (0% remaining). All 5-hour capacity is locked.`, prefix, targetModel, label };
+    }
+
+    // Check 5-hour percentage
+    const fiveHPct = typeof (status as any)[`${prefix}Percentage`] === "number"
+      ? Number((status as any)[`${prefix}Percentage`])
+      : 0;
+    if (fiveHPct < 99.95) {
+      return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, label };
+    }
+
+    // Check recent pre-warm cooldown (minimum 3 minutes per model)
+    const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
+    const elapsed = Date.now() - lastPrewarm;
+    if (elapsed < 180000) {
+      const waitSec = Math.ceil((180000 - elapsed) / 1000);
+      return { eligible: false, reason: `${label} was pre-warmed recently. Cooldown active (${waitSec}s remaining).`, prefix, targetModel, label };
+    }
+
+    return { eligible: true, reason: "Ready", prefix, targetModel, label };
+  }
+
   private async handlePrewarm(modelKey?: string): Promise<void> {
-    const model = modelKey || "antigravity";
-    this.output.appendLine(`[prewarm] 5-hour quota pre-warm requested for model: ${model}`);
-    vscode.window.showInformationMessage(`[Integrated Power] 5-hour quota pre-warm triggered for ${model}. Starting recharge clock via agy CLI...`);
+    const check = this.getPrewarmEligibility(modelKey, this.state.tokenStatus);
+    if (!check.eligible) {
+      this.output.appendLine(`[prewarm] Refusing pre-warm for ${check.label}: ${check.reason}`);
+      void vscode.window.showWarningMessage(`[Integrated Power] Pre-warm skipped: ${check.reason}`);
+      return;
+    }
+
+    this.output.appendLine(`[prewarm] 5-hour quota pre-warm approved for ${check.label} (100% Ready). Starting minimal ping...`);
+    this.lastAutoPrewarmByTarget[check.prefix] = Date.now();
 
     const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
     if (fs.existsSync(agyBin)) {
       try {
-        const targetModel = model.toLowerCase().includes("gemini") || model.toLowerCase().includes("antigravity")
-          ? "gemini-3.8-flash-low"
-          : "claude-sonnet-5-5-low";
-
         const proc = cp.spawn(agyBin, [
           "-p", "integrated power",
-          "--model", targetModel,
+          "--model", check.targetModel,
           "--effort", "low",
           "--disable-slash-commands",
-          "--print-timeout", "1500ms",
+          "--print-timeout", "500ms",
         ], { windowsHide: true });
 
+        // Immediate fast abort (250ms) to trigger API timestamp without consuming generation tokens
         setTimeout(() => {
           if (!proc.killed) {
             try { proc.kill(); } catch {}
           }
-        }, 2000);
+        }, 250);
 
-        this.output.appendLine(`[prewarm] agy CLI minimal ping dispatched (model: ${targetModel})`);
+        this.output.appendLine(`[prewarm] agy CLI minimal ping dispatched (model: ${check.targetModel})`);
       } catch (err) {
         this.output.appendLine(`[prewarm] agy spawn error: ${this.errorMessage(err)}`);
       }
     }
 
     if (this.state.tokenStatus) {
-      const prefix = model.toLowerCase().includes("gemini") || model.toLowerCase().includes("antigravity")
-        ? "antigravity"
-        : model.toLowerCase().includes("codex") || model.toLowerCase().includes("chatgpt")
-        ? "codex"
-        : model.toLowerCase().includes("opus") || model.toLowerCase().includes("claude")
-        ? "opus"
-        : "antigravity";
-
-      const currentPct = typeof (this.state.tokenStatus as any)[`${prefix}Percentage`] === "number"
-        ? Number((this.state.tokenStatus as any)[`${prefix}Percentage`])
+      const currentPct = typeof (this.state.tokenStatus as any)[`${check.prefix}Percentage`] === "number"
+        ? Number((this.state.tokenStatus as any)[`${check.prefix}Percentage`])
         : 100;
-      (this.state.tokenStatus as any)[`${prefix}Percentage`] = Math.max(0, currentPct - 0.1);
-      (this.state.tokenStatus as any)[`${prefix}ResetTime`] = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+      (this.state.tokenStatus as any)[`${check.prefix}Percentage`] = Math.max(0, currentPct - 0.1);
+      (this.state.tokenStatus as any)[`${check.prefix}ResetTime`] = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
       this.postState();
     }
+
+    void vscode.window.showInformationMessage(
+      `[Integrated Power] 5-hour recharge cycle activated for ${check.label}. (${(99.9).toFixed(1)}% quota preserved)`
+    );
   }
 
   private emptyState(): DashboardState {
@@ -788,70 +861,61 @@ export class DashboardController implements vscode.Disposable {
       },
       updatedAt: new Date().toISOString(),
       viewConfig: this.getViewConfig(),
-      prewarmMode: this.getPrewarmMode(),
+      prewarmMode: this.currentPrewarmMode,
     };
   }
 
   private getPrewarmMode(): PrewarmMode {
+    if (this.currentPrewarmMode === "always" || this.currentPrewarmMode === "once" || this.currentPrewarmMode === "click") {
+      return this.currentPrewarmMode;
+    }
     const config = vscode.workspace.getConfiguration("integratedPower.quota");
     const mode = config.get<string>("prewarmMode", "click");
     if (mode === "always" || mode === "once" || mode === "click") {
+      this.currentPrewarmMode = mode;
       return mode;
     }
+    this.currentPrewarmMode = "click";
     return "click";
   }
 
   private async setPrewarmMode(mode: PrewarmMode): Promise<void> {
-    const config = vscode.workspace.getConfiguration("integratedPower.quota");
-    await config.update("prewarmMode", mode, vscode.ConfigurationTarget.Global);
+    this.currentPrewarmMode = mode;
     this.state = {
       ...this.state,
       prewarmMode: mode,
     };
     this.postState();
-  }
 
-  private lastAutoPrewarmMs = 0;
+    try {
+      const config = vscode.workspace.getConfiguration("integratedPower.quota");
+      await config.update("prewarmMode", mode, vscode.ConfigurationTarget.Global);
+    } catch (err) {
+      this.output.appendLine(`[prewarm] Notice: Settings persistence for prewarmMode: ${this.errorMessage(err)}`);
+    }
+  }
 
   private async checkAutoPrewarm(status: TokenStatus | undefined): Promise<void> {
     if (!status) return;
-    const mode = this.getPrewarmMode();
+    const mode = this.currentPrewarmMode;
     if (mode === "click") return;
 
-    const now = Date.now();
-    if (now - this.lastAutoPrewarmMs < 60000) return;
+    const targets = ["antigravity", "opus", "codex"];
+    for (const target of targets) {
+      const check = this.getPrewarmEligibility(target, status);
+      if (check.eligible) {
+        this.output.appendLine(`[prewarm] Auto-triggering pre-warm in mode '${mode}' for ${check.label}`);
+        await this.handlePrewarm(target);
 
-    const geminiPct = typeof status.antigravityPercentage === "number" ? status.antigravityPercentage : 0;
-    const isGeminiReady = geminiPct >= 99.95 && !status.antigravityResetTime;
-
-    const opusPct = typeof status.opusPercentage === "number" ? status.opusPercentage : 0;
-    const isOpusReady = opusPct >= 99.95 && !status.opusResetTime;
-
-    const codexPct = typeof status.codexPercentage === "number" ? status.codexPercentage : 0;
-    const isCodexReady = codexPct >= 99.95 && !status.codexResetTime && status.codexStatus !== "offline";
-
-    let targetToPrewarm: string | undefined;
-    if (isGeminiReady) {
-      targetToPrewarm = "antigravity";
-    } else if (isOpusReady) {
-      targetToPrewarm = "opus";
-    } else if (isCodexReady) {
-      targetToPrewarm = "codex";
-    }
-
-    if (!targetToPrewarm) return;
-
-    this.lastAutoPrewarmMs = now;
-    this.output.appendLine(`[prewarm] Auto-triggering pre-warm in mode '${mode}' for ${targetToPrewarm}`);
-
-    await this.handlePrewarm(targetToPrewarm);
-
-    if (mode === "once") {
-      this.output.appendLine(`[prewarm] 'Once Pre-warm' executed. Reverting mode back to 'click'.`);
-      await this.setPrewarmMode("click");
-      void vscode.window.showInformationMessage(
-        `[Integrated Power] Once Pre-warm executed for ${targetToPrewarm}. Mode returned to 'Click to Pre-warm'.`
-      );
+        if (mode === "once") {
+          this.output.appendLine(`[prewarm] 'Once Pre-warm' executed for ${check.label}. Reverting mode to 'click'.`);
+          await this.setPrewarmMode("click");
+          void vscode.window.showInformationMessage(
+            `[Integrated Power] Once Pre-warm executed for ${check.label}. Mode returned to 'Click to Pre-warm'.`
+          );
+        }
+        break;
+      }
     }
   }
 

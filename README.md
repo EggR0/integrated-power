@@ -19,16 +19,16 @@ Antigravity IDE 또는 VS Code 확장 탭(`Ctrl+Shift+X`)에서 **`Integrated Po
 * **Open VSX 등록 페이지**: [open-vsx.org/extension/EggR0/integrated-power](https://open-vsx.org/extension/EggR0/integrated-power)
 
 ### 방법 2. GitHub Releases VSIX 다운로드 및 CLI 설치
-검증된 최신 패키지 [`integrated-power-0.9.5.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.9.5/integrated-power-0.9.5.vsix)를 다운로드한 후, 아래 명령어로 설치합니다:
+검증된 최신 패키지 [`integrated-power-0.9.6.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.9.6/integrated-power-0.9.6.vsix)를 다운로드한 후, 아래 명령어로 설치합니다:
 
 ```powershell
 # PowerShell
 & "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\integrated-power-0.9.5.vsix" `
+  --install-extension ".\integrated-power-0.9.6.vsix" `
   --force
 
 # 또는 CMD
-"%LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension ".\integrated-power-0.9.5.vsix" --force
+"%LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension ".\integrated-power-0.9.6.vsix" --force
 ```
 
 설치 또는 업데이트 후 실행 중인 Antigravity IDE에서 다음 명령을 한 번 실행합니다.
@@ -268,17 +268,17 @@ Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integra
 | 제품 표시명 | Integrated Power |
 | Publisher / 네임스페이스 | **EggR0** |
 | 확장 ID | **`EggR0.integrated-power`** |
-| 현재 버전 | **`0.9.5`** |
-| 공개 마켓 | [Open VSX Registry](https://open-vsx.org/extension/EggR0/integrated-power) · [GitHub Releases](https://github.com/EggR0/integrated-power/releases/tag/v0.9.5) |
+| 현재 버전 | **`0.9.6`** |
+| 공개 마켓 | [Open VSX Registry](https://open-vsx.org/extension/EggR0/integrated-power) · [GitHub Releases](https://github.com/EggR0/integrated-power/releases/tag/v0.9.6) |
 | 지원 OS | Windows 11 |
 | 주 타깃 IDE | Antigravity IDE (VS Code ^1.80.0 호환) |
-| 라이선스 | PolyForm Strict License 1.0.0 ([LICENSE](LICENSE)) |
+| 라이선스 | PolyForm Strict License 1.0.0 ([LICENSE](https://github.com/EggR0/integrated-power/blob/main/LICENSE)) |
 
 ---
 
 ## 📚 관련 문서
-* [통합 배포 및 릴리스 가이드](docs/distribution/release-and-deployment-guide.ko.md)
-* [Open VSX 자동 배포 가이드](docs/distribution/open-vsx-publishing.ko.md)
-* [변경 이력 (CHANGELOG.md)](CHANGELOG.md)
-* [상세 지원 정책 (SUPPORT.md)](SUPPORT.md)
-* [상업용 라이선스 안내 (COMMERCIAL-LICENSING.md)](COMMERCIAL-LICENSING.md)
+* [통합 배포 및 릴리스 가이드](https://github.com/EggR0/integrated-power/blob/main/docs/distribution/release-and-deployment-guide.ko.md)
+* [Open VSX 자동 배포 가이드](https://github.com/EggR0/integrated-power/blob/main/docs/distribution/open-vsx-publishing.ko.md)
+* [변경 이력 (CHANGELOG.md)](https://github.com/EggR0/integrated-power/blob/main/CHANGELOG.md)
+* [상세 지원 정책 (SUPPORT.md)](https://github.com/EggR0/integrated-power/blob/main/SUPPORT.md)
+* [상업용 라이선스 안내 (COMMERCIAL-LICENSING.md)](https://github.com/EggR0/integrated-power/blob/main/COMMERCIAL-LICENSING.md)

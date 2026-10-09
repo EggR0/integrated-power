@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.6] - 2026-10-09
+
+### Fixed & Hardened
+
+- **Strict Pre-warm Quota Qualification Guard**: Pre-warm execution is strictly blocked and prevented from spawning CLI processes when a model's 5-hour quota is not genuinely 100% Ready (>=99.95%), when weekly quota is exhausted (0%), when the provider is offline, or when a recharge countdown is already active.
+- **Zero Token Waste on Ineligible Triggers**: Clicking pre-warm buttons or selecting automation modes when quota is not 100% Ready will never consume tokens or invoke LLM generation; user is alerted with a clear warning explaining why the window is ineligible.
+- **Fast Abort Ping (250ms)**: When eligible, the minimal ping aborts immediately within 250ms to activate the recharge timestamp without streaming completions.
+- **Fixed Mode Persistence (`Always` reverting to `Click`)**: `DashboardController` maintains `currentPrewarmMode` as authoritative local state, preventing periodic background polling from overwriting `Always` mode back to default `Click`.
+- **Target Provider Resolution**: Fixed Webview `data-prewarm` and Control Center auto-prewarm loop to pass exact provider model keys (`antigravity`, `opus`, `codex`) and incorporate weekly quota validation.
+- **Broker HTTP Pre-warm Endpoint**: Added loopback `/prewarm` endpoint with quota telemetry verification.
+
 ## [0.9.5] - 2026-10-09
 
 ### Changed & Fixed

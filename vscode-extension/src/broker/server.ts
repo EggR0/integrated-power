@@ -2,6 +2,7 @@ import * as http from "http";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import * as cp from "child_process";
 import { BrokerConflictError, IntegratedPowerBroker } from "./broker";
 import { CreateTaskInput, DelegateTaskInput } from "./protocol";
 import { integratedPowerProtocolBoundary } from "./protocols";
@@ -186,6 +187,50 @@ export async function startBrokerServer(
         const force = url.searchParams.get("force") === "1" || url.searchParams.get("force") === "true";
         const tokenStatus = await scanLiveTokenStatus({ force });
         return send(response, 200, { ok: true, forced: force, tokenStatus });
+      }
+      if (request.method === "POST" && (url.pathname === "/prewarm" || url.pathname === "/v1/tokens/prewarm")) {
+        const input = await readJson(request) as { model?: string };
+        const rawModel = (input?.model || "antigravity").toLowerCase();
+        let targetModel = "gemini-3.8-flash-low";
+        let prefix = "antigravity";
+        if (rawModel.includes("opus") || rawModel.includes("claude")) {
+          targetModel = "claude-sonnet-5-5-low";
+          prefix = "opus";
+        } else if (rawModel.includes("codex") || rawModel.includes("chatgpt")) {
+          targetModel = "gpt-4o-mini";
+          prefix = "codex";
+        }
+
+        const liveStatus = await scanLiveTokenStatus({ force: false });
+        const weeklyPrefix = prefix === "antigravity" ? "antigravityWeekly" : prefix === "opus" ? "opusWeekly" : "codexWeekly";
+        const fiveHPct = typeof (liveStatus as any)[`${prefix}Percentage`] === "number" ? (liveStatus as any)[`${prefix}Percentage`] : 0;
+        const weeklyPct = typeof (liveStatus as any)[`${weeklyPrefix}Percentage`] === "number" ? (liveStatus as any)[`${weeklyPrefix}Percentage`] : 100;
+        if (fiveHPct < 99.95) {
+          return send(response, 400, { ok: false, error: `${prefix} quota is not 100% full (${fiveHPct.toFixed(1)}%). Pre-warm skipped.` });
+        }
+        if (weeklyPct === 0) {
+          return send(response, 400, { ok: false, error: `${prefix} weekly quota is exhausted. Pre-warm skipped.` });
+        }
+
+        const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
+        if (fs.existsSync(agyBin)) {
+          try {
+            const proc = cp.spawn(agyBin, [
+              "-p", "integrated power",
+              "--model", targetModel,
+              "--effort", "low",
+              "--disable-slash-commands",
+              "--print-timeout", "500ms",
+            ], { windowsHide: true });
+            setTimeout(() => {
+              if (!proc.killed) {
+                try { proc.kill(); } catch {}
+              }
+            }, 250);
+          } catch {}
+        }
+
+        return send(response, 200, { ok: true, model: prefix, targetModel, message: `Pre-warm dispatched for ${prefix}` });
       }
       if (request.method === "GET" && url.pathname === "/v1/tasks") {
         return send(response, 200, { tasks: broker.listTasks() });

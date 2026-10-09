@@ -801,15 +801,22 @@ function renderCapacityGroup(title, metrics) {
         <span class="text-short">${escapeHtml(titleShort)}</span>
       </h3>
       <div class="capacity-row-list">
-        ${metrics.map(renderCapacityMetric).join("")}
+        ${metrics.map((m) => renderCapacityMetric(m, title)).join("")}
       </div>
     </div>
   `;
 }
 
-function renderCapacityMetric(metric) {
+function renderCapacityMetric(metric, groupTitle = "") {
+  const combined = `${metric.ariaLabel || ""} ${metric.labelFull || ""} ${metric.label || ""} ${groupTitle}`.toLowerCase();
+  const prewarmTarget = combined.includes("gemini") || combined.includes("antigravity")
+    ? "antigravity"
+    : combined.includes("claude") || combined.includes("opus")
+    ? "opus"
+    : "codex";
+
   const prewarmBtn = metric.canPrewarm
-    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(metric.labelShort || metric.label)}" title="${escapeAttr("5-hour quota pre-warm: starts 5h recharge timer with >99.9% capacity retained")}">⚡ Pre-warm</button>`
+    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(prewarmTarget)}" title="${escapeAttr("5-hour quota pre-warm: starts 5h recharge timer with >99.9% capacity retained")}">⚡ Pre-warm</button>`
     : "";
 
   return `
