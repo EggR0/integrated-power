@@ -788,12 +788,13 @@ export class DashboardController implements vscode.Disposable {
       return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, label };
     }
 
-    // Check recent pre-warm cooldown (minimum 3 minutes per model)
+    // Check recent pre-warm cooldown (minimum 30 minutes per model to prevent quota burns)
     const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
     const elapsed = Date.now() - lastPrewarm;
-    if (elapsed < 180000) {
-      const waitSec = Math.ceil((180000 - elapsed) / 1000);
-      return { eligible: false, reason: `${label} was pre-warmed recently. Cooldown active (${waitSec}s remaining).`, prefix, targetModel, label };
+    const COOLDOWN_MS = 30 * 60 * 1000;
+    if (elapsed < COOLDOWN_MS) {
+      const waitMin = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
+      return { eligible: false, reason: `${label} was pre-warmed recently. Cooldown active (${waitMin}m remaining).`, prefix, targetModel, label };
     }
 
     return { eligible: true, reason: "Ready", prefix, targetModel, label };
@@ -807,49 +808,130 @@ export class DashboardController implements vscode.Disposable {
       return;
     }
 
-    this.output.appendLine(`[prewarm] 5-hour quota pre-warm approved for ${check.label} (100% Ready). Starting minimal ping...`);
+    this.output.appendLine(`[prewarm] 5-hour quota pre-warm approved for ${check.label} (100% Ready). Starting instant abort ping...`);
     this.lastAutoPrewarmByTarget[check.prefix] = Date.now();
 
-    const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
-    if (fs.existsSync(agyBin)) {
-      try {
-        await new Promise<void>((resolve) => {
-          const proc = cp.spawn(agyBin, [
-            "-p", "ping",
-            "--model", check.targetModel,
-            "--effort", "low",
-            "--disable-slash-commands",
-            "--print-timeout", "15s",
-          ], { windowsHide: true });
+    if (check.prefix === "codex") {
+      // Codex / ChatGPT: Use codex CLI with lowest model (gpt-4o-mini), ephemeral flag, and instant abort
+      const codexCli = this.tokenManager.findCodexCli();
+      if (codexCli) {
+        try {
+          await new Promise<void>((resolve) => {
+            let settled = false;
+            const finish = () => {
+              if (!settled) {
+                settled = true;
+                resolve();
+              }
+            };
 
-          const timer = setTimeout(() => {
-            if (!proc.killed) {
-              try { proc.kill(); } catch {}
-            }
-            resolve();
-          }, 15000);
+            const timer = setTimeout(() => {
+              try {
+                child.kill();
+              } catch {}
+              finish();
+            }, 250);
 
-          proc.on("close", () => {
-            clearTimeout(timer);
-            resolve();
+            const child = cp.spawn(
+              codexCli,
+              [
+                "exec",
+                "-m",
+                "gpt-4o-mini",
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "--ignore-rules",
+                "--disable",
+                "skills",
+                "-c",
+                "model=\"gpt-4o-mini\"",
+                "1",
+              ],
+              {
+                stdio: ["ignore", "ignore", "ignore"],
+                windowsHide: true,
+                shell: codexCli === "codex" || codexCli.endsWith(".cmd"),
+              }
+            );
+
+            child.on("error", (err) => {
+              clearTimeout(timer);
+              this.output.appendLine(`[prewarm] codex spawn error: ${this.errorMessage(err)}`);
+              finish();
+            });
+
+            child.on("close", () => {
+              clearTimeout(timer);
+              finish();
+            });
           });
-          proc.on("error", (err) => {
-            clearTimeout(timer);
-            this.output.appendLine(`[prewarm] agy spawn error: ${this.errorMessage(err)}`);
-            resolve();
-          });
-        });
 
-        this.output.appendLine(`[prewarm] agy CLI ping completed (model: ${check.targetModel})`);
-      } catch (err) {
-        this.output.appendLine(`[prewarm] agy execution error: ${this.errorMessage(err)}`);
+          this.output.appendLine(`[prewarm] codex minimal ping dispatched with instant abort (model: gpt-4o-mini)`);
+        } catch (err) {
+          this.output.appendLine(`[prewarm] codex execution error: ${this.errorMessage(err)}`);
+        }
+      }
+    } else {
+      // Gemini & Claude: Use agy CLI with low-tier model and instant abort
+      const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
+      if (fs.existsSync(agyBin)) {
+        try {
+          await new Promise<void>((resolve) => {
+            let settled = false;
+            const finish = () => {
+              if (!settled) {
+                settled = true;
+                resolve();
+              }
+            };
+
+            const timer = setTimeout(() => {
+              try {
+                proc.kill();
+              } catch {}
+              finish();
+            }, 250);
+
+            const proc = cp.spawn(
+              agyBin,
+              [
+                "-p",
+                "1",
+                "--model",
+                check.targetModel,
+                "--effort",
+                "low",
+                "--disable-slash-commands",
+                "--print-timeout",
+                "1s",
+              ],
+              { windowsHide: true }
+            );
+
+            proc.on("error", (err) => {
+              clearTimeout(timer);
+              this.output.appendLine(`[prewarm] agy spawn error: ${this.errorMessage(err)}`);
+              finish();
+            });
+
+            proc.on("close", () => {
+              clearTimeout(timer);
+              finish();
+            });
+          });
+
+          this.output.appendLine(`[prewarm] agy minimal ping dispatched with instant abort (model: ${check.targetModel})`);
+        } catch (err) {
+          this.output.appendLine(`[prewarm] agy execution error: ${this.errorMessage(err)}`);
+        }
       }
     }
 
     try {
+      // Safe refresh without forceRefresh to prevent spawning secondary sessions
       const refreshed = await this.tokenManager.getStatus(this.paths.tokenReportUri(), {
         refreshQuota: true,
-        forceRefresh: true,
+        forceRefresh: false,
       });
       if (refreshed) {
         this.state = {
@@ -860,11 +942,11 @@ export class DashboardController implements vscode.Disposable {
         this.postState();
       }
     } catch (err) {
-      this.output.appendLine(`[prewarm] Real telemetry refresh error: ${this.errorMessage(err)}`);
+      this.output.appendLine(`[prewarm] Telemetry refresh notice: ${this.errorMessage(err)}`);
     }
 
     void vscode.window.showInformationMessage(
-      `[Integrated Power] 5-hour recharge probe executed for ${check.label}. Live quota telemetry refreshed.`
+      `[Integrated Power] Instant pre-warm probe dispatched for ${check.label}. Live quota clock initiated.`
     );
   }
 

@@ -105,6 +105,7 @@ export class TokenManager {
   private hasShownAgyMissingPrompt = false;
   private hasShownAgyAuthPrompt = false;
   private lastGpuMetrics?: GpuStatus[];
+  private lastCodexLiveRefreshAt = 0;
   private readonly circuitBreakers = new Map<string, { failures: number; cooldownUntil: number }>();
 
   private isCircuitOpen(providerKey: string): boolean {
@@ -1309,7 +1310,7 @@ export class TokenManager {
     };
   }
 
-  private findCodexCli(): string | undefined {
+  public findCodexCli(): string | undefined {
     const envPath = process.env.CODEX_PATH;
     if (envPath && fs.existsSync(envPath)) {
       return envPath;
@@ -1347,6 +1348,13 @@ export class TokenManager {
   }
 
   private async triggerCodexLiveRefresh(): Promise<void> {
+    // 15-minute strict cooldown to prevent quota drains
+    const now = Date.now();
+    if (now - this.lastCodexLiveRefreshAt < 15 * 60 * 1000) {
+      return;
+    }
+    this.lastCodexLiveRefreshAt = now;
+
     const cli = this.findCodexCli();
     if (!cli) {
       return;
@@ -1361,6 +1369,7 @@ export class TokenManager {
         }
       };
 
+      // TRUE Instant Abort: kill after 250ms to prevent heavy model token consumption
       const timer = setTimeout(() => {
         try {
           child.kill();
@@ -1368,13 +1377,30 @@ export class TokenManager {
           // Ignore kill error
         }
         finish();
-      }, 12000);
+      }, 250);
 
-      const child = cp.spawn(cli, ["exec", "--skip-git-repo-check", "reply ok"], {
-        stdio: ["ignore", "ignore", "ignore"],
-        windowsHide: true,
-        shell: cli === "codex" || cli.endsWith(".cmd")
-      });
+      // Explicitly specify lowest model (gpt-4o-mini), ephemeral session, and ignore heavy rules
+      const child = cp.spawn(
+        cli,
+        [
+          "exec",
+          "-m",
+          "gpt-4o-mini",
+          "--skip-git-repo-check",
+          "--ephemeral",
+          "--ignore-rules",
+          "--disable",
+          "skills",
+          "-c",
+          "model=\"gpt-4o-mini\"",
+          "1",
+        ],
+        {
+          stdio: ["ignore", "ignore", "ignore"],
+          windowsHide: true,
+          shell: cli === "codex" || cli.endsWith(".cmd"),
+        }
+      );
 
       child.on("error", () => {
         clearTimeout(timer);
@@ -1401,14 +1427,8 @@ export class TokenManager {
   > {
     const sessionsDir = path.join(os.homedir(), ".codex", "sessions");
 
-    // 1. If forceRefresh is requested, trigger live refresh first
-    if (forceRefresh) {
-      await this.triggerCodexLiveRefresh();
-    }
-
+    // 1. ALWAYS check existing session files first. If recent telemetry exists, use it!
     let files = await this.walkJsonlFiles(sessionsDir);
-
-    // 2. Fast scan existing session files
     for (const file of files) {
       const content = await this.readFileTail(file.fullPath, MAX_SESSION_FILE_BYTES);
       const lines = content.split(/\r?\n/).reverse().slice(0, MAX_SESSION_LINES_PER_FILE);
@@ -1430,8 +1450,8 @@ export class TokenManager {
       }
     }
 
-    // 3. Fallback: if no quota found and forceRefresh was not originally executed, try live refresh once
-    if (!forceRefresh) {
+    // 2. Only if no quota found in existing sessions and forceRefresh is requested, probe lightly
+    if (forceRefresh) {
       await this.triggerCodexLiveRefresh();
       files = await this.walkJsonlFiles(sessionsDir);
       for (const file of files) {
