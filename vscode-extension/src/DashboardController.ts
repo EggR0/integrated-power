@@ -4,7 +4,7 @@ import * as fs from "fs";
 import * as cp from "child_process";
 import { DashboardOutboundMessage, DashboardState, RunSummary, WebviewToExtensionMessage, TokenStatus, LocalLlmMetric, PrewarmMode } from "./types";
 import { RunStore } from "./RunStore";
-import { TokenManager } from "./TokenManager";
+import { TokenManager, getLowestCodexModel } from "./TokenManager";
 import { WorkspacePaths } from "./WorkspacePaths";
 import { resolveIntegratedPowerStateRoot } from "./storagePath";
 import { detectRefilledQuotaWindows } from "./quotaNotifications";
@@ -745,7 +745,7 @@ export class DashboardController implements vscode.Disposable {
     } else if (raw.includes("codex") || raw.includes("chatgpt")) {
       prefix = "codex";
       weeklyPrefix = "codexWeekly";
-      targetModel = "gpt-4o-mini";
+      targetModel = getLowestCodexModel().model;
       label = "ChatGPT 5Hours";
     }
 
@@ -812,9 +812,10 @@ export class DashboardController implements vscode.Disposable {
     this.lastAutoPrewarmByTarget[check.prefix] = Date.now();
 
     if (check.prefix === "codex") {
-      // Codex / ChatGPT: Use codex CLI with lowest model (gpt-4o-mini), ephemeral flag, and instant abort
+      // Codex / ChatGPT: Use codex CLI with lowest verified model (e.g. gpt-6-luna), ephemeral flag, and instant abort
       const codexCli = this.tokenManager.findCodexCli();
       if (codexCli) {
+        const codexLowest = getLowestCodexModel();
         try {
           await new Promise<void>((resolve) => {
             let settled = false;
@@ -837,14 +838,16 @@ export class DashboardController implements vscode.Disposable {
               [
                 "exec",
                 "-m",
-                "gpt-4o-mini",
+                codexLowest.model,
                 "--skip-git-repo-check",
                 "--ephemeral",
                 "--ignore-rules",
                 "--disable",
                 "skills",
                 "-c",
-                "model=\"gpt-4o-mini\"",
+                `model="${codexLowest.model}"`,
+                "-c",
+                `model_reasoning_effort="${codexLowest.reasoningEffort}"`,
                 "1",
               ],
               {
@@ -866,7 +869,7 @@ export class DashboardController implements vscode.Disposable {
             });
           });
 
-          this.output.appendLine(`[prewarm] codex minimal ping dispatched with instant abort (model: gpt-4o-mini)`);
+          this.output.appendLine(`[prewarm] codex minimal ping dispatched with instant abort (model: ${codexLowest.model}, effort: ${codexLowest.reasoningEffort})`);
         } catch (err) {
           this.output.appendLine(`[prewarm] codex execution error: ${this.errorMessage(err)}`);
         }

@@ -293,3 +293,82 @@ export function isCodexInstalled(): boolean {
   return fs.existsSync(path.join(os.homedir(), ".codex"));
 }
 
+export interface CodexModelResolution {
+  model: string;
+  reasoningEffort: string;
+  source: "cache" | "fallback";
+}
+
+export function getLowestCodexModel(customCachePath?: string): CodexModelResolution {
+  try {
+    const cachePath = customCachePath || path.join(os.homedir(), ".codex", "models_cache.json");
+    if (fs.existsSync(cachePath)) {
+      const raw = fs.readFileSync(cachePath, "utf8");
+      const data = JSON.parse(raw);
+      if (Array.isArray(data?.models) && data.models.length > 0) {
+        // Preferred lightweight models in order of affordability
+        const candidates = ["gpt-6-luna", "gpt-5.6-luna", "gpt-reserve", "gpt-6.1-sol", "gpt-6-sol"];
+        for (const candidate of candidates) {
+          const match = data.models.find((m: any) => m?.slug === candidate);
+          if (match) {
+            const hasLow = match.supported_reasoning_levels?.some((l: any) => l?.effort === "low");
+            return {
+              model: match.slug,
+              reasoningEffort: hasLow ? "low" : (match.default_reasoning_level || "low"),
+              source: "cache",
+            };
+          }
+        }
+
+        const affordable = data.models.find((m: any) => {
+          const text = `${m?.slug || ""} ${m?.description || ""}`.toLowerCase();
+          return text.includes("luna") || text.includes("affordable") || text.includes("efficient");
+        });
+        if (affordable) {
+          const hasLow = affordable.supported_reasoning_levels?.some((l: any) => l?.effort === "low");
+          return {
+            model: affordable.slug,
+            reasoningEffort: hasLow ? "low" : (affordable.default_reasoning_level || "low"),
+            source: "cache",
+          };
+        }
+      }
+    }
+  } catch {
+    // Best effort parse
+  }
+
+  return {
+    model: "gpt-6-luna",
+    reasoningEffort: "low",
+    source: "fallback",
+  };
+}
+
+export function findCodexCliSync(): string | undefined {
+  const explicit = process.env.INTEGRATED_POWER_CODEX_EXE?.trim() || process.env.CODEX_PATH?.trim();
+  if (explicit && fs.existsSync(explicit)) return explicit;
+
+  if (process.platform === "win32") {
+    const homedir = os.homedir();
+    const local = process.env.LOCALAPPDATA || path.join(homedir, "AppData", "Local");
+    const codexBinRoot = path.join(local, "OpenAI", "Codex", "bin");
+    if (fs.existsSync(codexBinRoot)) {
+      try {
+        const subdirs = fs.readdirSync(codexBinRoot);
+        for (const sub of subdirs) {
+          const exe = path.join(codexBinRoot, sub, "codex.exe");
+          if (fs.existsSync(exe)) return exe;
+        }
+      } catch {}
+    }
+
+    const localBinExe = path.join(homedir, ".local", "bin", "codex.exe");
+    if (fs.existsSync(localBinExe)) return localBinExe;
+    const localBinCmd = path.join(homedir, ".local", "bin", "codex.cmd");
+    if (fs.existsSync(localBinCmd)) return localBinCmd;
+  }
+
+  return "codex";
+}
+

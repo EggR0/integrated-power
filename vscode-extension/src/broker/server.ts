@@ -13,6 +13,7 @@ import { discoverInstallations } from "./installation";
 import { chatgptLocalMcpSpec, claudeLocalMcpSpec, getMcpConfigSnippet, registerClaudeLocalMcp } from "./registration";
 import { getAutoStartStatus, setAutoStart } from "./autostart";
 import { scanLiveTokenStatus } from "./tokenScanner";
+import { getLowestCodexModel, findCodexCliSync } from "./codexAppServer";
 
 export interface BrokerServerHandle {
   port: number;
@@ -197,7 +198,8 @@ export async function startBrokerServer(
           targetModel = "claude-sonnet-5-5-low";
           prefix = "opus";
         } else if (rawModel.includes("codex") || rawModel.includes("chatgpt")) {
-          targetModel = "gpt-4o-mini";
+          const lowest = getLowestCodexModel();
+          targetModel = lowest.model;
           prefix = "codex";
         }
 
@@ -212,22 +214,47 @@ export async function startBrokerServer(
           return send(response, 400, { ok: false, error: `${prefix} weekly quota is exhausted. Pre-warm skipped.` });
         }
 
-        const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
-        if (fs.existsSync(agyBin)) {
-          try {
-            const proc = cp.spawn(agyBin, [
-              "-p", "integrated power",
-              "--model", targetModel,
-              "--effort", "low",
-              "--disable-slash-commands",
-              "--print-timeout", "500ms",
-            ], { windowsHide: true });
-            setTimeout(() => {
-              if (!proc.killed) {
-                try { proc.kill(); } catch {}
-              }
-            }, 250);
-          } catch {}
+        if (prefix === "codex") {
+          const codexCli = findCodexCliSync();
+          if (codexCli) {
+            const lowest = getLowestCodexModel();
+            try {
+              const proc = cp.spawn(codexCli, [
+                "exec",
+                "-m", lowest.model,
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "--ignore-rules",
+                "--disable", "skills",
+                "-c", `model="${lowest.model}"`,
+                "-c", `model_reasoning_effort="${lowest.reasoningEffort}"`,
+                "1"
+              ], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true, shell: codexCli === "codex" || codexCli.endsWith(".cmd") });
+              setTimeout(() => {
+                if (!proc.killed) {
+                  try { proc.kill(); } catch {}
+                }
+              }, 250);
+            } catch {}
+          }
+        } else {
+          const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
+          if (fs.existsSync(agyBin)) {
+            try {
+              const proc = cp.spawn(agyBin, [
+                "-p", "integrated power",
+                "--model", targetModel,
+                "--effort", "low",
+                "--disable-slash-commands",
+                "--print-timeout", "500ms",
+              ], { windowsHide: true });
+              setTimeout(() => {
+                if (!proc.killed) {
+                  try { proc.kill(); } catch {}
+                }
+              }, 250);
+            } catch {}
+          }
         }
 
         return send(response, 200, { ok: true, model: prefix, targetModel, message: `Pre-warm dispatched for ${prefix}` });

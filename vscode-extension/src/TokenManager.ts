@@ -17,6 +17,8 @@ import {
 } from "./types";
 import { AgyQuotaClient, AgyNotInstalledError, AgyNotAuthenticatedError } from "./AgyQuotaClient";
 import matter from "gray-matter";
+import { getLowestCodexModel, findCodexCliSync, CodexModelResolution } from "./broker/codexAppServer";
+export { getLowestCodexModel, findCodexCliSync, CodexModelResolution };
 
 const QUOTA_CACHE_TTL_MS = 5_000;
 const MAX_SESSION_SCAN_DEPTH = 5;
@@ -609,7 +611,7 @@ export class TokenManager {
           return;
         }
         try {
-          const codexQuota = await this.withTimeout(this.fetchCodexQuota(forceRefresh), 5000, {});
+          const codexQuota = await this.withTimeout(this.fetchCodexQuota(), 5000, {});
           this.recordProviderSuccess("codex");
           data.codexPercentage = codexQuota.codexPercentage;
           data.codexResetTime = codexQuota.codexResetTime;
@@ -1311,40 +1313,7 @@ export class TokenManager {
   }
 
   public findCodexCli(): string | undefined {
-    const envPath = process.env.CODEX_PATH;
-    if (envPath && fs.existsSync(envPath)) {
-      return envPath;
-    }
-
-    const localAppData = process.env.LOCALAPPDATA;
-    if (localAppData) {
-      const codexBinDir = path.join(localAppData, "OpenAI", "Codex", "bin");
-      if (fs.existsSync(codexBinDir)) {
-        try {
-          const dirs = fs
-            .readdirSync(codexBinDir, { withFileTypes: true })
-            .filter((d) => d.isDirectory())
-            .map((d) => path.join(codexBinDir, d.name, "codex.exe"))
-            .filter((p) => fs.existsSync(p));
-          if (dirs.length > 0) {
-            return dirs[0];
-          }
-        } catch {
-          // Ignore filesystem errors
-        }
-      }
-    }
-
-    const localBinExe = path.join(os.homedir(), ".local", "bin", "codex.exe");
-    if (fs.existsSync(localBinExe)) {
-      return localBinExe;
-    }
-    const localBinCmd = path.join(os.homedir(), ".local", "bin", "codex.cmd");
-    if (fs.existsSync(localBinCmd)) {
-      return localBinCmd;
-    }
-
-    return "codex";
+    return findCodexCliSync();
   }
 
   private async triggerCodexLiveRefresh(): Promise<void> {
@@ -1359,6 +1328,8 @@ export class TokenManager {
     if (!cli) {
       return;
     }
+
+    const lowest = getLowestCodexModel();
 
     await new Promise<void>((resolve) => {
       let settled = false;
@@ -1379,20 +1350,22 @@ export class TokenManager {
         finish();
       }, 250);
 
-      // Explicitly specify lowest model (gpt-4o-mini), ephemeral session, and ignore heavy rules
+      // Explicitly specify lowest verified model from models_cache.json (e.g. gpt-6-luna), low effort, ephemeral session, and ignore heavy rules
       const child = cp.spawn(
         cli,
         [
           "exec",
           "-m",
-          "gpt-4o-mini",
+          lowest.model,
           "--skip-git-repo-check",
           "--ephemeral",
           "--ignore-rules",
           "--disable",
           "skills",
           "-c",
-          "model=\"gpt-4o-mini\"",
+          `model="${lowest.model}"`,
+          "-c",
+          `model_reasoning_effort="${lowest.reasoningEffort}"`,
           "1",
         ],
         {
@@ -1414,7 +1387,7 @@ export class TokenManager {
     });
   }
 
-  private async fetchCodexQuota(forceRefresh = false): Promise<
+  private async fetchCodexQuota(): Promise<
     Pick<
       QuotaData,
       | "codexPercentage"
@@ -1427,8 +1400,8 @@ export class TokenManager {
   > {
     const sessionsDir = path.join(os.homedir(), ".codex", "sessions");
 
-    // 1. ALWAYS check existing session files first. If recent telemetry exists, use it!
-    let files = await this.walkJsonlFiles(sessionsDir);
+    // Strictly read existing session files passively. NEVER spawn background processes during quota checks.
+    const files = await this.walkJsonlFiles(sessionsDir);
     for (const file of files) {
       const content = await this.readFileTail(file.fullPath, MAX_SESSION_FILE_BYTES);
       const lines = content.split(/\r?\n/).reverse().slice(0, MAX_SESSION_LINES_PER_FILE);
@@ -1446,32 +1419,6 @@ export class TokenManager {
           }
         } catch {
           // Ignore malformed or partial JSONL lines and keep scanning older events.
-        }
-      }
-    }
-
-    // 2. Only if no quota found in existing sessions and forceRefresh is requested, probe lightly
-    if (forceRefresh) {
-      await this.triggerCodexLiveRefresh();
-      files = await this.walkJsonlFiles(sessionsDir);
-      for (const file of files) {
-        const content = await this.readFileTail(file.fullPath, MAX_SESSION_FILE_BYTES);
-        const lines = content.split(/\r?\n/).reverse().slice(0, MAX_SESSION_LINES_PER_FILE);
-
-        for (const line of lines) {
-          if (!line.trim()) {
-            continue;
-          }
-
-          try {
-            const event = JSON.parse(line) as JsonObject;
-            const quota = this.codexQuotaFromEvent(event);
-            if (quota && (quota.codexPercentage !== undefined || quota.codexWeeklyPercentage !== undefined)) {
-              return quota;
-            }
-          } catch {
-            // Ignore
-          }
         }
       }
     }
