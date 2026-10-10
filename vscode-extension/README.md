@@ -1,7 +1,7 @@
 # Integrated Power
 
 [![Open VSX](https://img.shields.io/open-vsx/v/EggR0/integrated-power?color=blue&label=Open%20VSX)](https://open-vsx.org/extension/EggR0/integrated-power)
-[![GitHub Release](https://img.shields.io/github/v/release/EggR0/integrated-power?color=green&label=GitHub%20Release)](https://github.com/EggR0/integrated-power/releases/tag/v0.9.5)
+[![GitHub Release](https://img.shields.io/github/v/release/EggR0/integrated-power?color=green&label=GitHub%20Release)](https://github.com/EggR0/integrated-power/releases/tag/v0.9.8)
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/EggR0/integrated-power?color=orange&label=Downloads)](https://open-vsx.org/extension/EggR0/integrated-power)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2011-blue)](https://github.com/EggR0/integrated-power)
 [![Target](https://img.shields.io/badge/Target-Antigravity%20IDE-purple)](https://github.com/EggR0/integrated-power)
@@ -12,56 +12,31 @@ Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Window
 
 ---
 
-## ⚡ 빠른 시작 & 설치 (Quick Start)
+## ⚡ 빠른 시작 (Quick Start)
 
-### 방법 1. Open VSX 마켓플레이스 설치 (가장 추천)
-Antigravity IDE 또는 VS Code 확장 탭(`Ctrl+Shift+X`)에서 **`Integrated Power`** 또는 **`EggR0.integrated-power`**를 검색하여 클릭 한 번으로 설치할 수 있습니다.
-* **Open VSX 등록 페이지**: [open-vsx.org/extension/EggR0/integrated-power](https://open-vsx.org/extension/EggR0/integrated-power)
-
-### 방법 2. GitHub Releases VSIX 다운로드 및 CLI 설치
-검증된 최신 패키지 [`integrated-power-0.9.6.vsix`](https://github.com/EggR0/integrated-power/releases/download/v0.9.6/integrated-power-0.9.6.vsix)를 다운로드한 후, 아래 명령어로 설치합니다:
-
-```powershell
-# PowerShell
-& "$env:LOCALAPPDATA\Programs\Antigravity IDE\bin\antigravity-ide.cmd" `
-  --install-extension ".\integrated-power-0.9.6.vsix" `
-  --force
-
-# 또는 CMD
-"%LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --install-extension ".\integrated-power-0.9.6.vsix" --force
-```
-
-설치 또는 업데이트 후 실행 중인 Antigravity IDE에서 다음 명령을 한 번 실행합니다.
-
-```text
-Developer: Reload Window
-```
-
-> ⚠️ **주의**: 별도 프로그램인 `%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe`는 확장 설치 대상이 아닙니다. 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
+1. **대시보드 열기**: Antigravity IDE 좌측 액티비티 바에서 **Integrated Power** 아이콘을 클릭하거나, 명령 팔레트(`Ctrl+Shift+P`)에서 `Integrated Power: Open Dashboard`를 실행합니다.
+2. **실시간 쿼터 확인**: 상단 `Token Status` 패널에서 Gemini, Claude, ChatGPT의 5시간 및 주간 쿼터 잔여율과 실시간 서버 리셋 카운트다운을 모니터링합니다.
+3. **5시간 쿼터 프리웜(Pre-warm) 모드 설정**: 각 모델 헤더에서 `Click`(수동), `Once`(1회 자동), `Always`(상시 자동) 모드를 선택하여 충전 타이머를 선행 가동합니다.
 
 ---
 
 ## 🎯 핵심 사용 시나리오 (Use Cases)
 
-### 시나리오 1. Quota 소진 시 로컬 LLM(Qwen 3.8 27B)으로 무중단 작업 전환
-* **상황**: Antigravity Gemini 또는 Claude 5시간 쿼터가 15% 이하로 떨어져 코딩 에이전트 작업이 멈춤
-* **해결**: Dashboard에서 쿼터 잔여량을 실시간 감지하고 경고를 표시합니다. Integrated Orchestrator를 통해 보조 GPU(RTX 3090/4090)에 상주하는 로컬 고성능 모델(`qwen3.8:27b`)로 즉시 작업을 전환하여 클라우드 토큰 리셋을 기다리지 않고 작업을 연속적으로 진행합니다.
-
-### 시나리오 2. 8개 타깃 100% 완충 실시간 알림 (Notification)
+### 시나리오 1. 8개 타깃 100% 완충 실시간 알림 (Notification)
 * **상황**: 쿼터 리셋 시간을 일일이 확인하느라 작업 흐름이 분산됨
 * **해결**: 4대 핵심 모델(Antigravity Gemini, Antigravity Claude, ChatGPT/Codex, Claude Direct)의 **5-Hour 및 Weekly 시간창(총 8개 타깃)**이 100% 충전되는 순간 IDE 네이티브 알림을 자동 팝업합니다. 설정(`integratedPower.notifications.*`)에서 필요한 모델만 개별적으로 켜고 끌 수 있습니다.
 
-### 시나리오 3. 로컬 연산 자원 & GPU 텔레메트리 병목 감시
+### 시나리오 2. 로컬 연산 자원 & GPU 텔레메트리 병목 감시
 * **상황**: 로컬 LLM 추론 시 GPU 부하, VRAM 초과(OOM), 전력 제한 상태를 확인하기 어려움
 * **해결**: 로컬 연산 패널에서 GPU Load, VRAM 사용량, 소모 전력(`[GPU] 35% load | 170.8W / 370W`)을 대칭형 프로그레스 바로 실시간 모니터링하여 안전하고 쾌적한 로컬 파이프라인을 유지합니다.
 
-### 시나리오 4. 3단계 스마트 쿼터 프리웜(Pre-warm)으로 5시간 대기 시간 단축
+### 시나리오 3. 3단계 스마트 쿼터 프리웜(Pre-warm)으로 5시간 대기 시간 단축
 * **상황**: 5시간 쿼터는 첫 사용 시점부터 카운트다운되므로, 사용 전 100% 상태에서는 타이머가 돌지 않아 작업 개시 후 충전까지 만 5시간을 온전히 기다려야 함
-* **해결**: 미사용 100% 대기 쿼터에 대해 백그라운드 초단기 취소 핑(Instant Cancellation Ping)을 트리거하여, 토큰 용량은 99.9% 이상 보존하면서 5시간 리셋 타이머를 사전에 기동합니다. 3가지 모드(`Always`, `Once`, `Click`)를 지원하며 대시보드 툴바에서 원클릭 제어 가능합니다.
+* **해결**: 미사용 100% 대기 쿼터에 대해 백그라운드 초단기 취소 핑(Instant Cancellation Ping)을 트리거하여, 토큰 용량은 99.9% 이상 보존하면서 5시간 리셋 타이머를 사전에 기동합니다. 3가지 모드(`Always`, `Once`, `Click`)를 지원하며 각 모델 헤더에서 원클릭 제어 가능합니다.
 
 ---
 
-## 🚀 주요 기능 (v0.9.5)
+## 🚀 주요 기능 (v0.9.8)
 
 - **3-Mode 5시간 쿼터 프리웜 (Quota Pre-warm Strategy - Click / Once / Always)**: 미사용 100% 쿼터 창에 대해 최소 토큰 핑 후 즉각 취소(Abort)를 수행하여, 잔여 용량을 99.9% 이상 보존하면서 5시간 리셋 카운트다운을 사전 개시. 작업 시작 전 미리 타이머를 굴려 작업 중 리셋 시간을 극적으로 단축. 사용 환경에 맞춰 Always(자동 감지 상시 가동), Once(세션 시작 시 1회), Click(수동 버튼) 3모드 완벽 지원
 - **프리웜 인터랙티브 UI 툴바 및 실시간 상태 배지**: Webview 대시보드 및 독립형 Control Center 상단에 프리웜 툴바(`[⚡ Pre-warm]`, 모드 셀렉터, `Ready`/`Armed`/`Prewarming...`/`Success` 상태 배지) 탑재
