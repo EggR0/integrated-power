@@ -108,6 +108,31 @@ try {
   assert(!rendered.includes("prewarm-inline-label"), "renderPrewarmInlineControl must not contain overflowing prewarm-inline-label");
   assert(rendered.includes("Clk") && rendered.includes("1x") && rendered.includes("Alw"), "renderPrewarmInlineControl must include responsive short labels");
 
+  // GPU compact UI regression: verify CSS containment for GPU headers and metric rows
+  assert(css.includes(".capacity-group-header h3") && css.includes("text-overflow: ellipsis"), "capacity-group-header h3 must include text-overflow: ellipsis for narrow sidebars");
+  assert(css.includes(".reset-left") && css.includes("white-space: nowrap"), ".reset-left must include white-space: nowrap to prevent '%' from breaking onto a new line");
+
+  // GPU webview render regression: verify responsive 3-stage title & compact right-text
+  const gpuHtml = webviewSandbox.renderLocalComputeStatus({
+    localComputeStatus: {
+      endpointHealth: "offline",
+      gpus: [
+        {
+          id: 0,
+          name: "NVIDIA GeForce RTX 3090",
+          utilizationPercentage: 33,
+          powerDrawW: 103.88,
+          powerLimitW: 370,
+          vramUsedMb: 4400,
+          vramTotalMb: 24576,
+        },
+      ],
+    },
+  });
+  assert(gpuHtml.includes("GPU 0: 3090 [Act]"), "GPU capacity group header must include shortened text-short label (GPU 0: 3090 [Act])");
+  assert(gpuHtml.includes("104W"), "GPU power in short mode must be rounded compact without decimal places (104W)");
+  assert(gpuHtml.includes("4.3/24G"), "GPU VRAM in short mode must be compact (4.3/24G)");
+
   console.log("compact UI regression passed");
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

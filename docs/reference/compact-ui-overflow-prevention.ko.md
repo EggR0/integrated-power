@@ -17,6 +17,10 @@ IDE의 사이드바/웹뷰 패널은 사용자의 에디터 레이아웃에 따�
    - `title.includes("claude")`와 같은 단순 조건문으로 인해 5시간 롤링 대상이 아닌 `Claude (API & CLI)` 섹션에도 불필요한 프리웜 컨트롤이 강제 렌더링되어 공간 낭비 및 레이아웃 붕괴 유발.
 3. **컨테이너 쿼리 미적용 / 버튼 고정 패딩**:
    - 버튼에 고정 `padding: 2px 7px`, `font-size: 11px` 등이 적용되어 초소형 너비에서 flex 아이템들이 컨테이너를 강제 확장함.
+4. **GPU / 로컬 컴퓨트 카드 폭 초과 및 '%' 분할 줄바꿈 (재발 방지 핵심)**:
+   - GPU 카드 헤더(`GPU 0: RTX 3090 · [VRAM Active]`)에 `.text-short` 축약 미제공 및 `.capacity-group-header h3`에 `overflow: hidden; text-overflow: ellipsis;`가 누락되어 오른쪽 테두리 밖으로 텍스트가 잘려 나감.
+   - `.reset-left`에 `white-space: nowrap;`이 없어 우측 텍스트(`103.88W/370W`)에 밀려 수치와 기호가 분리되어 `%` 기호만 단독으로 다음 줄로 개행됨.
+   - `test-compact-ui.js`에 프리웜 버튼만 검증하고 GPU 렌더링 회귀 단언문이 누락되어 변경 시 미검출 상태로 재발함.
 
 ---
 
@@ -108,5 +112,7 @@ UI 관련 코드를 수정하거나 기능을 추가한 뒤에는 반드시 다�
    - 비대상 그룹(Claude API & CLI 등)에 잘못된 컨트롤이 붙지 않는지 검증.
    - 오버플로우를 유발하는 고정 라벨이 제거되었는지 검증.
    - 초소형 모드용 텍스트 토큰(`Clk`, `1x`, `Alw`)이 정상 포함되어 있는지 검증.
+   - GPU 카드 헤더(`GPU 0: 3090 [Act]`) 및 전력(`104W`), VRAM(`4.3/24G`) 반응형 단축 토큰 포함 검증.
+   - CSS `.capacity-group-header h3`의 `text-overflow: ellipsis` 및 `.reset-left`의 `white-space: nowrap` 봉쇄 검증.
 2. **사이드바 최소 폭 시각 검증**:
    - Antigravity IDE에서 사이드바를 잡고 좌측으로 끝까지 밀어 최소 너비(~160px)로 설정했을 때, 모든 카드가 잘림 없이 깔끔하게 한눈에 보이는지 확인할 것.

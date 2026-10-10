@@ -670,37 +670,70 @@ function renderLocalComputeStatus(tokenStatus) {
           ${
             gpus.length
               ? gpus.map((gpu) => {
-                  const powerText = gpu.powerDrawW && gpu.powerLimitW ? `${gpu.powerDrawW}W / ${gpu.powerLimitW}W` : "";
+                  const powerW = Math.round(Number(gpu.powerDrawW || 0));
+                  const powerLimitW = Math.round(Number(gpu.powerLimitW || 0));
+                  const hasPower = powerW > 0 && powerLimitW > 0;
+                  const powerText = {
+                    full: hasPower ? `${powerW}W / ${powerLimitW}W` : "",
+                    medium: hasPower ? `${powerW}W/${powerLimitW}W` : "",
+                    short: hasPower ? `${powerW}W` : "",
+                  };
+
                   const vramUsedGb = (Number(gpu.vramUsedMb || 0) / 1024).toFixed(1);
                   const vramTotalGb = (Number(gpu.vramTotalMb || 0) / 1024).toFixed(0);
-                  const vramText = Number(gpu.vramTotalMb || 0) > 0 ? `${vramUsedGb}GB / ${vramTotalGb}GB` : "";
+                  const hasVram = Number(gpu.vramTotalMb || 0) > 0;
+                  const vramText = {
+                    full: hasVram ? `${vramUsedGb}GB / ${vramTotalGb}GB` : "",
+                    medium: hasVram ? `${vramUsedGb}GB/${vramTotalGb}GB` : "",
+                    short: hasVram ? `${vramUsedGb}/${vramTotalGb}G` : "",
+                  };
 
                   const isGpuActive = Number(gpu.vramUsedMb || 0) >= 1000;
-                  let gpuTag = "";
+                  let gpuTagFull = "";
+                  let gpuTagMedium = "";
+                  let gpuTagShort = "";
                   if (hasLoadedModels && isGpuActive) {
-                    gpuTag = ` · [${loadedModels[0]}]`;
+                    const modelShort = (loadedModels[0] || "").split("/").pop() || loadedModels[0];
+                    gpuTagFull = ` · [${loadedModels[0]}]`;
+                    gpuTagMedium = ` · [${modelShort}]`;
+                    gpuTagShort = ` [${modelShort.slice(0, 6)}]`;
                   } else if (isGpuActive) {
-                    gpuTag = ` · [VRAM Active]`;
+                    gpuTagFull = ` · [VRAM Active]`;
+                    gpuTagMedium = ` · [Active]`;
+                    gpuTagShort = ` [Act]`;
                   } else {
-                    gpuTag = ` · [Idle]`;
+                    gpuTagFull = ` · [Idle]`;
+                    gpuTagMedium = ` · [Idle]`;
+                    gpuTagShort = ` [Idle]`;
                   }
 
-                  return renderCapacityGroup(`GPU ${gpu.id}: ${gpu.name}${gpuTag}`, [
-                    buildHardwareMetric(
-                      "GPU",
-                      gpu.utilizationPercentage,
-                      100,
-                      "%",
-                      powerText
-                    ),
-                    buildHardwareMetric(
-                      "VRAM",
-                      gpu.vramUsedMb,
-                      gpu.vramTotalMb,
-                      "MB",
-                      vramText
-                    ),
-                  ]);
+                  const cleanGpuName = (gpu.name || "GPU").replace(/NVIDIA GeForce\s*/i, "").trim();
+                  const gpuTitleVariants = {
+                    full: `GPU ${gpu.id}: ${cleanGpuName}${gpuTagFull}`,
+                    medium: `GPU ${gpu.id}: ${cleanGpuName}${gpuTagMedium}`,
+                    short: `GPU ${gpu.id}: ${cleanGpuName.replace(/RTX\s*/i, "")}${gpuTagShort}`,
+                  };
+
+                  return renderCapacityGroup(
+                    `GPU ${gpu.id}: ${cleanGpuName}${gpuTagFull}`,
+                    [
+                      buildHardwareMetric(
+                        "GPU",
+                        gpu.utilizationPercentage,
+                        100,
+                        "%",
+                        powerText
+                      ),
+                      buildHardwareMetric(
+                        "VRAM",
+                        gpu.vramUsedMb,
+                        gpu.vramTotalMb,
+                        "MB",
+                        vramText
+                      ),
+                    ],
+                    gpuTitleVariants
+                  );
                 }).join("")
               : renderCapacityGroup("GPU Offline", [
                   buildHardwareMetric("GPU", null, 100, "%"),
@@ -819,17 +852,35 @@ function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) 
   return IPQuota.buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix);
 }
 
-function renderCapacityGroup(title, metrics) {
-  const titleFull = title;
-  const titleMedium = title
+function renderCapacityGroup(title, metrics, titleVariants) {
+  let titleFull = title;
+  let titleMedium = title
     .replace(/NVIDIA GeForce\s*/i, "")
     .trim();
-  const titleShort = title
+  let titleShort = title
     .replace(/NVIDIA GeForce\s*/i, "")
     .replace(/Thinking\s*via\s*Antigravity/i, "")
     .replace(/Thinking\s*/i, "")
     .replace(/Pro\s*/i, "")
     .trim();
+
+  if (titleVariants) {
+    if (titleVariants.full) titleFull = titleVariants.full;
+    if (titleVariants.medium) titleMedium = titleVariants.medium;
+    if (titleVariants.short) titleShort = titleVariants.short;
+  } else if (/^GPU\s+\d+:/i.test(title)) {
+    titleMedium = title
+      .replace(/NVIDIA GeForce\s*/i, "")
+      .replace(/ · \[VRAM Active\]/i, " · [Active]")
+      .replace(/ · \[Idle\]/i, " · [Idle]")
+      .trim();
+    titleShort = title
+      .replace(/NVIDIA GeForce\s*/i, "")
+      .replace(/RTX\s*/i, "")
+      .replace(/ · \[VRAM Active\]/i, " [Act]")
+      .replace(/ · \[Idle\]/i, " [Idle]")
+      .trim();
+  }
 
   const prewarmTarget = getPrewarmTargetForGroup(title);
   const inlinePrewarm = prewarmTarget ? renderPrewarmInlineControl(prewarmTarget, titleFull) : "";
@@ -837,7 +888,7 @@ function renderCapacityGroup(title, metrics) {
   return `
     <div class="capacity-group">
       <div class="capacity-group-header">
-        <h3>
+        <h3 title="${escapeAttr(titleFull)}">
           <span class="text-full">${escapeHtml(titleFull)}</span>
           <span class="text-medium">${escapeHtml(titleMedium)}</span>
           <span class="text-short">${escapeHtml(titleShort)}</span>
@@ -909,15 +960,26 @@ function buildHardwareMetric(label, used, total, unit, extraRightText = "") {
   const subtextMedium = hasMetric
     ? isPercentMetric
       ? `${percentage.toFixed(0)}% load`
-      : `${percentage.toFixed(1)}% used`
+      : `${percentage.toFixed(1)}%`
     : "Waiting";
   const subtextShort = hasMetric
     ? isPercentMetric
       ? `${percentage.toFixed(0)}%`
-      : `${percentage.toFixed(1)}%`
+      : `${percentage.toFixed(0)}%`
     : "Waiting";
   const tone = percentage >= 90 ? "critical" : percentage >= 75 ? "warning" : "healthy";
-  const tooltip = `${label}: ${subtextFull}${extraRightText ? ` ${extraRightText}` : ""}. Healthy: under 75%. Caution: 75-89%. Limited: 90% or higher.`;
+
+  const rightFull = typeof extraRightText === "object" && extraRightText !== null
+    ? String(extraRightText.full || "")
+    : String(extraRightText || "");
+  const rightMedium = typeof extraRightText === "object" && extraRightText !== null
+    ? String(extraRightText.medium || extraRightText.full || "")
+    : String(extraRightText || "");
+  const rightShort = typeof extraRightText === "object" && extraRightText !== null
+    ? String(extraRightText.short || extraRightText.medium || extraRightText.full || "")
+    : String(extraRightText || "").replace(/\s+/g, "");
+
+  const tooltip = `${label}: ${subtextFull}${rightFull ? ` (${rightFull})` : ""}. Healthy: under 75%. Caution: 75-89%. Limited: 90% or higher.`;
 
   return {
     label,
@@ -930,10 +992,10 @@ function buildHardwareMetric(label, used, total, unit, extraRightText = "") {
     subtextFull,
     subtextMedium,
     subtextShort,
-    refreshText: extraRightText,
-    refreshFull: extraRightText,
-    refreshMedium: extraRightText,
-    refreshShort: extraRightText.replace(/\s+/g, ""),
+    refreshText: rightFull,
+    refreshFull: rightFull,
+    refreshMedium: rightMedium,
+    refreshShort: rightShort,
     percentage,
     unavailable: !hasMetric,
     tone,

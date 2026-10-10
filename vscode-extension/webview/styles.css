@@ -540,11 +540,23 @@ button:focus-visible {
 
 .metric-reset-row {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
-  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
   align-items: baseline;
   margin-top: 0;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.capacity-metric-label {
+  min-width: 0;
+  color: color-mix(in srgb, var(--vscode-foreground), var(--vscode-descriptionForeground) 18%);
+  font-size: 13px;
+  font-weight: 620;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .reset-left,
@@ -553,25 +565,33 @@ button:focus-visible {
   font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.reset-left {
+  text-align: left;
 }
 
 .reset-right {
   text-align: right;
-  white-space: nowrap;
   padding-right: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .capacity-group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
   margin-bottom: 6px;
   min-width: 0;
   width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .capacity-group-header h3 {
@@ -579,6 +599,11 @@ button:focus-visible {
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
 }
 
 .prewarm-inline-control {
@@ -1256,11 +1281,15 @@ button {
     gap: 3px;
   }
   .capacity-metric-label {
-    font-size: 10.5px;
+    font-size: 10px;
   }
   .reset-left,
   .reset-right {
     font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
   .capacity-summary {
     gap: 3px;
@@ -1277,7 +1306,12 @@ button {
     font-size: 10px;
     padding: 2px 3px;
   }
+  .capacity-group-header h3,
   .capacity-group h3 {
     font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
 }
