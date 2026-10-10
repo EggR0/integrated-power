@@ -8,7 +8,7 @@ on:
       tag:
         description: 'Release tag to download VSIX from (optional, e.g. v0.9.5)'
         required: false
-        default: 'v0.9.5'
+        default: 'v0.9.8'
 
 permissions:
   contents: read
@@ -77,14 +77,35 @@ jobs:
             exit 1
           fi
           echo "Publishing $VSIX_FILE to Open VSX Registry (EggR0.integrated-power)..."
+
+          publish_target() {
+            local flags="$1"
+            local output
+            local code=0
+            output=$(npx ovsx publish "$VSIX_FILE" $flags 2>&1) || code=$?
+            echo "$output"
+            if [ $code -eq 0 ]; then
+              return 0
+            fi
+            if echo "$output" | grep -qiE "already published|already exists"; then
+              echo "Note: Extension version is already published on Open VSX. Treating as success."
+              return 0
+            fi
+            return $code
+          }
+
           # Attempt Trusted Publishing (OIDC) first
-          if npx ovsx publish "$VSIX_FILE" --trusted-publishing --skip-duplicate; then
-            echo "Successfully published to Open VSX via Trusted Publishing!"
+          if publish_target "--trusted-publishing --skip-duplicate"; then
+            echo "Successfully published/verified Open VSX release via Trusted Publishing!"
           elif [ -n "$OVSX_PAT" ]; then
             echo "Trusted Publishing not configured or pending; falling back to PAT..."
-            npx ovsx publish "$VSIX_FILE" -p "$OVSX_PAT" --skip-duplicate
-            echo "Successfully published to Open VSX via PAT!"
+            if publish_target "-p $OVSX_PAT --skip-duplicate"; then
+              echo "Successfully published/verified Open VSX release via PAT!"
+            else
+              echo "Failed to publish to Open VSX via PAT."
+              exit 1
+            fi
           else
-            echo "Failed to publish."
+            echo "Failed to publish: No valid authentication method succeeded."
             exit 1
           fi
