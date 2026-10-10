@@ -643,7 +643,7 @@ test("phantom countdown eliminated for 100% quota", () => {
   const base = Date.now();
   const resetIn = (hours) => new Date(base + hours * 3600e3).toISOString();
 
-  // 100% 5Hours quota has no phantom countdown; displays Ready and canPrewarm is true
+  // 100% 5Hours quota displays actual countdown when reset time is present, and canPrewarm is true
   const ready5h = shared.buildTokenMetric("5Hours", {
     antigravityPercentage: 100,
     antigravityResetTime: resetIn(3),
@@ -653,10 +653,17 @@ test("phantom countdown eliminated for 100% quota", () => {
 
   assert.strictEqual(ready5h.isReady, true);
   assert.strictEqual(ready5h.canPrewarm, true);
-  assert.strictEqual(ready5h.refreshFull, "· Ready");
-  assert.strictEqual(ready5h.refreshMedium, "· Ready");
-  assert.strictEqual(ready5h.refreshShort, "· Ready");
-  assert.ok(ready5h.tooltip.includes("Ready · Timer starts on first request"));
+  assert.strictEqual(ready5h.refreshFull, "· Refreshes in 3h 0m");
+
+  // When reset time is absent, displays Ready
+  const readyNoTimer = shared.buildTokenMetric("5Hours", {
+    antigravityPercentage: 100,
+    antigravityWeeklyPercentage: 100,
+  }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+  assert.strictEqual(readyNoTimer.isReady, true);
+  assert.strictEqual(readyNoTimer.canPrewarm, true);
+  assert.strictEqual(readyNoTimer.refreshFull, "· Ready");
+  assert.ok(readyNoTimer.tooltip.includes("Ready · Timer starts on first request"));
 
   // Once tokens are consumed (< 99.95%), rolling countdown activates
   const active5h = shared.buildTokenMetric("5Hours", {

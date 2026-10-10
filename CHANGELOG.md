@@ -1,15 +1,14 @@
 # Changelog
 
-## [0.9.6] - 2026-10-09
+## [0.9.7] - 2026-10-10
 
-### Fixed & Hardened
+### Fixed & Enhanced
 
-- **Strict Pre-warm Quota Qualification Guard**: Pre-warm execution is strictly blocked and prevented from spawning CLI processes when a model's 5-hour quota is not genuinely 100% Ready (>=99.95%), when weekly quota is exhausted (0%), when the provider is offline, or when a recharge countdown is already active.
-- **Zero Token Waste on Ineligible Triggers**: Clicking pre-warm buttons or selecting automation modes when quota is not 100% Ready will never consume tokens or invoke LLM generation; user is alerted with a clear warning explaining why the window is ineligible.
-- **Fast Abort Ping (250ms)**: When eligible, the minimal ping aborts immediately within 250ms to activate the recharge timestamp without streaming completions.
-- **Fixed Mode Persistence (`Always` reverting to `Click`)**: `DashboardController` maintains `currentPrewarmMode` as authoritative local state, preventing periodic background polling from overwriting `Always` mode back to default `Click`.
-- **Target Provider Resolution**: Fixed Webview `data-prewarm` and Control Center auto-prewarm loop to pass exact provider model keys (`antigravity`, `opus`, `codex`) and incorporate weekly quota validation.
-- **Broker HTTP Pre-warm Endpoint**: Added loopback `/prewarm` endpoint with quota telemetry verification.
+- **Model-Specific Independent Pre-Warm Modes**: Added independent automation mode controls (`Click`, `Once`, `Always`) for Gemini, Claude, and ChatGPT embedded directly into each model's section header row.
+- **Accurate Real-Time Reset Countdown**: Restored real server-calculated refresh countdown display (`Refreshes in Xh Ym`) on 100% quota windows instead of masking it with static `Ready` text.
+- **Genuine Provider Probe & Live Telemetry Refresh**: Replaced premature process abortion and hardcoded 5-hour local timestamp injection with genuine CLI probe execution and immediate live provider telemetry synchronization.
+- **Gemini Weekly Quota Calculation Fix**: Fixed false-positive weekly quota exhaustion bug where Gemini percentage-only telemetry was incorrectly evaluated as 0% exhausted due to zero absolute token counters.
+- **Settings Persistence**: Added `prewarmModeGemini`, `prewarmModeClaude`, and `prewarmModeChatGPT` configuration options.
 
 ## [0.9.5] - 2026-10-09
 

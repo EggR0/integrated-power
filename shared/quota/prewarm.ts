@@ -57,6 +57,30 @@ export function normalizePrewarmMode(value: unknown): PrewarmMode {
   return "click";
 }
 
+export interface ModelPrewarmModes {
+  antigravity: PrewarmMode;
+  opus: PrewarmMode;
+  codex: PrewarmMode;
+}
+
+export function defaultModelPrewarmModes(): ModelPrewarmModes {
+  return {
+    antigravity: "click",
+    opus: "click",
+    codex: "click",
+  };
+}
+
+export function normalizeModelPrewarmModes(raw: unknown, fallbackMode?: PrewarmMode): ModelPrewarmModes {
+  const fallback = normalizePrewarmMode(fallbackMode);
+  const safe = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return {
+    antigravity: normalizePrewarmMode(safe.antigravity || safe.gemini || fallback),
+    opus: normalizePrewarmMode(safe.opus || safe.claude || fallback),
+    codex: normalizePrewarmMode(safe.codex || safe.chatgpt || fallback),
+  };
+}
+
 export interface PrewarmTarget {
   id: string;
   model: string;

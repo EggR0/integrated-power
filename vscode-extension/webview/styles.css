@@ -563,23 +563,33 @@ button:focus-visible {
   text-overflow: ellipsis;
 }
 
-.prewarm-toolbar {
+.capacity-group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 5px 10px;
-  margin: 6px 0 10px 0;
-  background: color-mix(in srgb, var(--vscode-editor-background), var(--vscode-sideBar-background) 50%);
-  border: 1px solid color-mix(in srgb, var(--vscode-widget-border), transparent 50%);
-  border-radius: 6px;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.capacity-group-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.prewarm-inline-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
 }
 
-.prewarm-title-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.prewarm-inline-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  letter-spacing: 0.2px;
 }
 
 .prewarm-icon {

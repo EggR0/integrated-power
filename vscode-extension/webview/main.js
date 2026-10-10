@@ -88,6 +88,7 @@ function emptyState() {
     sectionStates: { antigravity: true, codex: true, openai: true, claude: true, localLlm: true },
     viewConfig: undefined,
     prewarmMode: "click",
+    prewarmModes: { antigravity: "click", opus: "click", codex: "click" },
     updatedAt: new Date().toISOString(),
     refreshStartedAt: undefined,
     tokenStatus: emptyTokenStatus(),
@@ -126,6 +127,17 @@ function normalizeState(state) {
     sectionStates,
     viewConfig: safeState.viewConfig && typeof safeState.viewConfig === "object" ? safeState.viewConfig : undefined,
     prewarmMode: normalizePrewarmMode(safeState.prewarmMode),
+    prewarmModes: safeState.prewarmModes && typeof safeState.prewarmModes === "object"
+      ? {
+          antigravity: normalizePrewarmMode(safeState.prewarmModes.antigravity || safeState.prewarmMode),
+          opus: normalizePrewarmMode(safeState.prewarmModes.opus),
+          codex: normalizePrewarmMode(safeState.prewarmModes.codex),
+        }
+      : {
+          antigravity: normalizePrewarmMode(safeState.prewarmMode),
+          opus: "click",
+          codex: "click",
+        },
     updatedAt: stringValue(safeState.updatedAt) || new Date().toISOString(),
     refreshStartedAt: stringValue(safeState.refreshStartedAt),
   };
@@ -336,9 +348,20 @@ function render() {
       const setModeBtn = e.target.closest("[data-set-prewarm-mode]");
       if (setModeBtn && setModeBtn.dataset.setPrewarmMode && vscode) {
         const newMode = setModeBtn.dataset.setPrewarmMode;
-        dashboardState.prewarmMode = newMode;
+        const target = setModeBtn.dataset.target;
+        if (target) {
+          if (!dashboardState.prewarmModes) {
+            dashboardState.prewarmModes = { antigravity: "click", opus: "click", codex: "click" };
+          }
+          dashboardState.prewarmModes[target] = newMode;
+          if (target === "antigravity") {
+            dashboardState.prewarmMode = newMode;
+          }
+        } else {
+          dashboardState.prewarmMode = newMode;
+        }
         render();
-        vscode.postMessage({ type: "setPrewarmMode", mode: newMode });
+        vscode.postMessage({ type: "setPrewarmMode", mode: newMode, target });
         return;
       }
 
@@ -480,7 +503,6 @@ function renderTokenStatus(tokenStatus) {
       </div>
 
       ${renderCapacitySummary(status)}
-      ${renderPrewarmToolbar(dashboardState.prewarmMode)}
 
       ${sections.join('\n      <hr class="section-divider" />\n')}
 
@@ -720,22 +742,25 @@ function renderCapacitySummary(status) {
   `;
 }
 
-function renderPrewarmToolbar(mode) {
-  const currentMode = normalizePrewarmMode(mode);
-  const badgeText = currentMode === "always" ? "Always" : currentMode === "once" ? "Once" : "Click";
-  const badgeClass = `prewarm-badge prewarm-mode-${currentMode}`;
+function getPrewarmTargetForGroup(title) {
+  const t = (title || "").toLowerCase();
+  if (t.includes("gemini") || t.includes("antigravity")) return "antigravity";
+  if (t.includes("claude") || t.includes("opus")) return "opus";
+  if (t.includes("chatgpt") || t.includes("codex") || t.includes("openai")) return "codex";
+  return undefined;
+}
+
+function renderPrewarmInlineControl(target, label) {
+  const modes = dashboardState.prewarmModes || {};
+  const currentMode = normalizePrewarmMode(modes[target] || (target === "antigravity" ? dashboardState.prewarmMode : "click"));
 
   return `
-    <div class="prewarm-toolbar" title="${escapeAttr("5-hour quota pre-warm automation: starts 5h recharge timer with >99.9% capacity retained")}">
-      <div class="prewarm-title-group">
-        <span class="prewarm-icon">⚡</span>
-        <span class="prewarm-label">Pre-warm</span>
-        <span class="${badgeClass}">${badgeText}</span>
-      </div>
-      <div class="prewarm-mode-options" role="radiogroup" aria-label="Pre-warm Mode">
-        <button type="button" class="prewarm-mode-btn ${currentMode === "click" ? "active" : ""}" data-set-prewarm-mode="click" title="${escapeAttr("Click to Pre-warm: Manual trigger on demand via [⚡ Pre-warm] button")}">Click</button>
-        <button type="button" class="prewarm-mode-btn ${currentMode === "once" ? "active" : ""}" data-set-prewarm-mode="once" title="${escapeAttr("Once Pre-warm: Auto-prewarm once on next ready window, then revert to Click")}">Once</button>
-        <button type="button" class="prewarm-mode-btn ${currentMode === "always" ? "active" : ""}" data-set-prewarm-mode="always" title="${escapeAttr("Always Pre-warm: Continuous auto-prewarm whenever 5-hour quota is 100% Ready")}">Always</button>
+    <div class="prewarm-inline-control" role="radiogroup" aria-label="${escapeAttr(label)} Pre-warm Mode" title="${escapeAttr(`${label} 5시간 프리웜 설정: 100% 충전 시 5시간 충전 타이머를 선행 시작합니다.`)}">
+      <span class="prewarm-inline-label">⚡ Pre-warm:</span>
+      <div class="prewarm-mode-options">
+        <button type="button" class="prewarm-mode-btn ${currentMode === "click" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="click" title="${escapeAttr(`${label} Click: 수동 실행만 허용`)}">Click</button>
+        <button type="button" class="prewarm-mode-btn ${currentMode === "once" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="once" title="${escapeAttr(`${label} Once: 100% 도달 시 1회 자동 실행 후 Click으로 복귀`)}">Once</button>
+        <button type="button" class="prewarm-mode-btn ${currentMode === "always" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="always" title="${escapeAttr(`${label} Always: 100% 완충 시마다 연속 자동 프리웜`)}">Always</button>
       </div>
     </div>
   `;
@@ -793,13 +818,19 @@ function renderCapacityGroup(title, metrics) {
     .replace(/Pro\s*/i, "")
     .trim();
 
+  const prewarmTarget = getPrewarmTargetForGroup(title);
+  const inlinePrewarm = prewarmTarget ? renderPrewarmInlineControl(prewarmTarget, titleFull) : "";
+
   return `
     <div class="capacity-group">
-      <h3>
-        <span class="text-full">${escapeHtml(titleFull)}</span>
-        <span class="text-medium">${escapeHtml(titleMedium)}</span>
-        <span class="text-short">${escapeHtml(titleShort)}</span>
-      </h3>
+      <div class="capacity-group-header">
+        <h3>
+          <span class="text-full">${escapeHtml(titleFull)}</span>
+          <span class="text-medium">${escapeHtml(titleMedium)}</span>
+          <span class="text-short">${escapeHtml(titleShort)}</span>
+        </h3>
+        ${inlinePrewarm}
+      </div>
       <div class="capacity-row-list">
         ${metrics.map((m) => renderCapacityMetric(m, title)).join("")}
       </div>

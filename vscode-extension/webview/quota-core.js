@@ -46,6 +46,7 @@ var IPQuota = (() => {
     capacityTone: () => capacityTone,
     clamp: () => clamp,
     clampPollInterval: () => clampPollInterval,
+    defaultModelPrewarmModes: () => defaultModelPrewarmModes,
     detectRefilledQuotaWindows: () => detectRefilledQuotaWindows,
     executePrewarmPing: () => executePrewarmPing,
     formatNumber: () => formatNumber,
@@ -58,6 +59,7 @@ var IPQuota = (() => {
     localServerBadge: () => localServerBadge,
     mergeQuotaSettings: () => mergeQuotaSettings,
     modelDiscoveryUrls: () => modelDiscoveryUrls,
+    normalizeModelPrewarmModes: () => normalizeModelPrewarmModes,
     normalizePrewarmMode: () => normalizePrewarmMode,
     parseExternalPayload: () => parseExternalPayload,
     parseModelList: () => parseModelList,
@@ -478,24 +480,26 @@ var IPQuota = (() => {
     let refreshShort = "";
     let canPrewarm = false;
     let isReady = false;
-    if (is5HourReady) {
+    const countdown = formatRefreshCountdown(effectiveResetTime);
+    if (countdown) {
+      refreshFull = countdown.full;
+      refreshMedium = countdown.medium || countdown.short;
+      refreshShort = countdown.short;
+    } else if (is5HourReady) {
       refreshFull = "\xB7 Ready";
       refreshMedium = "\xB7 Ready";
       refreshShort = "\xB7 Ready";
+    }
+    if (is5HourReady) {
       canPrewarm = true;
       isReady = true;
-    } else {
-      const countdown = formatRefreshCountdown(effectiveResetTime);
-      refreshFull = countdown ? countdown.full : "";
-      refreshMedium = countdown ? countdown.medium || countdown.short : "";
-      refreshShort = countdown ? countdown.short : "";
     }
     let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     if (isWeeklyExhausted) {
       tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` \xB7 ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
     } else if (isWeeklyCapped) {
       tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
-    } else if (is5HourReady) {
+    } else if (is5HourReady && !countdown) {
       tooltip = `${ariaLabel || label}: ${subtextFull} (Ready \xB7 Timer starts on first request). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     }
     const labelFull = label;
@@ -794,6 +798,22 @@ var IPQuota = (() => {
       return value;
     }
     return "click";
+  }
+  function defaultModelPrewarmModes() {
+    return {
+      antigravity: "click",
+      opus: "click",
+      codex: "click"
+    };
+  }
+  function normalizeModelPrewarmModes(raw, fallbackMode) {
+    const fallback = normalizePrewarmMode(fallbackMode);
+    const safe = raw && typeof raw === "object" ? raw : {};
+    return {
+      antigravity: normalizePrewarmMode(safe.antigravity || safe.gemini || fallback),
+      opus: normalizePrewarmMode(safe.opus || safe.claude || fallback),
+      codex: normalizePrewarmMode(safe.codex || safe.chatgpt || fallback)
+    };
   }
   var PREWARM_TARGETS = Object.freeze([
     { id: "antigravity-gemini-5h", model: "antigravity", displayName: "Gemini 5Hours", prefix: "antigravity" },

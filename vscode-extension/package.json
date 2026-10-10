@@ -3,7 +3,7 @@
   "publisher": "EggR0",
   "displayName": "Integrated Power",
   "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "author": {
     "name": "EggR0"
   },
@@ -153,7 +153,37 @@
             "Once Pre-warm: automatically trigger pre-warm once on the next 100% Ready window, then revert to Click."
           ],
           "default": "click",
-          "description": "5-hour quota pre-warm automation mode (Click, Always, or Once)."
+          "description": "Global default 5-hour quota pre-warm automation mode (Click, Always, or Once)."
+        },
+        "integratedPower.quota.prewarmModeGemini": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "default": "click",
+          "description": "5-hour quota pre-warm automation mode for Google Gemini (Antigravity IDE)."
+        },
+        "integratedPower.quota.prewarmModeClaude": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "default": "click",
+          "description": "5-hour quota pre-warm automation mode for Anthropic Claude."
+        },
+        "integratedPower.quota.prewarmModeChatGPT": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "default": "click",
+          "description": "5-hour quota pre-warm automation mode for OpenAI ChatGPT / Codex."
         }
       }
     },
