@@ -18,7 +18,8 @@ import {
 import { AgyQuotaClient, AgyNotInstalledError, AgyNotAuthenticatedError } from "./AgyQuotaClient";
 import matter from "gray-matter";
 import { getLowestCodexModel, findCodexCliSync, CodexModelResolution } from "./broker/codexAppServer";
-export { getLowestCodexModel, findCodexCliSync, CodexModelResolution };
+import { getLowestAgyModel, AgyModelResolution } from "./broker/agyModelResolver";
+export { getLowestCodexModel, findCodexCliSync, CodexModelResolution, getLowestAgyModel, AgyModelResolution };
 
 const QUOTA_CACHE_TTL_MS = 5_000;
 const MAX_SESSION_SCAN_DEPTH = 5;

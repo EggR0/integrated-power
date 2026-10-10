@@ -4,7 +4,7 @@ import * as fs from "fs";
 import * as cp from "child_process";
 import { DashboardOutboundMessage, DashboardState, RunSummary, WebviewToExtensionMessage, TokenStatus, LocalLlmMetric, PrewarmMode } from "./types";
 import { RunStore } from "./RunStore";
-import { TokenManager, getLowestCodexModel } from "./TokenManager";
+import { TokenManager, getLowestCodexModel, getLowestAgyModel } from "./TokenManager";
 import { WorkspacePaths } from "./WorkspacePaths";
 import { resolveIntegratedPowerStateRoot } from "./storagePath";
 import { detectRefilledQuotaWindows } from "./quotaNotifications";
@@ -131,7 +131,7 @@ export class DashboardController implements vscode.Disposable {
         await vscode.commands.executeCommand("integratedPower.terminals.showWebUI");
         return;
       case "prewarm":
-        await this.handlePrewarm((message as { model?: string }).model);
+        await this.handlePrewarm((message as { model?: string }).model, true);
         return;
       case "setPrewarmMode":
         const prewarmMsg = message as { mode: PrewarmMode; target?: string };
@@ -729,18 +729,19 @@ export class DashboardController implements vscode.Disposable {
 
   private getPrewarmEligibility(
     modelKey?: string,
-    status?: TokenStatus
+    status?: TokenStatus,
+    isManual = false
   ): { eligible: boolean; reason: string; prefix: string; targetModel: string; label: string } {
     const raw = (modelKey || "antigravity").toLowerCase();
     let prefix = "antigravity";
     let weeklyPrefix = "antigravityWeekly";
-    let targetModel = "gemini-3.8-flash-low";
+    let targetModel = getLowestAgyModel("gemini").model;
     let label = "Gemini 5Hours";
 
     if (raw.includes("opus") || raw.includes("claude")) {
       prefix = "opus";
       weeklyPrefix = "opusWeekly";
-      targetModel = "claude-sonnet-5-5-low";
+      targetModel = getLowestAgyModel("claude").model;
       label = "Claude 5Hours";
     } else if (raw.includes("codex") || raw.includes("chatgpt")) {
       prefix = "codex";
@@ -788,27 +789,47 @@ export class DashboardController implements vscode.Disposable {
       return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, label };
     }
 
-    // Check recent pre-warm cooldown (minimum 30 minutes per model to prevent quota burns)
-    const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
-    const elapsed = Date.now() - lastPrewarm;
-    const COOLDOWN_MS = 30 * 60 * 1000;
-    if (elapsed < COOLDOWN_MS) {
-      const waitMin = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
-      return { eligible: false, reason: `${label} was pre-warmed recently. Cooldown active (${waitMin}m remaining).`, prefix, targetModel, label };
+    if (!isManual) {
+      // Auto-prewarm cooldown (minimum 30 minutes to prevent repeated automated pings)
+      const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
+      const elapsed = Date.now() - lastPrewarm;
+      const COOLDOWN_MS = 30 * 60 * 1000;
+      if (elapsed < COOLDOWN_MS) {
+        const waitMin = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
+        return { eligible: false, reason: `${label} was pre-warmed recently. Cooldown active (${waitMin}m remaining).`, prefix, targetModel, label };
+      }
+
+      // If 5-hour rolling recharge cycle has already been initiated and is actively counting down, skip auto ping
+      const resetTimeStr = (status as any)[`${prefix}ResetTime`];
+      if (resetTimeStr) {
+        const resetTime = new Date(resetTimeStr).getTime();
+        if (Number.isFinite(resetTime) && resetTime > Date.now()) {
+          return { eligible: false, reason: `${label} recharge cycle is already active.`, prefix, targetModel, label };
+        }
+      }
+    } else {
+      // Manual click: debounce rapid accidental double-clicks (5 seconds)
+      const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
+      const elapsed = Date.now() - lastPrewarm;
+      if (elapsed < 5000) {
+        return { eligible: false, reason: `${label} pre-warm was recently initiated. Please wait a few seconds.`, prefix, targetModel, label };
+      }
     }
 
     return { eligible: true, reason: "Ready", prefix, targetModel, label };
   }
 
-  private async handlePrewarm(modelKey?: string): Promise<void> {
-    const check = this.getPrewarmEligibility(modelKey, this.state.tokenStatus);
+  private async handlePrewarm(modelKey?: string, isManual = false): Promise<void> {
+    const check = this.getPrewarmEligibility(modelKey, this.state.tokenStatus, isManual);
     if (!check.eligible) {
       this.output.appendLine(`[prewarm] Refusing pre-warm for ${check.label}: ${check.reason}`);
-      void vscode.window.showWarningMessage(`[Integrated Power] Pre-warm skipped: ${check.reason}`);
+      if (isManual) {
+        void vscode.window.showWarningMessage(`[Integrated Power] Pre-warm skipped: ${check.reason}`);
+      }
       return;
     }
 
-    this.output.appendLine(`[prewarm] 5-hour quota pre-warm approved for ${check.label} (100% Ready). Starting instant abort ping...`);
+    this.output.appendLine(`[prewarm] 5-hour quota pre-warm approved for ${check.label} (100% Ready). Dispatching ping...`);
     this.lastAutoPrewarmByTarget[check.prefix] = Date.now();
 
     if (check.prefix === "codex") {
@@ -875,7 +896,7 @@ export class DashboardController implements vscode.Disposable {
         }
       }
     } else {
-      // Gemini & Claude: Use agy CLI with low-tier model and instant abort
+      // Gemini & Claude: Use agy CLI with verified lowest-tier model and print-timeout
       const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
       if (fs.existsSync(agyBin)) {
         try {
@@ -888,12 +909,13 @@ export class DashboardController implements vscode.Disposable {
               }
             };
 
-            const timer = setTimeout(() => {
+            // Watchdog timer: 15 seconds to ensure agy finishes or cleanly exits without freezing UI
+            const watchdog = setTimeout(() => {
               try {
                 proc.kill();
               } catch {}
               finish();
-            }, 250);
+            }, 15000);
 
             const proc = cp.spawn(
               agyBin,
@@ -908,25 +930,30 @@ export class DashboardController implements vscode.Disposable {
                 "--print-timeout",
                 "1s",
               ],
-              { windowsHide: true }
+              {
+                windowsHide: true,
+                stdio: ["ignore", "ignore", "ignore"],
+              }
             );
 
             proc.on("error", (err) => {
-              clearTimeout(timer);
+              clearTimeout(watchdog);
               this.output.appendLine(`[prewarm] agy spawn error: ${this.errorMessage(err)}`);
               finish();
             });
 
             proc.on("close", () => {
-              clearTimeout(timer);
+              clearTimeout(watchdog);
               finish();
             });
           });
 
-          this.output.appendLine(`[prewarm] agy minimal ping dispatched with instant abort (model: ${check.targetModel})`);
+          this.output.appendLine(`[prewarm] agy minimal ping dispatched successfully (target: ${check.label}, model: ${check.targetModel})`);
         } catch (err) {
           this.output.appendLine(`[prewarm] agy execution error: ${this.errorMessage(err)}`);
         }
+      } else {
+        this.output.appendLine(`[prewarm] agy binary not found at ${agyBin}`);
       }
     }
 
@@ -948,9 +975,11 @@ export class DashboardController implements vscode.Disposable {
       this.output.appendLine(`[prewarm] Telemetry refresh notice: ${this.errorMessage(err)}`);
     }
 
-    void vscode.window.showInformationMessage(
-      `[Integrated Power] Instant pre-warm probe dispatched for ${check.label}. Live quota clock initiated.`
-    );
+    if (isManual) {
+      void vscode.window.showInformationMessage(
+        `[Integrated Power] Instant pre-warm probe dispatched for ${check.label} (model: ${check.targetModel}). Live quota clock initiated.`
+      );
+    }
   }
 
   private emptyState(): DashboardState {
@@ -1072,10 +1101,10 @@ export class DashboardController implements vscode.Disposable {
         continue;
       }
 
-      const check = this.getPrewarmEligibility(target, status);
+      const check = this.getPrewarmEligibility(target, status, false);
       if (check.eligible) {
         this.output.appendLine(`[prewarm] Auto-triggering pre-warm in mode '${targetMode}' for ${check.label}`);
-        await this.handlePrewarm(target);
+        await this.handlePrewarm(target, false);
 
         if (targetMode === "once") {
           this.output.appendLine(`[prewarm] 'Once Pre-warm' executed for ${check.label}. Reverting target mode to 'click'.`);
@@ -1084,7 +1113,6 @@ export class DashboardController implements vscode.Disposable {
             `[Integrated Power] Once Pre-warm executed for ${check.label}. Mode returned to 'Click to Pre-warm'.`
           );
         }
-        break; // Arm at most one target per 5s check cycle
       }
     }
   }

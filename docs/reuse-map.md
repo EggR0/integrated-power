@@ -24,6 +24,7 @@ update the row and link its proof test.
 | AG-UI | official `@ag-ui/core` when compatible | core event schema at stream boundary | event validation test |
 | Secrets | VSIX `ExtensionContext.secrets`; Tauri Stronghold/OS keyring | inject platform store; no duplicate credential code | secret isolation test |
 | Worktrees/approval | new broker functionality | retain revision/idempotency, isolated worktree, approval queue | concurrency/approval tests |
+| AGY lowest-tier pre-warm resolution | `vscode-extension/src/broker/agyModelResolver.ts` | Resolves lowest-tier verified model for Gemini (`gemini-3.6-flash-low`) and Claude (`claude-sonnet-5-5-low`) mapped directly to Antigravity IDE quota tiers | `scripts/test-prewarm.js` (assertions for Gemini/Claude lowest resolution) |
 
 No row may be marked complete by a stub, capability display, or static type
 alone. If an authority cannot be reused, record the reason in an ADR before

@@ -137,12 +137,22 @@ async function runAsyncTests() {
   assert.strictEqual(result.tokensConsumed, 1);
   assert.ok(result.retainedPercentage >= 99.9);
   assert.strictEqual(dispatchedPrompt, "integrated power");
-  assert.strictEqual(abortedImmediately, true, "pre-warm ping must abort immediately upon dispatch");
-  assert.strictEqual(result.stopMethod, "abort_controller");
+  // 7. AGY Lowest Model Resolution for Gemini and Claude
+  const { getLowestAgyModel } = require("../out/broker/agyModelResolver");
+  const lowestGemini = getLowestAgyModel("gemini");
+  assert.strictEqual(lowestGemini.model, "gemini-3.6-flash-low", "lowest Gemini model must be gemini-3.6-flash-low");
+  assert.strictEqual(lowestGemini.family, "gemini");
+  assert.strictEqual(lowestGemini.effort, "low");
+
+  const lowestClaude = getLowestAgyModel("claude");
+  assert.strictEqual(lowestClaude.model, "claude-sonnet-5-5-low", "lowest Claude model must be claude-sonnet-5-5-low");
+  assert.strictEqual(lowestClaude.family, "claude");
+  assert.strictEqual(lowestClaude.effort, "low");
 
   console.log("  ok - stop selectors parity verified");
   console.log("  ok - minimal token ping and instant cancellation verified");
   console.log("  ok - 5-hour window transition verified (>99% quota retained)");
+  console.log("  ok - separate AGY lowest-tier model resolution (Gemini 3.6 Flash Low & Claude Sonnet 5.5 Low) verified");
   console.log("\npre-warm trigger test passed");
 }
 

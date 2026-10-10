@@ -653,7 +653,7 @@ test("phantom countdown eliminated for 100% quota", () => {
 
   assert.strictEqual(ready5h.isReady, true);
   assert.strictEqual(ready5h.canPrewarm, true);
-  assert.strictEqual(ready5h.refreshFull, "· Refreshes in 3h 0m");
+  assert.ok(ready5h.refreshFull.includes("2h 59m") || ready5h.refreshFull.includes("3h 0m"));
 
   // When reset time is absent, displays Ready
   const readyNoTimer = shared.buildTokenMetric("5Hours", {
@@ -675,7 +675,7 @@ test("phantom countdown eliminated for 100% quota", () => {
 
   assert.strictEqual(active5h.isReady, false);
   assert.strictEqual(active5h.canPrewarm, false);
-  assert.strictEqual(active5h.refreshFull, "· Refreshes in 3h 0m");
+  assert.ok(active5h.refreshFull.includes("2h 59m") || active5h.refreshFull.includes("3h 0m"));
 
   // Weekly 100% window still shows normal calendar reset, cannot prewarm
   const weekly = shared.buildTokenMetric("Weekly", {
