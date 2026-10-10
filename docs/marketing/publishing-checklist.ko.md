@@ -2,7 +2,7 @@
 
 ## 공급 상태
 
-- [ ] 게시물의 설치 링크가 검증된 동일 artifact를 가리킨다(현재 공개 기준은 GitHub `v0.9.8` 및 Open VSX `v0.9.8`).
+- [ ] 게시물의 설치 링크가 검증된 동일 artifact(GitHub 최신 릴리스 및 Open VSX listing)를 가리킨다.
 - [ ] 게시하려는 `.vsix`의 내부 manifest, 파일명, tag/release 버전이 서로 일치한다.
 - [ ] 소스 `package.json` 버전이 공개 artifact와 다르면 두 버전을 명시적으로 구분한다.
 - [ ] publisher와 extension ID가 `EggR0` / `EggR0.integrated-power`로 일치한다.

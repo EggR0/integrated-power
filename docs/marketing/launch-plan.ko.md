@@ -1,7 +1,7 @@
 # Integrated Power 공급·홍보 실행안
 
-기준 소스 manifest: `0.9.8`
-확인된 최신 공개 GitHub VSIX: `v0.9.8`
+기준 소스 manifest: `vscode-extension/package.json`
+공개 배포 artifact: GitHub Latest Releases 및 Open VSX listing
 Open VSX listing: `EggR0.integrated-power` (정식 네임스페이스 정렬)
 주 대상: Antigravity IDE를 Windows 11에서 사용하며, AI 사용량·로컬 GPU·5시간 프리웜(Pre-warm)을 함께 관리해야 하는 개발자
 
