@@ -789,6 +789,15 @@ export class DashboardController implements vscode.Disposable {
       return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, label };
     }
 
+    // If 5-hour rolling recharge cycle has already been initiated and is actively counting down, skip pre-warm
+    const resetTimeStr = (status as any)[`${prefix}ResetTime`];
+    if (resetTimeStr) {
+      const resetTime = new Date(resetTimeStr).getTime();
+      if (Number.isFinite(resetTime) && resetTime > Date.now()) {
+        return { eligible: false, reason: `${label} recharge cycle is already active.`, prefix, targetModel, label };
+      }
+    }
+
     if (!isManual) {
       // Auto-prewarm cooldown (minimum 30 minutes to prevent repeated automated pings)
       const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
@@ -797,15 +806,6 @@ export class DashboardController implements vscode.Disposable {
       if (elapsed < COOLDOWN_MS) {
         const waitMin = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
         return { eligible: false, reason: `${label} was pre-warmed recently. Cooldown active (${waitMin}m remaining).`, prefix, targetModel, label };
-      }
-
-      // If 5-hour rolling recharge cycle has already been initiated and is actively counting down, skip auto ping
-      const resetTimeStr = (status as any)[`${prefix}ResetTime`];
-      if (resetTimeStr) {
-        const resetTime = new Date(resetTimeStr).getTime();
-        if (Number.isFinite(resetTime) && resetTime > Date.now()) {
-          return { eligible: false, reason: `${label} recharge cycle is already active.`, prefix, targetModel, label };
-        }
       }
     } else {
       // Manual click: debounce rapid accidental double-clicks (5 seconds)
@@ -966,7 +966,7 @@ export class DashboardController implements vscode.Disposable {
       if (refreshed) {
         this.state = {
           ...this.state,
-          tokenStatus: refreshed,
+          tokenStatus: this.mergeTokenStatus(this.state.tokenStatus, refreshed),
           updatedAt: new Date().toISOString(),
         };
         this.postState();

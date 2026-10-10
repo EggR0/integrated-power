@@ -474,13 +474,13 @@ var IPQuota = (() => {
         effectiveResetTime = pairedResetTime;
       }
     }
+    const countdown = formatRefreshCountdown(effectiveResetTime);
     const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== void 0) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
     let refreshFull = "";
     let refreshMedium = "";
     let refreshShort = "";
     let canPrewarm = false;
     let isReady = false;
-    const countdown = formatRefreshCountdown(effectiveResetTime);
     if (countdown) {
       refreshFull = countdown.full;
       refreshMedium = countdown.medium || countdown.short;

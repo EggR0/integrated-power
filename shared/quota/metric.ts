@@ -182,6 +182,7 @@ export function buildTokenMetric(
     }
   }
 
+  const countdown = formatRefreshCountdown(effectiveResetTime);
   const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
   let refreshFull = "";
   let refreshMedium = "";
@@ -189,7 +190,6 @@ export function buildTokenMetric(
   let canPrewarm = false;
   let isReady = false;
 
-  const countdown = formatRefreshCountdown(effectiveResetTime);
   if (countdown) {
     refreshFull = countdown.full;
     refreshMedium = countdown.medium || countdown.short;

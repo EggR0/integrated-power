@@ -654,7 +654,7 @@ export class TokenManager {
           return;
         }
         try {
-          const antigravityQuota = await this.withTimeout(this.fetchAntigravityQuota(), 3000, {});
+          const antigravityQuota = await this.withTimeout(this.fetchAntigravityQuota(), 7000, {});
           this.recordProviderSuccess("antigravity");
           data.antigravityPercentage = antigravityQuota.antigravityPercentage;
           data.antigravityResetTime = antigravityQuota.antigravityResetTime;
