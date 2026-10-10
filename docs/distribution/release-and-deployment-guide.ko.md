@@ -117,16 +117,20 @@ GitHub Release가 생성되면, **GitHub Actions가 이를 자동으로 감지�
 * **트리거**: `release: types: [published]` 및 `workflow_dispatch`
 * **배포 단계**:
   1. `actions/checkout@v4`로 리포지토리 체크아웃.
-  2. `gh release download`를 통해 Release에 첨부된 VSIX 에셋을 직접 확보 (재빌드로 인한 해시 불일치 방지).
-  3. 에셋이 없는 경우 fallback으로 Node 24 + pnpm 환경에서 패키지를 즉시 빌드.
-  4. GitHub Secret(`OVSX_PAT`)을 사용하여 `npx ovsx publish` 실행 (`--skip-duplicate` 플래그 적용).
+  2. `gh release download`를 통해 Release에 첨부된 VSIX 에셋을 직접 확보 (재빌드로 인한 해시 불일치 방지 및 CI 실행 시간을 20초대로 단축).
+  3. 에셋이 없는 경우 fallback으로 Node 24 + pnpm 11.9.0 환경에서 패키지를 즉시 소스로부터 빌드.
+  4. **Trusted Publishing (OIDC) 및 PAT 2단계 인증**:
+     - `npx ovsx publish --trusted-publishing --skip-duplicate` 우선 시도
+     - 미지원 또는 실패 시 `OVSX_PAT` 시크릿을 통한 PAT 배포로 자동 폴백.
+  5. **중복 배포 멱등성 보호 (`publish_target` 래퍼)**:
+     - 이미 로컬에서 선행 배포되었거나 Open VSX 인덱싱 대기 중인 경우(`is already published`), ovsx CLI의 비정상 종료(Exit Code 1)를 감지하여 성공(Exit Code 0)으로 정상 수렴 처리.
 
 ### 6.2 수동 재실행 방법 (필요 시)
 CLI 또는 GitHub Actions 웹 인터페이스에서 수동으로 워크플로우를 트리거할 수 있습니다:
 
 ```powershell
 # 특정 태그의 VSIX를 Open VSX로 배포
-gh workflow run publish-openvsx.yml -f tag=v0.9.5
+gh workflow run publish-openvsx.yml -f tag=v0.9.8
 ```
 
 ---
@@ -137,7 +141,7 @@ gh workflow run publish-openvsx.yml -f tag=v0.9.5
 
 ```powershell
 # 1. GitHub Release 상태 및 첨부 파일 확인
-gh release view v0.9.5
+gh release view v0.9.8
 
 # 2. CI/CD 워크플로우 실행 로그 실시간 확인
 gh run list --workflow=publish-openvsx.yml --limit 3
@@ -152,11 +156,16 @@ npx ovsx show EggR0.integrated-power
 ## 8. 트러블슈팅 및 주의사항 (Known Gotchas)
 
 1. **Open VSX 비동기 인덱싱 지연**:
-   - `npx ovsx publish` 완료 후 즉시 `npx ovsx show`를 실행하면 `0.9.3`이 표시되거나 `Extension not found`가 나타날 수 있습니다.
-   - Open VSX 내부에서 패키지 바이러스 검사, 매니페스트 파싱, CDN 캐시 무효화를 비동기로 처리하므로 **약 5~10분 후 정상 노출**됩니다.
+   - `npx ovsx publish` 완료 직후에는 Open VSX 서버 내부에서 패키지 바이러스 검사, 매니페스트 파싱, CDN 캐시 무효화를 비동기로 처리하므로 **약 5~10분 후 정상 노출**됩니다.
 2. **pnpm 11.9.0 + Node.js 24 환경 요구**:
    - 프로젝트에서 사용 중인 `pnpm 11.9.0`은 Node 22.13 이상(`node:sqlite` 내장 모듈)을 요구합니다.
    - GitHub Actions CI 러너 설정 시 반드시 `node-version: 24`를 지정해야 합니다 (Node 20 사용 시 모듈 로딩 에러 발생).
 3. **PowerShell 인코딩 및 토큰 취급**:
    - `.ovsx-token`과 같은 민감 정보는 터미널에 평문으로 출력하지 않으며, Git 커밋에 포함되지 않도록 `.gitignore`에 등록되어 있습니다.
    - PowerShell 환경에서 파일 입출력 시 인코딩 손상을 방지하기 위해 네이티브 도구 또는 UTF-8 규격을 엄수합니다.
+4. **이미 배포된 확장에 대한 ovsx CLI Exit Code 1 및 CI 실패 메일 방지**:
+   - 로컬에서 수동 배포 후 GitHub Release를 만들면, Open VSX 서버가 `Extension ... is already published, but currently isn't active`를 반환하며 `ovsx`가 비정상 종료(Exit Code 1)를 반환할 수 있습니다.
+   - 워크플로우 내 `publish_target` 래퍼가 이 상태를 정상적인 중복 회피로 감지하여 Exit Code 0으로 처리하므로, 배포가 잘 되었음에도 불필요한 'Run failed' 실패 알림 이메일이 발송되지 않습니다.
+5. **GitHub Release 생성 시 VSIX 애셋 첨부 권장**:
+   - `gh release create <tag> .\vscode-extension\integrated-power-<version>.vsix` 명령을 통해 VSIX 바이너리를 Release 애셋으로 첨부하십시오.
+   - 애셋이 첨부되어 있으면 CI가 pnpm 의존성 다운로드와 TypeScript 컴파일 과정을 거치지 않고 검증된 VSIX를 20초 만에 바로 다운로드하여 Open VSX로 전송합니다.
