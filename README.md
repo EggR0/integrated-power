@@ -6,9 +6,9 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2011-blue)](https://github.com/EggR0/integrated-power)
 [![Target](https://img.shields.io/badge/Target-Antigravity%20IDE-purple)](https://github.com/EggR0/integrated-power)
 
-> **"Quota를 기다리는 대시보드가 아니라, 작업을 다음 실행 경로로 이어 주는 AI 작업 컨트롤 센터"**
+> **"멀티 AI 쿼터 실시간 추적, 5시간 프리웜(Pre-warm) 최적화, 로컬 GPU 연산 자원을 한눈에 모니터링하는 통합 제어 센터"**
 
-Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Windows 11에서 에이전트 잔여 사용량(Quota), 작업 큐(Queue), GPU 및 로컬 연산 자원을 한 화면에 통합 표시하고, 작업이 Quota에 걸려 중단되지 않도록 **최적의 AI 실행 경로(Antigravity · Codex · Claude · Local LLM Qwen 3.8 27B)**로 매끄럽게 연결합니다.
+Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Windows 11 환경에서 4대 핵심 AI 모델(Antigravity Gemini · Antigravity Claude · ChatGPT/Codex · Claude Direct)의 실시간 쿼터(5시간/주간), 5시간 선행 프리웜(Pre-warm), 작업 큐(Queue), GPU 및 로컬 연산 자원을 한 화면에 직관적으로 통합 관제합니다.
 
 ---
 
@@ -82,6 +82,35 @@ Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Window
 - **Private Git Knowledge는 사용자 소유 기억이다.** 제품 개발자의 저장소를 배포하는 기능이 아니라, 사용자가 선택한 Git 저장소에 작업 로그·오류 이력·계속 보존할 지식을 쌓아 PC, OS, 에이전트가 바뀌어도 다시 참조할 수 있게 한다.
 
 이 분리는 한 구성의 장애가 다른 두 구성을 망가뜨리지 않게 하고, 다른 사용자에게 배포할 때 각자의 경로·계정·도구 설치 상태를 Configuration Center에서 다시 정할 수 있게 한다.
+
+---
+
+### 🛠️ 에이전트 스킬 및 공식 MCP 서버 (Agent Skill & MCP Server)
+
+Integrated Power는 대시보드 기반 관제에 더해, AI 에이전트 및 외부 도구와의 긴밀한 오케스트레이션을 위한 전용 **에이전트 스킬(Agent Skill)**과 **공식 내장 MCP(Model Context Protocol) 서버**를 제공합니다.
+
+#### 1. 내장 공식 MCP 서버 (`integrated-power`)
+* **지원 프로토콜**: 로컬 프로세스 간 고속 `stdio` 통신 및 HTTP/SSE (`/mcp`, `/sse`) 엔드포인트 동시 지원
+* **외부 클라이언트 연동**: Claude Desktop 자동 등록(`registerClaudeLocalMcp`) 및 ChatGPT Developer 커넥터 연동 명세 지원
+* **15종 공식 MCP 도구 세트**:
+  - `integrated_power_get_token_status`: 실시간 모델별 쿼터 잔여율, 리셋 잔여 시간 및 최적 모델 선택 가이드 조회
+  - `integrated_power_quick_delegate`: 외부 에이전트(Claude Desktop 등)에서 Antigravity, Codex, 로컬 LLM으로 단일 작업 즉시 위임
+  - `integrated_power_create_task` / `integrated_power_delegate`: 통합 작업 큐에 태스크 생성 및 대상 에이전트 위임
+  - `integrated_power_debate`: 모델 간 교차 검증 및 상호 비판(Writer-Critic 패턴) 실행
+  - `integrated_power_choose_route`: 작업 복잡도 및 VRAM 조건에 따른 지능형 실행 라우트 결정
+  - `integrated_power_get_status` / `integrated_power_list_tasks` / `integrated_power_list_capabilities`: 작업 상태, 전체 큐 목록, 에이전트 기능 목록 조회
+  - `integrated_power_request_approval` / `integrated_power_cancel` / `integrated_power_merge`: 사용자 안전 승인 요청, 작업 취소, 결과 브랜치 병합
+  - `integrated_power_record_evaluation` / `integrated_power_record_evidence` / `integrated_power_synthesize`: 품질 평가 및 증거 기록, 최종 결과물 종합
+
+#### 2. 오케스트레이션 에이전트 스킬 (`ip-orchestrator`)
+* **개요**: `ip-orchestrator-plugin`을 통해 제공되며, IDE 에이전트가 단독으로 해결하기 어려운 엔지니어링 작업을 다중 모델로 지능형 조율
+* **6대 특화 실행 모드**:
+  1. **Routing Decision**: VRAM, 하드웨어 사양, 작업 복잡도를 분석하여 최적 실행 주체 자동 배정
+  2. **Debate Mode (`Invoke-CodexDebate.ps1`)**: 핵심 아키텍처 및 치명적 버그에 대한 복수 모델 간 상호 비판 및 교차 검증
+  3. **Job Mode (`Invoke-CodexJob.ps1`)**: 백그라운드 비동기 대규모 작업 위임 및 모니터링
+  4. **WorkWindow Mode (`Invoke-AiWorkWindow.ps1`)**: 독립 작업 환경 격리 실행
+  5. **Local LLM Mode (`Select-LocalLLMModel.ps1`, `Invoke-LocalLLM.ps1`)**: 오프라인 Qwen 3.8 27B 기반 제로 클라우드 토큰 로컬 전처리/추론
+  6. **Integrated Power Broker Mode (`Invoke-IntegratedPowerBroker.ps1`)**: 확장 내장 브로커와의 통합 파이프라인 연동
 
 ---
 
@@ -243,8 +272,8 @@ Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integra
 | 제품 표시명 | Integrated Power |
 | Publisher / 네임스페이스 | **EggR0** |
 | 확장 ID | **`EggR0.integrated-power`** |
-| 현재 버전 | **`0.9.6`** |
-| 공개 마켓 | [Open VSX Registry](https://open-vsx.org/extension/EggR0/integrated-power) · [GitHub Releases](https://github.com/EggR0/integrated-power/releases/tag/v0.9.6) |
+| 현재 버전 | **`0.9.8`** |
+| 공개 마켓 | [Open VSX Registry](https://open-vsx.org/extension/EggR0/integrated-power) · [GitHub Releases](https://github.com/EggR0/integrated-power/releases/tag/v0.9.8) |
 | 지원 OS | Windows 11 |
 | 주 타깃 IDE | Antigravity IDE (VS Code ^1.80.0 호환) |
 | 라이선스 | PolyForm Strict License 1.0.0 ([LICENSE](https://github.com/EggR0/integrated-power/blob/main/LICENSE)) |

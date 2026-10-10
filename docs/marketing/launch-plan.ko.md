@@ -1,13 +1,13 @@
 # Integrated Power 공급·홍보 실행안
 
-기준 소스 manifest: `0.9.5`
-확인된 최신 공개 GitHub VSIX: `v0.9.5`
+기준 소스 manifest: `0.9.8`
+확인된 최신 공개 GitHub VSIX: `v0.9.8`
 Open VSX listing: `EggR0.integrated-power` (정식 네임스페이스 정렬)
-주 대상: Antigravity IDE를 Windows 11에서 사용하며, AI 사용량·로컬 GPU·여러 실행 경로를 함께 관리해야 하는 개발자
+주 대상: Antigravity IDE를 Windows 11에서 사용하며, AI 사용량·로컬 GPU·5시간 프리웜(Pre-warm)을 함께 관리해야 하는 개발자
 
 ## 1. 한 문장 포지셔닝
 
-Integrated Power는 단순 quota 표시기가 아니라, Antigravity·Codex·로컬 LLM·GPU 상태를 한 화면에서 확인하고 작업 실행 경로를 이어 주는 Windows용 AI 작업 컨트롤 센터다.
+Integrated Power는 단순 quota 표시기가 아니라, Antigravity·Codex·Claude·로컬 LLM·GPU 상태를 한 화면에서 확인하고 5시간 프리웜을 지원하는 Windows용 AI 관제 및 오케스트레이션 센터다.
 
 ## 2. 공급 채널 우선순위
 
