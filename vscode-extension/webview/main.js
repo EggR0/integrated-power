@@ -743,10 +743,11 @@ function renderCapacitySummary(status) {
 }
 
 function getPrewarmTargetForGroup(title) {
-  const t = (title || "").toLowerCase();
-  if (t.includes("gemini") || t.includes("antigravity")) return "antigravity";
-  if (t.includes("claude") || t.includes("opus")) return "opus";
-  if (t.includes("chatgpt") || t.includes("codex") || t.includes("openai")) return "codex";
+  const t = (title || "").toLowerCase().trim();
+  if (t.includes("api") || t.includes("cli")) return undefined;
+  if (t.includes("gemini") || t === "antigravity") return "antigravity";
+  if (t === "claude" || t.includes("opus")) return "opus";
+  if (t.includes("chatgpt") || t.includes("codex") || t === "openai") return "codex";
   return undefined;
 }
 
@@ -756,11 +757,23 @@ function renderPrewarmInlineControl(target, label) {
 
   return `
     <div class="prewarm-inline-control" role="radiogroup" aria-label="${escapeAttr(label)} Pre-warm Mode" title="${escapeAttr(`${label} 5시간 프리웜 설정: 100% 충전 시 5시간 충전 타이머를 선행 시작합니다.`)}">
-      <span class="prewarm-inline-label">⚡ Pre-warm:</span>
+      <span class="prewarm-icon" aria-hidden="true" title="${escapeAttr(`${label} Pre-warm`)}">⚡</span>
       <div class="prewarm-mode-options">
-        <button type="button" class="prewarm-mode-btn ${currentMode === "click" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="click" title="${escapeAttr(`${label} Click: 수동 실행만 허용`)}">Click</button>
-        <button type="button" class="prewarm-mode-btn ${currentMode === "once" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="once" title="${escapeAttr(`${label} Once: 100% 도달 시 1회 자동 실행 후 Click으로 복귀`)}">Once</button>
-        <button type="button" class="prewarm-mode-btn ${currentMode === "always" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="always" title="${escapeAttr(`${label} Always: 100% 완충 시마다 연속 자동 프리웜`)}">Always</button>
+        <button type="button" class="prewarm-mode-btn ${currentMode === "click" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="click" title="${escapeAttr(`${label} Click: 수동 실행만 허용`)}">
+          <span class="text-full">Click</span>
+          <span class="text-medium">Click</span>
+          <span class="text-short">Clk</span>
+        </button>
+        <button type="button" class="prewarm-mode-btn ${currentMode === "once" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="once" title="${escapeAttr(`${label} Once: 100% 도달 시 1회 자동 실행 후 Click으로 복귀`)}">
+          <span class="text-full">Once</span>
+          <span class="text-medium">Once</span>
+          <span class="text-short">1x</span>
+        </button>
+        <button type="button" class="prewarm-mode-btn ${currentMode === "always" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="always" title="${escapeAttr(`${label} Always: 100% 완충 시마다 연속 자동 프리웜`)}">
+          <span class="text-full">Always</span>
+          <span class="text-medium">Always</span>
+          <span class="text-short">Alw</span>
+        </button>
       </div>
     </div>
   `;
@@ -847,7 +860,7 @@ function renderCapacityMetric(metric, groupTitle = "") {
     : "codex";
 
   const prewarmBtn = metric.canPrewarm
-    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(prewarmTarget)}" title="${escapeAttr("5-hour quota pre-warm: starts 5h recharge timer with >99.9% capacity retained")}">⚡ Pre-warm</button>`
+    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(prewarmTarget)}" title="${escapeAttr("5-hour quota pre-warm: starts 5h recharge timer with >99.9% capacity retained")}"><span class="text-full">⚡ Pre-warm</span><span class="text-medium">⚡ Pre-warm</span><span class="text-short">⚡ Pre</span></button>`
     : "";
 
   return `

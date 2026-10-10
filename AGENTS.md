@@ -1,6 +1,7 @@
 # Integrated Power implementation contract
 
-This repository follows `docs/reference/multi-ai-broker.ko.md` and the
+This repository follows `docs/reference/multi-ai-broker.ko.md`,
+`docs/reference/compact-ui-overflow-prevention.ko.md`, and the
 Integrated Power plan. Before changing code, the implementation agent must
 read that plan, this file, the relevant skill and references, the existing
 VSIX scripts/configuration/tests, package manifests/lockfiles, and the dirty
@@ -26,3 +27,8 @@ overage, model download, and server restart require user approval.
 
 CI must fail when a reuse map is missing, a duplicate selector/transport/
 executable finder is added, or dynamic `innerHTML` is introduced.
+
+All webview and sidebar UI changes must follow `docs/reference/compact-ui-overflow-prevention.ko.md`
+without exception: all controls must render cleanly under narrow widths (< 200px)
+with zero horizontal overflow, no breaking multi-line labels, and mandatory
+`test-compact-ui.js` regression verification.

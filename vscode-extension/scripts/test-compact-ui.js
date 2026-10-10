@@ -95,6 +95,19 @@ try {
   webviewSandbox.window.IPQuota = webviewSandbox.IPQuota;
   vm.runInContext(mainJsCode, webviewSandbox);
 
+  const getPrewarmTarget = webviewSandbox.getPrewarmTargetForGroup;
+  assert(typeof getPrewarmTarget === "function", "getPrewarmTargetForGroup must be a function");
+  assert(getPrewarmTarget("Gemini") === "antigravity", "Gemini must map to antigravity target");
+  assert(getPrewarmTarget("Claude") === "opus", "Claude must map to opus target");
+  assert(getPrewarmTarget("ChatGPT") === "codex", "ChatGPT must map to codex target");
+  assert(getPrewarmTarget("Claude (API & CLI)") === undefined, "Claude (API & CLI) must NOT have prewarm target");
+  assert(getPrewarmTarget("GPU 0: RTX 3090") === undefined, "GPU groups must NOT have prewarm target");
+  assert(getPrewarmTarget("GPU Offline") === undefined, "GPU Offline group must NOT have prewarm target");
+
+  const rendered = webviewSandbox.renderPrewarmInlineControl("antigravity", "Gemini");
+  assert(!rendered.includes("prewarm-inline-label"), "renderPrewarmInlineControl must not contain overflowing prewarm-inline-label");
+  assert(rendered.includes("Clk") && rendered.includes("1x") && rendered.includes("Alw"), "renderPrewarmInlineControl must include responsive short labels");
+
   console.log("compact UI regression passed");
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

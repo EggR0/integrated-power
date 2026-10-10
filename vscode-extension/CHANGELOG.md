@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.8] - 2026-10-10
+
+### Fixed & Enhanced
+
+- **Compact Sidebar Overflow Prevention & Multi-Line Label Elimination**:
+  - Removed overflowing multi-line text label (`⚡ Pre-warm:`) from model section headers, replacing it with an ultra-compact icon and responsive segmented button controls.
+  - Implemented 3-stage responsive text tokens (`.text-full`, `.text-medium`, `.text-short`: `Click`/`Once`/`Always` -> `Clk`/`1x`/`Alw`) to ensure zero horizontal clipping even on narrow sidebars (< 160px).
+  - Fixed false-positive pre-warm target mapping so non-rolling windows (such as `Claude (API & CLI)` and GPU monitors) never display irrelevant pre-warm controls.
+  - Added repository guideline in `AGENTS.md` and detailed reference in `docs/reference/compact-ui-overflow-prevention.ko.md` with automated regression tests in `scripts/test-compact-ui.js`.
+
 ## [0.9.7] - 2026-10-10
 
 ### Fixed & Enhanced
