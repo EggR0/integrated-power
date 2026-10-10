@@ -259,6 +259,7 @@ GPU driver, 모델, 서비스 포트, Git 인증과 API 자격 증명은 묵시�
 ```text
 %LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd
 ```
+별도 프로그램인 `%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe`는 확장 설치 대상이 아니며, 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
 
 #### 로그인 또는 인증 문제
 Antigravity IDE, Codex, Agy와 Git 인증은 각 제품이 소유한다. Integrated Power는 사용자 계정을 삭제하거나 로그인 상태를 복구하지 않는다. 확장 활성화 오류와 인증 오류를 같은 원인으로 단정하지 말고 제품별 로그를 분리해 확인한다. Agy 사용량이 표시되지 않으면 Agy TUI에서 로그인을 확인하고 `/usage`가 동작하는지 먼저 확인한다.
