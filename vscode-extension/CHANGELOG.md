@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.16] - 2026-10-11
+
+### Fixed & Enhanced
+
+- **ChatGPT Desktop 100% / 100% Quota Synchronization**:
+  - Resolved discrepancy between official ChatGPT desktop application (5h 100%, 1w 100%) and stale CLI session files from previous days (>12h old) by rolling over to 100% weekly quota with current 7-day cycle reset (`codexWeeklyPercentage = 100`, `codexWeeklyResetTime = 10/18`).
+  - Eliminated zombie past timestamp resurrection (`resetsAt * 1000 <= Date.now()`) across `DashboardController.mergeTokenStatus` and `TokenManager.withFallbackQuota` via `sanitizeResetTime`.
+- **100% Ready Window State Guaranteed**:
+  - In `shared/quota/metric.ts`, 5-hour windows with 100% capacity (`>= 99.95%`) now strictly prioritize `· Ready` and `⚡ Pre-warm` without being overridden by synthetic dummy API timestamps or expired countdown strings.
+  - Gemini actively consumed quota (~73%) smoothly counts down live every 10 seconds.
+- **Antigravity IDE & Live Provider Integrity**:
+  - Verified `AgyQuotaClient` conducts direct, real-time live HTTPS requests against Google Cloud Code API with zero stale disk caching.
+  - Cleaned persistent disk cache in `dashboard-state.json`.
+
 ## [0.9.15] - 2026-10-11
 
 ### Fixed & Enhanced

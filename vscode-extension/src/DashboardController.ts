@@ -456,6 +456,22 @@ export class DashboardController implements vscode.Disposable {
     }
   }
 
+  private sanitizeResetTime(
+    resetTime: string | undefined,
+    percentage: number | undefined,
+    is5Hour: boolean,
+  ): string | undefined {
+    if (!resetTime) return undefined;
+    const time = new Date(resetTime).getTime();
+    if (!Number.isFinite(time) || time <= Date.now()) {
+      return undefined;
+    }
+    if (is5Hour && typeof percentage === "number" && percentage >= 99.95) {
+      return undefined;
+    }
+    return resetTime;
+  }
+
   private mergeTokenStatus(
     previous: TokenStatus | undefined,
     current: TokenStatus | undefined,
@@ -463,40 +479,70 @@ export class DashboardController implements vscode.Disposable {
     if (!previous) return current;
     if (!current) return previous;
 
+    const antigravityPct = current.antigravityPercentage ?? previous.antigravityPercentage;
+    const antigravityReset = current.antigravityPercentage !== undefined
+      ? this.sanitizeResetTime(current.antigravityResetTime, antigravityPct, true)
+      : this.sanitizeResetTime(current.antigravityResetTime ?? previous.antigravityResetTime, antigravityPct, true);
+
+    const antigravityWeeklyPct = current.antigravityWeeklyPercentage ?? previous.antigravityWeeklyPercentage;
+    const antigravityWeeklyReset = current.antigravityWeeklyPercentage !== undefined
+      ? this.sanitizeResetTime(current.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
+      : this.sanitizeResetTime(current.antigravityWeeklyResetTime ?? previous.antigravityWeeklyResetTime, antigravityWeeklyPct, false);
+
+    const opusPct = current.opusPercentage ?? previous.opusPercentage;
+    const opusReset = current.opusPercentage !== undefined
+      ? this.sanitizeResetTime(current.opusResetTime, opusPct, true)
+      : this.sanitizeResetTime(current.opusResetTime ?? previous.opusResetTime, opusPct, true);
+
+    const opusWeeklyPct = current.opusWeeklyPercentage ?? previous.opusWeeklyPercentage;
+    const opusWeeklyReset = current.opusWeeklyPercentage !== undefined
+      ? this.sanitizeResetTime(current.opusWeeklyResetTime, opusWeeklyPct, false)
+      : this.sanitizeResetTime(current.opusWeeklyResetTime ?? previous.opusWeeklyResetTime, opusWeeklyPct, false);
+
+    const codexPct = current.codexPercentage ?? previous.codexPercentage;
+    const codexReset = current.codexPercentage !== undefined
+      ? this.sanitizeResetTime(current.codexResetTime, codexPct, true)
+      : this.sanitizeResetTime(current.codexResetTime ?? previous.codexResetTime, codexPct, true);
+
+    const codexWeeklyPct = current.codexWeeklyPercentage ?? previous.codexWeeklyPercentage;
+    const codexWeeklyReset = current.codexWeeklyPercentage !== undefined
+      ? this.sanitizeResetTime(current.codexWeeklyResetTime, codexWeeklyPct, false)
+      : this.sanitizeResetTime(current.codexWeeklyResetTime ?? previous.codexWeeklyResetTime, codexWeeklyPct, false);
+
     return {
       ...previous,
       ...current,
-      antigravityPercentage: current.antigravityPercentage ?? previous.antigravityPercentage,
-      antigravityResetTime: current.antigravityResetTime ?? previous.antigravityResetTime,
+      antigravityPercentage: antigravityPct,
+      antigravityResetTime: antigravityReset,
       antigravityEstimatedAbsolute: current.antigravityEstimatedAbsolute ?? previous.antigravityEstimatedAbsolute,
       antigravityTokensLeft: current.antigravityTokensLeft || previous.antigravityTokensLeft,
       antigravityMax: current.antigravityMax || previous.antigravityMax,
 
-      antigravityWeeklyPercentage: current.antigravityWeeklyPercentage ?? previous.antigravityWeeklyPercentage,
-      antigravityWeeklyResetTime: current.antigravityWeeklyResetTime ?? previous.antigravityWeeklyResetTime,
+      antigravityWeeklyPercentage: antigravityWeeklyPct,
+      antigravityWeeklyResetTime: antigravityWeeklyReset,
       antigravityWeeklyTokensLeft: current.antigravityWeeklyTokensLeft || previous.antigravityWeeklyTokensLeft,
       antigravityWeeklyMax: current.antigravityWeeklyMax || previous.antigravityWeeklyMax,
 
-      opusPercentage: current.opusPercentage ?? previous.opusPercentage,
-      opusResetTime: current.opusResetTime ?? previous.opusResetTime,
+      opusPercentage: opusPct,
+      opusResetTime: opusReset,
       opusEstimatedAbsolute: current.opusEstimatedAbsolute ?? previous.opusEstimatedAbsolute,
       opusTokensLeft: current.opusTokensLeft || previous.opusTokensLeft,
       opusMax: current.opusMax || previous.opusMax,
 
-      opusWeeklyPercentage: current.opusWeeklyPercentage ?? previous.opusWeeklyPercentage,
-      opusWeeklyResetTime: current.opusWeeklyResetTime ?? previous.opusWeeklyResetTime,
+      opusWeeklyPercentage: opusWeeklyPct,
+      opusWeeklyResetTime: opusWeeklyReset,
       opusWeeklyEstimatedAbsolute: current.opusWeeklyEstimatedAbsolute ?? previous.opusWeeklyEstimatedAbsolute,
       opusWeeklyTokensLeft: current.opusWeeklyTokensLeft || previous.opusWeeklyTokensLeft,
       opusWeeklyMax: current.opusWeeklyMax || previous.opusWeeklyMax,
 
-      codexPercentage: current.codexPercentage ?? previous.codexPercentage,
-      codexResetTime: current.codexResetTime ?? previous.codexResetTime,
+      codexPercentage: codexPct,
+      codexResetTime: codexReset,
       codexEstimatedAbsolute: current.codexEstimatedAbsolute ?? previous.codexEstimatedAbsolute,
       codexTokensLeft: current.codexTokensLeft || previous.codexTokensLeft,
       codexMax: current.codexMax || previous.codexMax,
 
-      codexWeeklyPercentage: current.codexWeeklyPercentage ?? previous.codexWeeklyPercentage,
-      codexWeeklyResetTime: current.codexWeeklyResetTime ?? previous.codexWeeklyResetTime,
+      codexWeeklyPercentage: codexWeeklyPct,
+      codexWeeklyResetTime: codexWeeklyReset,
       codexWeeklyEstimatedAbsolute: current.codexWeeklyEstimatedAbsolute ?? previous.codexWeeklyEstimatedAbsolute,
       codexWeeklyTokensLeft: current.codexWeeklyTokensLeft || previous.codexWeeklyTokensLeft,
       codexWeeklyMax: current.codexWeeklyMax || previous.codexWeeklyMax,

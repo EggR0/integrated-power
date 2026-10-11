@@ -577,26 +577,61 @@ export class TokenManager {
     }
   }
 
+  private sanitizeResetTime(
+    resetTime: string | undefined,
+    percentage: number | undefined,
+    is5Hour: boolean,
+  ): string | undefined {
+    if (!resetTime) return undefined;
+    const time = new Date(resetTime).getTime();
+    if (!Number.isFinite(time) || time <= Date.now()) {
+      return undefined;
+    }
+    if (is5Hour && typeof percentage === "number" && percentage >= 99.95) {
+      return undefined;
+    }
+    return resetTime;
+  }
+
   private withFallbackQuota(fetched: QuotaData, fallback: QuotaData): QuotaData {
+    const antigravityPct = fetched.antigravityPercentage ?? fallback.antigravityPercentage;
+    const antigravityWeeklyPct = fetched.antigravityWeeklyPercentage ?? fallback.antigravityWeeklyPercentage;
+    const opusPct = fetched.opusPercentage ?? fallback.opusPercentage;
+    const opusWeeklyPct = fetched.opusWeeklyPercentage ?? fallback.opusWeeklyPercentage;
+    const codexPct = fetched.codexPercentage ?? fallback.codexPercentage;
+    const codexWeeklyPct = fetched.codexWeeklyPercentage ?? fallback.codexWeeklyPercentage;
+
     return {
       quotaPools: fetched.quotaPools ?? fallback.quotaPools,
       localComputeStatus: fetched.localComputeStatus ?? fallback.localComputeStatus,
       claudeDirectUsage: fetched.claudeDirectUsage ?? fallback.claudeDirectUsage,
-      antigravityPercentage: fetched.antigravityPercentage ?? fallback.antigravityPercentage,
-      antigravityResetTime: fetched.antigravityResetTime ?? fallback.antigravityResetTime,
-      antigravityWeeklyPercentage: fetched.antigravityWeeklyPercentage ?? fallback.antigravityWeeklyPercentage,
-      antigravityWeeklyResetTime: fetched.antigravityWeeklyResetTime ?? fallback.antigravityWeeklyResetTime,
+      antigravityPercentage: antigravityPct,
+      antigravityResetTime: fetched.antigravityPercentage !== undefined
+        ? this.sanitizeResetTime(fetched.antigravityResetTime, antigravityPct, true)
+        : this.sanitizeResetTime(fetched.antigravityResetTime ?? fallback.antigravityResetTime, antigravityPct, true),
+      antigravityWeeklyPercentage: antigravityWeeklyPct,
+      antigravityWeeklyResetTime: fetched.antigravityWeeklyPercentage !== undefined
+        ? this.sanitizeResetTime(fetched.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
+        : this.sanitizeResetTime(fetched.antigravityWeeklyResetTime ?? fallback.antigravityWeeklyResetTime, antigravityWeeklyPct, false),
       antigravityEstimatedAbsolute: fetched.antigravityEstimatedAbsolute ?? fallback.antigravityEstimatedAbsolute,
-      opusPercentage: fetched.opusPercentage ?? fallback.opusPercentage,
-      opusResetTime: fetched.opusResetTime ?? fallback.opusResetTime,
+      opusPercentage: opusPct,
+      opusResetTime: fetched.opusPercentage !== undefined
+        ? this.sanitizeResetTime(fetched.opusResetTime, opusPct, true)
+        : this.sanitizeResetTime(fetched.opusResetTime ?? fallback.opusResetTime, opusPct, true),
       opusEstimatedAbsolute: fetched.opusEstimatedAbsolute ?? fallback.opusEstimatedAbsolute,
-      opusWeeklyPercentage: fetched.opusWeeklyPercentage ?? fallback.opusWeeklyPercentage,
-      opusWeeklyResetTime: fetched.opusWeeklyResetTime ?? fallback.opusWeeklyResetTime,
+      opusWeeklyPercentage: opusWeeklyPct,
+      opusWeeklyResetTime: fetched.opusWeeklyPercentage !== undefined
+        ? this.sanitizeResetTime(fetched.opusWeeklyResetTime, opusWeeklyPct, false)
+        : this.sanitizeResetTime(fetched.opusWeeklyResetTime ?? fallback.opusWeeklyResetTime, opusWeeklyPct, false),
       opusWeeklyEstimatedAbsolute: fetched.opusWeeklyEstimatedAbsolute ?? fallback.opusWeeklyEstimatedAbsolute,
-      codexPercentage: fetched.codexPercentage ?? fallback.codexPercentage,
-      codexResetTime: fetched.codexResetTime ?? fallback.codexResetTime,
-      codexWeeklyPercentage: fetched.codexWeeklyPercentage ?? fallback.codexWeeklyPercentage,
-      codexWeeklyResetTime: fetched.codexWeeklyResetTime ?? fallback.codexWeeklyResetTime,
+      codexPercentage: codexPct,
+      codexResetTime: fetched.codexPercentage !== undefined
+        ? this.sanitizeResetTime(fetched.codexResetTime, codexPct, true)
+        : this.sanitizeResetTime(fetched.codexResetTime ?? fallback.codexResetTime, codexPct, true),
+      codexWeeklyPercentage: codexWeeklyPct,
+      codexWeeklyResetTime: fetched.codexWeeklyPercentage !== undefined
+        ? this.sanitizeResetTime(fetched.codexWeeklyResetTime, codexWeeklyPct, false)
+        : this.sanitizeResetTime(fetched.codexWeeklyResetTime ?? fallback.codexWeeklyResetTime, codexWeeklyPct, false),
       codexEstimatedAbsolute: fetched.codexEstimatedAbsolute ?? fallback.codexEstimatedAbsolute,
       codexWeeklyEstimatedAbsolute: fetched.codexWeeklyEstimatedAbsolute ?? fallback.codexWeeklyEstimatedAbsolute,
       errors: fetched.errors,
@@ -1415,7 +1450,7 @@ export class TokenManager {
 
         try {
           const event = JSON.parse(line) as JsonObject;
-          const quota = this.codexQuotaFromEvent(event);
+          const quota = this.codexQuotaFromEvent(event, file.mtimeMs);
           if (quota && (quota.codexPercentage !== undefined || quota.codexWeeklyPercentage !== undefined)) {
             return quota;
           }
@@ -1430,6 +1465,7 @@ export class TokenManager {
 
   private codexQuotaFromEvent(
     event: JsonObject,
+    fileMtimeMs?: number,
   ):
     | Pick<
         QuotaData,
@@ -1465,12 +1501,28 @@ export class TokenManager {
     const fiveHourQuota = this.codexWindowQuota(fiveHour);
     const weeklyQuota = this.codexWindowQuota(weekly);
 
+    let codexWeeklyPercentage = weeklyQuota.percentage;
+    let codexWeeklyResetTime = weeklyQuota.resetTime;
+
+    // Freshness check: if the last session was from a prior day (>12h ago)
+    // and the 5-hour quota has fully refilled to 100%, the stale session's
+    // partial weekly count no longer applies to the new active cycle.
+    const isStaleSession = typeof fileMtimeMs === "number" && (Date.now() - fileMtimeMs) > 12 * 3600 * 1000;
+    if (isStaleSession && fiveHourQuota.percentage === 100) {
+      codexWeeklyPercentage = 100;
+      const targetWeeklyEpoch = Math.max(
+        weeklyQuota.resetTime ? new Date(weeklyQuota.resetTime).getTime() : 0,
+        Date.now() + 7 * 24 * 3600 * 1000
+      );
+      codexWeeklyResetTime = new Date(targetWeeklyEpoch).toISOString();
+    }
+
     return {
       codexPercentage: fiveHourQuota.percentage,
       codexResetTime: fiveHourQuota.resetTime,
       codexEstimatedAbsolute: fiveHourQuota.estimatedAbsolute,
-      codexWeeklyPercentage: weeklyQuota.percentage,
-      codexWeeklyResetTime: weeklyQuota.resetTime,
+      codexWeeklyPercentage,
+      codexWeeklyResetTime,
       codexWeeklyEstimatedAbsolute: weeklyQuota.estimatedAbsolute,
     };
   }

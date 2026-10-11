@@ -474,32 +474,30 @@ var IPQuota = (() => {
         effectiveResetTime = pairedResetTime;
       }
     }
-    const countdown = formatRefreshCountdown(effectiveResetTime);
     const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== void 0) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+    const countdown = is5HourReady ? void 0 : formatRefreshCountdown(effectiveResetTime);
     let refreshFull = "";
     let refreshMedium = "";
     let refreshShort = "";
     let canPrewarm = false;
     let isReady = false;
-    if (countdown) {
-      refreshFull = countdown.full;
-      refreshMedium = countdown.medium || countdown.short;
-      refreshShort = countdown.short;
-    } else if (is5HourReady) {
+    if (is5HourReady) {
       refreshFull = "\xB7 Ready";
       refreshMedium = "\xB7 Ready";
       refreshShort = "\xB7 Ready";
-    }
-    if (is5HourReady) {
       canPrewarm = true;
       isReady = true;
+    } else if (countdown) {
+      refreshFull = countdown.full;
+      refreshMedium = countdown.medium || countdown.short;
+      refreshShort = countdown.short;
     }
     let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     if (isWeeklyExhausted) {
       tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` \xB7 ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
     } else if (isWeeklyCapped) {
       tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
-    } else if (is5HourReady && !countdown) {
+    } else if (is5HourReady) {
       tooltip = `${ariaLabel || label}: ${subtextFull} (Ready \xB7 Timer starts on first request). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     }
     const labelFull = label;

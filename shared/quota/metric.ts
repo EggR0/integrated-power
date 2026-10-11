@@ -182,27 +182,24 @@ export function buildTokenMetric(
     }
   }
 
-  const countdown = formatRefreshCountdown(effectiveResetTime);
   const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+  const countdown = is5HourReady ? undefined : formatRefreshCountdown(effectiveResetTime);
   let refreshFull = "";
   let refreshMedium = "";
   let refreshShort = "";
   let canPrewarm = false;
   let isReady = false;
 
-  if (countdown) {
-    refreshFull = countdown.full;
-    refreshMedium = countdown.medium || countdown.short;
-    refreshShort = countdown.short;
-  } else if (is5HourReady) {
+  if (is5HourReady) {
     refreshFull = "· Ready";
     refreshMedium = "· Ready";
     refreshShort = "· Ready";
-  }
-
-  if (is5HourReady) {
     canPrewarm = true;
     isReady = true;
+  } else if (countdown) {
+    refreshFull = countdown.full;
+    refreshMedium = countdown.medium || countdown.short;
+    refreshShort = countdown.short;
   }
 
   let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
@@ -210,7 +207,7 @@ export function buildTokenMetric(
     tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` · ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
   } else if (isWeeklyCapped) {
     tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
-  } else if (is5HourReady && !countdown) {
+  } else if (is5HourReady) {
     tooltip = `${ariaLabel || label}: ${subtextFull} (Ready · Timer starts on first request). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   }
 
