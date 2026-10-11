@@ -1574,7 +1574,7 @@ export class TokenManager {
     depth: number,
     files: JsonlFileStat[],
   ): Promise<void> {
-    if (depth > MAX_SESSION_SCAN_DEPTH || files.length >= MAX_SESSION_FILES) {
+    if (depth > MAX_SESSION_SCAN_DEPTH) {
       return;
     }
 
@@ -1601,32 +1601,21 @@ export class TokenManager {
     );
 
     const existing = inspected.filter((entry): entry is { entry: fs.Dirent; fullPath: string; stat: fs.Stats } => Boolean(entry));
-    const jsonlFiles = existing
-      .filter(({ entry }) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
-
-    for (const file of jsonlFiles) {
-      if (files.length >= MAX_SESSION_FILES) {
-        return;
+    for (const item of existing) {
+      if (item.entry.isFile() && item.entry.name.endsWith(".jsonl")) {
+        files.push({ fullPath: item.fullPath, mtimeMs: item.stat.mtimeMs });
       }
-
-      files.push({ fullPath: file.fullPath, mtimeMs: file.stat.mtimeMs });
     }
 
     const directories = existing
       .filter(({ entry }) => entry.isDirectory())
       .sort((a, b) => {
-        // Prioritize lexical descending (e.g. "2026" > "2025", "08" > "07", "17" > "16")
         const nameCmp = b.entry.name.localeCompare(a.entry.name, undefined, { numeric: true });
         if (nameCmp !== 0) return nameCmp;
         return b.stat.mtimeMs - a.stat.mtimeMs;
       });
 
     for (const child of directories) {
-      if (files.length >= MAX_SESSION_FILES) {
-        return;
-      }
-
       await this.collectJsonlFiles(child.fullPath, depth + 1, files);
     }
   }

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.18] - 2026-10-11
+
+### Fixed & Enhanced
+
+- **Codex / ChatGPT Active Session Deep Tree Scanning**:
+  - Fixed premature 80-file search truncation in `TokenManager.collectJsonlFiles`: sessions directory traversal now scans all date subfolders instead of halting upon reaching 80 files in the first directory visited.
+  - When sessions are resumed across days, active threads in prior folders (e.g. `2026/09/10/rollout-...`) are now correctly discovered and ranked first by `mtimeMs`.
+  - Accurately synchronizes ChatGPT official desktop app live usage (`5H 87%` reset at 19:14, `Weekly 98%` reset on Oct 18) instead of falling back to expired past sessions.
+  - Added recursive directory walking to `tokenScanner.scanCodexQuota`.
+
 ## [0.9.17] - 2026-10-11
 
 ### Fixed & Enhanced

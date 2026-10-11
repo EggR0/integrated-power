@@ -150,6 +150,25 @@ export async function scanGpuMetrics(): Promise<GpuStatus[]> {
   });
 }
 
+function collectAllJsonlSync(dir: string, depth = 0): { fullPath: string; mtimeMs: number }[] {
+  if (depth > 5 || !fs.existsSync(dir)) return [];
+  const results: { fullPath: string; mtimeMs: number }[] = [];
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        results.push(...collectAllJsonlSync(full, depth + 1));
+      } else if (e.isFile() && e.name.endsWith(".jsonl")) {
+        try {
+          results.push({ fullPath: full, mtimeMs: fs.statSync(full).mtimeMs });
+        } catch {}
+      }
+    }
+  } catch {}
+  return results;
+}
+
 export async function scanCodexQuota(): Promise<{
   codexPercentage?: number;
   codexResetTime?: string;
@@ -160,12 +179,7 @@ export async function scanCodexQuota(): Promise<{
     const sessionsDir = path.join(os.homedir(), ".codex", "sessions");
     if (!fs.existsSync(sessionsDir)) return {};
 
-    const files = fs.readdirSync(sessionsDir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .map((name) => {
-        const fullPath = path.join(sessionsDir, name);
-        return { fullPath, mtimeMs: fs.statSync(fullPath).mtimeMs };
-      })
+    const files = collectAllJsonlSync(sessionsDir)
       .sort((a, b) => b.mtimeMs - a.mtimeMs)
       .slice(0, 10);
 
