@@ -1384,6 +1384,7 @@ function initialize() {
 
   render();
   postCommand("ready");
+  setInterval(render, 10000);
 }
 
 if (document.readyState === "loading") {

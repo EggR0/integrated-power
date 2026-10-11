@@ -34,6 +34,7 @@ export class AgyNotAuthenticatedError extends Error {
 }
 
 export class AgyQuotaClient {
+  private static inMemoryCachedToken?: QuotaToken;
   private extensionPath: string;
 
   constructor(extensionPath: string = __dirname) {
@@ -180,10 +181,20 @@ export class AgyQuotaClient {
 
   public async fetchQuota(cachedToken?: any): Promise<QuotaResult> {
     const agyPath = this.findAgy();
-    const credential = await this.readCredential();
-    let token = this.tokenIsValid(cachedToken) ? cachedToken : credential.token;
-    if (!this.tokenIsValid(token)) {
-      token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
+    let token = this.tokenIsValid(cachedToken)
+      ? cachedToken
+      : this.tokenIsValid(AgyQuotaClient.inMemoryCachedToken)
+      ? AgyQuotaClient.inMemoryCachedToken
+      : undefined;
+
+    if (!token) {
+      const credential = await this.readCredential();
+      if (this.tokenIsValid(credential.token)) {
+        token = credential.token;
+      } else {
+        token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
+      }
+      AgyQuotaClient.inMemoryCachedToken = token;
     }
 
     const version = await this.agyVersion(agyPath);
@@ -195,11 +206,19 @@ export class AgyQuotaClient {
       'User-Agent': userAgent,
     };
 
-    const account = await this.requestJson(`${API_BASE}:loadCodeAssist`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
-    });
+    let account: any;
+    try {
+      account = await this.requestJson(`${API_BASE}:loadCodeAssist`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
+      });
+    } catch (err: any) {
+      if (String(err?.message || "").includes("401")) {
+        AgyQuotaClient.inMemoryCachedToken = undefined;
+      }
+      throw err;
+    }
     if (!account.cloudaicompanionProject) {
       throw new Error('Cloud Code did not return a quota project.');
     }

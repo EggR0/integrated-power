@@ -103,6 +103,7 @@ interface StatusOptions {
 }
 
 export class TokenManager {
+  private readonly agyQuotaClient = new AgyQuotaClient(path.join(__dirname, ".."));
   private quotaCache?: { lastFetchTime: number; data: QuotaData };
   private fetchPromise?: Promise<QuotaData>;
   private hasShownAgyMissingPrompt = false;
@@ -1505,7 +1506,7 @@ export class TokenManager {
 
     return {
       percentage,
-      resetTime: resetsAt !== undefined ? new Date(resetsAt * 1000).toISOString() : undefined,
+      resetTime: (!isReset && resetsAt !== undefined) ? new Date(resetsAt * 1000).toISOString() : undefined,
       estimatedAbsolute: remaining ?? (max !== undefined && used !== undefined ? Math.max(0, max - used) : undefined),
     };
   }
@@ -1614,8 +1615,7 @@ export class TokenManager {
     let opusWeeklyResetTime: string | undefined;
 
     try {
-      const client = new AgyQuotaClient(path.join(__dirname, ".."));
-      const result = await client.fetchQuota();
+      const result = await this.agyQuotaClient.fetchQuota();
 
       if (Array.isArray(result.quota?.groups)) {
         for (const group of result.quota.groups) {
@@ -1626,7 +1626,7 @@ export class TokenManager {
               const percentage = typeof bucket.remainingFraction === "number" ? bucket.remainingFraction * 100 : undefined;
               if (window === "5h") {
                 antigravityPercentage = percentage;
-                antigravityResetTime = bucket.resetTime;
+                antigravityResetTime = (percentage !== undefined && percentage < 99.95) ? bucket.resetTime : undefined;
               } else if (window === "weekly" || window === "7d") {
                 antigravityWeeklyPercentage = percentage;
                 antigravityWeeklyResetTime = bucket.resetTime;
@@ -1638,7 +1638,7 @@ export class TokenManager {
               const percentage = typeof bucket.remainingFraction === "number" ? bucket.remainingFraction * 100 : undefined;
               if (window === "5h") {
                 opusPercentage = percentage;
-                opusResetTime = bucket.resetTime;
+                opusResetTime = (percentage !== undefined && percentage < 99.95) ? bucket.resetTime : undefined;
               } else if (window === "weekly" || window === "7d") {
                 opusWeeklyPercentage = percentage;
                 opusWeeklyResetTime = bucket.resetTime;

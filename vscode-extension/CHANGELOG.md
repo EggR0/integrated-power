@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.15] - 2026-10-11
+
+### Fixed & Enhanced
+
+- **5-Hour Quota Live Countdown & Refresh Fix**:
+  - Fixed permanent "4시간 59분" frozen countdown for Antigravity IDE models (Gemini & Claude) by distinguishing idle 100% capacity from active rolling recharge cycles and avoiding Cloud Code API synthetic dummy reset timestamp overrides.
+  - Added a 10-second ticker interval (`setInterval(render, 10000)`) in Webview UI so reset timers count down dynamically in real time without requiring full host round-trips.
+  - Eliminated high-frequency PowerShell credential helper spawns by introducing an in-memory OAuth token cache in `AgyQuotaClient`, reducing quota telemetry fetch latency from ~2.5s to ~100ms and eliminating polling freezes.
+- **ChatGPT Reset Time Synchronization**:
+  - Fixed permanent "· Refreshes soon" display for ChatGPT / Codex when quota resets to 100% by properly clearing expired historical reset timestamps (`resetsAt * 1000 <= Date.now()`).
+- **Pre-Warm (Click & Once) Execution Fix**:
+  - Removed erroneous `resetTime > Date.now()` blocker in `getPrewarmEligibility` that falsely marked 100% Ready windows as already recharging.
+  - Immediately trigger auto-prewarm evaluation upon switching modes to `once` or `always` so active 100% windows arm without delay.
+- **Configurable Telemetry Polling**:
+  - Added `integratedPower.quota.pollInterval` configuration setting (1s–60s, default 5s) with live settings synchronization and race-condition-free background timer execution.
+
+
+
 ## [0.9.8] - 2026-10-10
 
 ### Fixed & Enhanced

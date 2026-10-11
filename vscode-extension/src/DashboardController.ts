@@ -62,6 +62,9 @@ export class DashboardController implements vscode.Disposable {
           this.state.prewarmMode = this.currentPrewarmMode;
           this.state.prewarmModes = { ...newModes };
           this.postState();
+          if (e.affectsConfiguration("integratedPower.quota.pollInterval")) {
+            this.restartTokenPolling();
+          }
         }
       })
     );
@@ -234,35 +237,35 @@ export class DashboardController implements vscode.Disposable {
     this.startTokenPolling();
   }
 
+  private getPollIntervalMs(): number {
+    const config = vscode.workspace.getConfiguration("integratedPower.quota");
+    const seconds = config.get<number>("pollInterval", 5);
+    const ms = typeof seconds === "number" ? seconds * 1000 : 5000;
+    return Math.min(Math.max(Math.round(ms), 1000), 60000);
+  }
+
+  private restartTokenPolling(): void {
+    this.stopTokenPolling(false);
+    this.startTokenPolling();
+  }
+
   private startTokenPolling(): void {
     if (this.tokenPollingTimer) {
       return;
     }
 
+    const interval = this.getPollIntervalMs();
     this.tokenPollingTimer = setInterval(async () => {
       if (this.isRefreshing) {
         return;
       }
-      const pollGeneration = this.tokenRefreshGeneration;
-      void this.refreshTokenStatus(pollGeneration, false);
+      const pollGeneration = ++this.tokenRefreshGeneration;
       try {
-        const nextState = await this.readDashboardState();
-        if (pollGeneration !== this.tokenRefreshGeneration) {
-          return;
-        }
-        this.state = {
-          ...nextState,
-          tokenStatus: this.mergeTokenStatus(this.state.tokenStatus, nextState.tokenStatus),
-          isLoading: false,
-          isTokenLoading: false,
-          updatedAt: new Date().toISOString(),
-        };
-        this.postState();
-        void this.checkAutoPrewarm(this.state.tokenStatus);
+        await this.refreshTokenStatus(pollGeneration, false);
       } catch {
         // Silent periodic background refresh
       }
-    }, 5000);
+    }, interval);
   }
 
   private stopTokenPolling(_triggerFinalRefresh: boolean): void {
@@ -789,14 +792,7 @@ export class DashboardController implements vscode.Disposable {
       return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, label };
     }
 
-    // If 5-hour rolling recharge cycle has already been initiated and is actively counting down, skip pre-warm
-    const resetTimeStr = (status as any)[`${prefix}ResetTime`];
-    if (resetTimeStr) {
-      const resetTime = new Date(resetTimeStr).getTime();
-      if (Number.isFinite(resetTime) && resetTime > Date.now()) {
-        return { eligible: false, reason: `${label} recharge cycle is already active.`, prefix, targetModel, label };
-      }
-    }
+    // 5-hour pre-warm operates on 100% full windows (>= 99.95%)
 
     if (!isManual) {
       // Auto-prewarm cooldown (minimum 30 minutes to prevent repeated automated pings)
@@ -1071,6 +1067,10 @@ export class DashboardController implements vscode.Disposable {
       prewarmModes: { ...this.currentPrewarmModes },
     };
     this.postState();
+
+    if (validMode === "once" || validMode === "always") {
+      void this.checkAutoPrewarm(this.state.tokenStatus);
+    }
 
     try {
       const config = vscode.workspace.getConfiguration("integratedPower.quota");

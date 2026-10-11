@@ -3,7 +3,7 @@
   "publisher": "EggR0",
   "displayName": "Integrated Power",
   "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
-  "version": "0.9.14",
+  "version": "0.9.15",
   "author": {
     "name": "EggR0"
   },
@@ -184,6 +184,13 @@
           ],
           "default": "click",
           "description": "5-hour quota pre-warm automation mode for OpenAI ChatGPT / Codex."
+        },
+        "integratedPower.quota.pollInterval": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Interval in seconds to refresh AI quota telemetry (1s to 60s, default 5s)."
         }
       }
     },

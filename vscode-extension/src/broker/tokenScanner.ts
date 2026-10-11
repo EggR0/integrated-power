@@ -192,7 +192,7 @@ export async function scanCodexQuota(): Promise<{
               const resetsAt = typeof l.resets_at === "number" ? l.resets_at : undefined;
               const isReset = resetsAt && resetsAt * 1000 < Date.now();
               const pct = usedPercent !== undefined ? (isReset ? 100 : Math.max(0, Math.min(100, 100 - usedPercent))) : undefined;
-              const reset = resetsAt ? new Date(resetsAt * 1000).toISOString() : undefined;
+              const reset = (!isReset && resetsAt) ? new Date(resetsAt * 1000).toISOString() : undefined;
               return { pct, reset };
             };
 

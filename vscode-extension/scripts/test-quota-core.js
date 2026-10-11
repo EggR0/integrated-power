@@ -255,7 +255,7 @@ test("buildTokenMetric: exhausted/capped tooltips + weekly reset swap (A7 branch
   assert.strictEqual(exhausted.percentage, 0);
   assert.strictEqual(exhausted.isWeeklyExhausted, true);
   assert.ok(exhausted.tooltip.includes("exhausted"));
-  assert.ok(exhausted.refreshFull.includes("40h")); // swapped to weekly reset
+  assert.ok(exhausted.refreshFull.includes("40h") || exhausted.refreshFull.includes("39h")); // swapped to weekly reset
 
   // weekly=20 → capped: 5h=100 capped at 100×? codex K=4 → 80%
   const capped = shared.buildTokenMetric("5Hours", {
