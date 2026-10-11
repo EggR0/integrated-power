@@ -3,6 +3,7 @@ export interface AgyModelResolution {
   effort: string;
   family: "gemini" | "claude";
   displayName: string;
+  cliModel: string;
 }
 
 /**
@@ -17,6 +18,7 @@ export function getLowestAgyModel(family: "gemini" | "claude"): AgyModelResoluti
       effort: "low",
       family: "gemini",
       displayName: "Gemini 3.6 Flash (Low)",
+      cliModel: "Gemini 3.6 Flash (Low)",
     };
   }
 
@@ -25,5 +27,6 @@ export function getLowestAgyModel(family: "gemini" | "claude"): AgyModelResoluti
     effort: "low",
     family: "claude",
     displayName: "Claude Sonnet 5.5 (Low)",
+    cliModel: "Claude Sonnet 5.5 (Low)",
   };
 }

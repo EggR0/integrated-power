@@ -174,7 +174,7 @@ test("formatRefreshCountdown identical over fixed clock samples", () => {
   // Offsets in ms, no sub-second / exact-boundary values: the two
   // implementations are called at slightly different instants, so a
   // boundary sample could legitimately differ.
-  const samples = [-60e3, -3600e3, 30e3, 1234e3, 3690e3, 86460e3, 350000e3];
+  const samples = [-60e3, -3600e3, 30e3, 1234e3, 3690e3, 86490e3, 350000e3];
   for (const offset of samples) {
     const iso = new Date(Date.now() + offset).toISOString();
     // Compare by value: the original runs in a vm sandbox, so its objects

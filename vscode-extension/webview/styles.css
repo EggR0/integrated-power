@@ -720,6 +720,14 @@ button:focus-visible {
   transform: translateY(-0.5px);
 }
 
+.prewarm-btn:disabled,
+.prewarm-btn.loading {
+  opacity: 0.65;
+  cursor: wait;
+  pointer-events: none;
+  transform: none;
+}
+
 .capacity-metric-label,
 .reset-left,
 .reset-right {

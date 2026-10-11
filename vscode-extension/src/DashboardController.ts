@@ -479,30 +479,47 @@ export class DashboardController implements vscode.Disposable {
     if (!previous) return current;
     if (!current) return previous;
 
-    const antigravityPct = current.antigravityPercentage ?? previous.antigravityPercentage;
-    const antigravityReset = current.antigravityPercentage !== undefined
+    const isPrewarmedRecently = (prefix: string) => {
+      const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
+      return (Date.now() - lastPrewarm) < 5 * 60 * 1000;
+    };
+
+    let antigravityPct = current.antigravityPercentage ?? previous.antigravityPercentage;
+    let antigravityReset = current.antigravityPercentage !== undefined
       ? this.sanitizeResetTime(current.antigravityResetTime, antigravityPct, true)
       : this.sanitizeResetTime(current.antigravityResetTime ?? previous.antigravityResetTime, antigravityPct, true);
+    if (isPrewarmedRecently("antigravity") && (antigravityPct === undefined || antigravityPct >= 99.95) && previous.antigravityResetTime) {
+      antigravityPct = Math.min(previous.antigravityPercentage ?? 99.9, 99.9);
+      antigravityReset = previous.antigravityResetTime;
+    }
 
     const antigravityWeeklyPct = current.antigravityWeeklyPercentage ?? previous.antigravityWeeklyPercentage;
     const antigravityWeeklyReset = current.antigravityWeeklyPercentage !== undefined
       ? this.sanitizeResetTime(current.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
       : this.sanitizeResetTime(current.antigravityWeeklyResetTime ?? previous.antigravityWeeklyResetTime, antigravityWeeklyPct, false);
 
-    const opusPct = current.opusPercentage ?? previous.opusPercentage;
-    const opusReset = current.opusPercentage !== undefined
+    let opusPct = current.opusPercentage ?? previous.opusPercentage;
+    let opusReset = current.opusPercentage !== undefined
       ? this.sanitizeResetTime(current.opusResetTime, opusPct, true)
       : this.sanitizeResetTime(current.opusResetTime ?? previous.opusResetTime, opusPct, true);
+    if (isPrewarmedRecently("opus") && (opusPct === undefined || opusPct >= 99.95) && previous.opusResetTime) {
+      opusPct = Math.min(previous.opusPercentage ?? 99.9, 99.9);
+      opusReset = previous.opusResetTime;
+    }
 
     const opusWeeklyPct = current.opusWeeklyPercentage ?? previous.opusWeeklyPercentage;
     const opusWeeklyReset = current.opusWeeklyPercentage !== undefined
       ? this.sanitizeResetTime(current.opusWeeklyResetTime, opusWeeklyPct, false)
       : this.sanitizeResetTime(current.opusWeeklyResetTime ?? previous.opusWeeklyResetTime, opusWeeklyPct, false);
 
-    const codexPct = current.codexPercentage ?? previous.codexPercentage;
-    const codexReset = current.codexPercentage !== undefined
+    let codexPct = current.codexPercentage ?? previous.codexPercentage;
+    let codexReset = current.codexPercentage !== undefined
       ? this.sanitizeResetTime(current.codexResetTime, codexPct, true)
       : this.sanitizeResetTime(current.codexResetTime ?? previous.codexResetTime, codexPct, true);
+    if (isPrewarmedRecently("codex") && (codexPct === undefined || codexPct >= 99.95) && previous.codexResetTime) {
+      codexPct = Math.min(previous.codexPercentage ?? 99.9, 99.9);
+      codexReset = previous.codexResetTime;
+    }
 
     const codexWeeklyPct = current.codexWeeklyPercentage ?? previous.codexWeeklyPercentage;
     const codexWeeklyReset = current.codexWeeklyPercentage !== undefined
@@ -780,32 +797,37 @@ export class DashboardController implements vscode.Disposable {
     modelKey?: string,
     status?: TokenStatus,
     isManual = false
-  ): { eligible: boolean; reason: string; prefix: string; targetModel: string; label: string } {
+  ): { eligible: boolean; reason: string; prefix: string; targetModel: string; cliModel: string; label: string } {
     const raw = (modelKey || "antigravity").toLowerCase();
     let prefix = "antigravity";
     let weeklyPrefix = "antigravityWeekly";
-    let targetModel = getLowestAgyModel("gemini").model;
+    const agyGemini = getLowestAgyModel("gemini");
+    let targetModel = agyGemini.model;
+    let cliModel = agyGemini.displayName;
     let label = "Gemini 5Hours";
 
     if (raw.includes("opus") || raw.includes("claude")) {
       prefix = "opus";
       weeklyPrefix = "opusWeekly";
-      targetModel = getLowestAgyModel("claude").model;
+      const agyClaude = getLowestAgyModel("claude");
+      targetModel = agyClaude.model;
+      cliModel = agyClaude.displayName;
       label = "Claude 5Hours";
     } else if (raw.includes("codex") || raw.includes("chatgpt")) {
       prefix = "codex";
       weeklyPrefix = "codexWeekly";
       targetModel = getLowestCodexModel().model;
+      cliModel = targetModel;
       label = "ChatGPT 5Hours";
     }
 
     if (!status) {
-      return { eligible: false, reason: "No quota telemetry data available yet", prefix, targetModel, label };
+      return { eligible: false, reason: "No quota telemetry data available yet", prefix, targetModel, cliModel, label };
     }
 
     // Check provider online status
     if (prefix === "codex" && (status.codexStatus === "offline" || status.codexStatus === "unauthenticated")) {
-      return { eligible: false, reason: "ChatGPT / Codex provider is offline", prefix, targetModel, label };
+      return { eligible: false, reason: "ChatGPT / Codex provider is offline", prefix, targetModel, cliModel, label };
     }
 
     // Check weekly quota exhaustion
@@ -827,7 +849,7 @@ export class DashboardController implements vscode.Disposable {
     }
 
     if (isWeeklyExhausted) {
-      return { eligible: false, reason: `${label} weekly quota is exhausted (${(weeklyPct ?? 0).toFixed(1)}% remaining). All 5-hour capacity is locked.`, prefix, targetModel, label };
+      return { eligible: false, reason: `${label} weekly quota is exhausted (${(weeklyPct ?? 0).toFixed(1)}% remaining). All 5-hour capacity is locked.`, prefix, targetModel, cliModel, label };
     }
 
     // Check 5-hour percentage
@@ -835,7 +857,7 @@ export class DashboardController implements vscode.Disposable {
       ? Number((status as any)[`${prefix}Percentage`])
       : 0;
     if (fiveHPct < 99.95) {
-      return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, label };
+      return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
     }
 
     // 5-hour pre-warm operates on 100% full windows (>= 99.95%)
@@ -847,18 +869,33 @@ export class DashboardController implements vscode.Disposable {
       const COOLDOWN_MS = 30 * 60 * 1000;
       if (elapsed < COOLDOWN_MS) {
         const waitMin = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
-        return { eligible: false, reason: `${label} was pre-warmed recently. Cooldown active (${waitMin}m remaining).`, prefix, targetModel, label };
+        return { eligible: false, reason: `${label} was pre-warmed recently. Cooldown active (${waitMin}m remaining).`, prefix, targetModel, cliModel, label };
       }
     } else {
       // Manual click: debounce rapid accidental double-clicks (5 seconds)
       const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
       const elapsed = Date.now() - lastPrewarm;
       if (elapsed < 5000) {
-        return { eligible: false, reason: `${label} pre-warm was recently initiated. Please wait a few seconds.`, prefix, targetModel, label };
+        return { eligible: false, reason: `${label} pre-warm was recently initiated. Please wait a few seconds.`, prefix, targetModel, cliModel, label };
       }
     }
 
-    return { eligible: true, reason: "Ready", prefix, targetModel, label };
+    return { eligible: true, reason: "Ready", prefix, targetModel, cliModel, label };
+  }
+
+  private applyPrewarmTransition(
+    currentStatus: TokenStatus,
+    prefix: string,
+    nowMs: number = Date.now()
+  ): TokenStatus {
+    const updated = { ...currentStatus };
+    const currentPct = typeof (currentStatus as any)[`${prefix}Percentage`] === "number"
+      ? Number((currentStatus as any)[`${prefix}Percentage`])
+      : 100;
+    (updated as any)[`${prefix}Percentage`] = Math.max(0, currentPct - 0.1);
+    const resetDate = new Date(nowMs + 5 * 3600 * 1000);
+    (updated as any)[`${prefix}ResetTime`] = resetDate.toISOString();
+    return updated;
   }
 
   private async handlePrewarm(modelKey?: string, isManual = false): Promise<void> {
@@ -872,7 +909,18 @@ export class DashboardController implements vscode.Disposable {
     }
 
     this.output.appendLine(`[prewarm] 5-hour quota pre-warm approved for ${check.label} (100% Ready). Dispatching ping...`);
-    this.lastAutoPrewarmByTarget[check.prefix] = Date.now();
+    const now = Date.now();
+    this.lastAutoPrewarmByTarget[check.prefix] = now;
+
+    // Immediately apply optimistic prewarm state transition to live state & notify webview
+    if (this.state.tokenStatus) {
+      this.state = {
+        ...this.state,
+        tokenStatus: this.applyPrewarmTransition(this.state.tokenStatus, check.prefix, now),
+        updatedAt: new Date().toISOString(),
+      };
+      this.postState();
+    }
 
     if (check.prefix === "codex") {
       // Codex / ChatGPT: Use codex CLI with lowest verified model (e.g. gpt-6-luna), ephemeral flag, and instant abort
@@ -894,7 +942,7 @@ export class DashboardController implements vscode.Disposable {
                 child.kill();
               } catch {}
               finish();
-            }, 250);
+            }, 3000);
 
             const child = cp.spawn(
               codexCli,
@@ -965,9 +1013,7 @@ export class DashboardController implements vscode.Disposable {
                 "-p",
                 "1",
                 "--model",
-                check.targetModel,
-                "--effort",
-                "low",
+                check.cliModel,
                 "--disable-slash-commands",
                 "--print-timeout",
                 "1s",
@@ -990,7 +1036,7 @@ export class DashboardController implements vscode.Disposable {
             });
           });
 
-          this.output.appendLine(`[prewarm] agy minimal ping dispatched successfully (target: ${check.label}, model: ${check.targetModel})`);
+          this.output.appendLine(`[prewarm] agy minimal ping dispatched successfully (target: ${check.label}, model: ${check.cliModel})`);
         } catch (err) {
           this.output.appendLine(`[prewarm] agy execution error: ${this.errorMessage(err)}`);
         }
@@ -1019,7 +1065,7 @@ export class DashboardController implements vscode.Disposable {
 
     if (isManual) {
       void vscode.window.showInformationMessage(
-        `[Integrated Power] Instant pre-warm probe dispatched for ${check.label} (model: ${check.targetModel}). Live quota clock initiated.`
+        `[Integrated Power] Instant pre-warm probe dispatched for ${check.label} (model: ${check.cliModel}). Live quota clock initiated.`
       );
     }
   }

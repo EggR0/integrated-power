@@ -367,6 +367,9 @@ function render() {
 
       const prewarmBtn = e.target.closest("[data-prewarm]");
       if (prewarmBtn && prewarmBtn.dataset.prewarm && vscode) {
+        prewarmBtn.disabled = true;
+        prewarmBtn.classList.add("loading");
+        prewarmBtn.innerHTML = '<span class="text-full">⚡ Starting...</span><span class="text-medium">⚡ Starting...</span><span class="text-short">⚡ ...</span>';
         vscode.postMessage({ type: "prewarm", model: prewarmBtn.dataset.prewarm });
         return;
       }

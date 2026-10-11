@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.17] - 2026-10-11
+
+### Fixed & Enhanced
+
+- **Instant Pre-Warm Trigger & Live 5-Hour Countdown Activation**:
+  - Fixed prewarm button click failing to shift UI state from `· Ready` to active countdown: immediately applies optimistic prewarm transition (`applyPrewarmTransition`) to live state upon user click, dropping quota to 99.90% and starting the 5-hour recharge timer (`Refreshes in 4h 59m`).
+  - Added prewarm retention guard in `mergeTokenStatus`: preserves active prewarmed countdown and 99.90% quota during 5-second polling cycles while remote telemetry catches up, preventing background polling from instantly reverting the window back to 100% Ready.
+  - Added instant visual click feedback in Webview: `[data-prewarm]` button immediately disables and displays `⚡ Starting...` upon click.
+- **CLI Ping Invocation Fix for Antigravity & ChatGPT**:
+  - Resolved `agy.exe` model mismatch: passed exact CLI model name (`"Gemini 3.6 Flash (Low)"` / `"Claude Sonnet 5.5 (Low)"`) and eliminated `--effort low` parameter that caused `agy.exe` to error out.
+  - Extended Codex instant abort watchdog from 250ms to 3000ms so `codex exec` has sufficient time to initialize Node/CLI and dispatch the turn to OpenAI before aborting.
+
 ## [0.9.16] - 2026-10-11
 
 ### Fixed & Enhanced
