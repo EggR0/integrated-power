@@ -243,3 +243,42 @@ user approval; no installer was activated.
   match its fixed frontend/CSP endpoint, so any future native GUI test must use
   an explicitly isolated app profile or a launch-only frontend endpoint seam.
 - Parent owns final review of all worktree changes and any activation request.
+
+## 2026-10-13 0.9.22 release verification (latest)
+
+- Both Control Center workspaces now report version `0.9.22` consistently in
+  `package.json`, both npm lockfile version fields, Tauri config, Cargo.toml,
+  and the application crate entry in Cargo.lock. Their installed Tauri SDKs
+  resolve locally to API `2.11.1` and CLI `2.11.4`; no dependency install or
+  framework upgrade was run.
+- The nested Control Center NSIS build completed through the existing local
+  Tauri CLI and cached Rust dependencies. The current artifact is
+  `control-center/src-tauri/target/release/bundle/nsis/Integrated Power
+  Control Center_0.9.22_x64-setup.exe`, 35,421,614 bytes, SHA-256
+  `BE947302D579B776DEDFCC25EC5F30FCCD9819AA2AC4BB7C4698F4D868B6D882`.
+  NSIS was built without launching or installing the app. Other older MSI/NSIS
+  files in the bundle directory are historical artifacts and are not the
+  0.9.22 release target.
+- The standalone packaged broker's `index.js` and manifest were aligned to the
+  nested validated 0.9.22 broker while preserving its standalone-only packaged
+  Python asset. Both packaged runtime trees verify broker version `0.9.22`,
+  schema 2, digest `f82df3d0ea1a6d71470dca7ab4888d1606e555b232f6ff3eddc19e77b724ef86`.
+  Both desktop broker-package checks, HTTP restart continuity, MCP startup,
+  package verification, and 18-case compact UI suites pass. The UI suites cover
+  all six tabs at 199, 160, and 120 pixels with zero violations.
+- The explicit `integrated-power-0.9.22.vsix` runtime smoke passed using a mock
+  VS Code host, isolated state root, and ephemeral broker. It read settings and
+  created/read back a task. IDE compact UI, prewarm, and quota-core regressions
+  also pass. The VSIX remains unchanged at 1,037,127 bytes, SHA-256
+  `CE5DC3F94898802D38D2C1FEDA76938DDB2EDB7609CBC0CB35578A5100D3B351`.
+- The release guide now documents Windows build prerequisites, pinned Tauri
+  package versions, the bundled Node runtime, and default WebView2 bootstrapper
+  behavior. Its GitHub CLI command uses a generic release-notes filename
+  placeholder rather than the stale 0.9.5 notes path.
+- Parent's final VSIX source gates also passed: quota-core, prewarm, compact UI,
+  reuse, runtime-background-token, visual-graph-safety, headless, broker, and
+  TypeScript no-emit. These are synthetic/unit/runtime-fixture checks; they do
+  not claim live model or GPU execution.
+- No commit or push was made by the implementation agent. The live broker on
+  port 37241, installed application, and user IDE state were not accessed;
+  native GUI activation remains unverified.

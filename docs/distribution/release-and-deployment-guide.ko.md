@@ -44,15 +44,50 @@ node ./vscode-extension/scripts/run-broker-tests.js
 
 > ⚠️ **규칙**: 단 하나의 테스트라도 실패하거나 에러가 발생할 경우 릴리스를 중단하고 원인을 수정해야 합니다.
 
+### 2.3 Windows Control Center 빌드 및 설치 요구 사항 (v0.9.22)
+
+**빌드 머신**에는 Tauri v2의 Windows 요구 사항이 필요합니다. Rust stable의
+`x86_64-pc-windows-msvc` toolchain, Visual Studio C++ Build Tools의
+`Desktop development with C++` workload와 Windows SDK를 준비합니다. 프런트엔드
+빌드 스크립트 실행에는 Node.js와 npm이 필요합니다. npm lockfile 기준 버전은
+`@tauri-apps/api` 2.11.1, `@tauri-apps/cli` 2.11.4입니다. 잠금 파일을 유지하며
+의존성을 준비한 뒤 다음 명령으로 NSIS 설치 파일을 빌드합니다:
+
+```powershell
+cd "d:\Workspace\Integrated POWER\control-center"
+npm ci
+.\node_modules\.bin\tauri.cmd build --bundles nsis
+```
+
+이 릴리스는 MSI가 아닌 NSIS(`*-setup.exe`)를 검증 대상으로 사용합니다. MSI를
+추가로 빌드할 때만 Windows `VBSCRIPT` optional feature가 필요할 수 있습니다.
+Tauri는 [Windows 빌드 사전 요구 사항](https://tauri.app/start/prerequisites/)과
+[Windows installer 동작](https://v2.tauri.app/distribute/windows-installer/)을 따릅니다.
+
+**설치 사용자**는 Node.js나 Rust/C++ Build Tools를 설치할 필요가 없습니다.
+브로커 실행용 Node 런타임은 `src-tauri/resources/node-runtime.exe`로 앱에 포함됩니다.
+NSIS 설정에서 WebView2 설치 모드를 별도로 지정하지 않았으므로 Tauri 기본
+`downloadBootstrapper` 동작을 사용합니다. WebView2 Runtime이 없는 PC에서는 설치기가
+bootstrapper를 내려받기 위해 인터넷에 연결해야 합니다. Windows 10 버전 1803 이상과
+Windows 11에는 WebView2 Runtime이 포함되어 있습니다. 오프라인 배포가 필요하면
+별도 WebView2 설치 모드를 검토하고 설치 크기 및 정책을 다시 검증하십시오.
+
+기능별 외부 의존성은 앱 실행 조건과 구분합니다. Codex/Agy 기능에는 해당 CLI와
+로그인, 로컬 모델 실행에는 Ollama/vLLM, NVIDIA 측정에는 드라이버와 `nvidia-smi`가
+필요합니다. 0.9.22 IDE 확장의 대화 기록 동기화는 별도 Python 3 실행 환경을 사용하며
+현재 스크립트는 Python 표준 라이브러리만 import합니다. Python은 Windows 관제 센터의
+기본 GUI 실행 조건이 아니고 설치 파일에 내장되지 않습니다. 이 외부 도구, 모델과
+GPU 드라이버를 묵시적으로 설치하지 않습니다.
+
 ---
 
 ## 3. 버전 동기화 프로토콜 (Version Alignment Protocol)
 
-새 버전(예: `0.9.5`)으로 업데이트 시, 프로젝트 전반의 버전 표기를 누락 없이 동기화해야 합니다.
+새 버전(`0.9.22` 등)으로 업데이트 시, 프로젝트 전반의 버전 표기를 누락 없이 동기화해야 합니다.
 
 ### 동기화 대상 6대 핵심 영역
 1. **확장 프로그램 매니페스트**:
-   - `vscode-extension/package.json` → `"version": "0.9.5"`
+   - `vscode-extension/package.json` → `"version": "0.9.22"`
 2. **변경 이력 (CHANGELOG)**:
    - `vscode-extension/CHANGELOG.md` 및 `CHANGELOG.md` 상단에 새 버전 릴리스 노트를 동일하게 기재
 3. **사용자 설명서 (README)**:
@@ -61,12 +96,13 @@ node ./vscode-extension/scripts/run-broker-tests.js
      - 빠른 시작의 VSIX 다운로드 링크 및 CLI 설치 명령어
      - 하단 메타데이터 사양표의 `현재 버전` 및 공개 마켓 링크
 4. **Control Center (관제 센터)**:
-   - `control-center/package.json` → `"version": "0.9.5"`
-   - `control-center/src-tauri/tauri.conf.json` → `"version": "0.9.5"`
+   - `control-center/package.json` 및 `package-lock.json` → `"version": "0.9.22"`
+   - `control-center/src-tauri/tauri.conf.json` → `"version": "0.9.22"`
+   - `control-center/src-tauri/Cargo.toml` 및 `Cargo.lock`의 앱 패키지 버전 → `0.9.22`
    - `control-center/index.html` → 사이드바 푸터(`broker-footer`) 및 하단 상태바(`statusbar`)의 버전 표기
    - `control-center/src/main.js` → 동적 푸터 렌더링 버전 문자열
 5. **독립 관제 센터 저장소 동기화**:
-   - 변경된 `control-center` 파일들을 `d:\Workspace\integrated-power-control-center`에 복사하고 커밋/푸시
+   - desktop 구현 파일은 독립 저장소 `d:\Workspace\integrated-power-control-center`와 동기화합니다. 이 저장소의 고유 SDK 의존성은 보존하고, `package.json`, `package-lock.json`, Tauri 설정 및 Cargo 앱 패키지 버전만 같은 릴리스 버전으로 맞춥니다.
 6. **지원 문서 메타데이터**:
    - `SUPPORT.md` (기준 소스 manifest 및 검증된 VSIX 버전)
    - `docs/marketing/launch-plan.ko.md` (기준 버전 표기)
@@ -83,7 +119,7 @@ cd "d:\Workspace\Integrated POWER\vscode-extension"
 npx @vscode/vsce package --no-dependencies
 
 # 생성된 패키지를 루트 디렉터리로 복사 (설치 편의용)
-Copy-Item ".\integrated-power-0.9.5.vsix" -Destination "..\integrated-power-0.9.5.vsix" -Force
+Copy-Item ".\integrated-power-0.9.22.vsix" -Destination "..\integrated-power-0.9.22.vsix" -Force
 ```
 
 ---
@@ -102,9 +138,9 @@ git push origin main
 GitHub CLI(`gh`)를 사용하여 릴리스 노트와 VSIX 파일을 첨부한 Release를 발행합니다:
 
 ```powershell
-gh release create v0.9.5 .\vscode-extension\integrated-power-0.9.5.vsix `
-  --title "Integrated Power 0.9.5" `
-  --notes-file ".\reports\release-notes-v0.9.5.md"
+gh release create v0.9.22 .\vscode-extension\integrated-power-0.9.22.vsix `
+  --title "Integrated Power 0.9.22" `
+  --notes-file ".\reports\<release-notes-file>.md"
 ```
 
 ---
@@ -130,7 +166,7 @@ CLI 또는 GitHub Actions 웹 인터페이스에서 수동으로 워크플로우
 
 ```powershell
 # 특정 태그의 VSIX를 Open VSX로 배포
-gh workflow run publish-openvsx.yml -f tag=v0.9.8
+gh workflow run publish-openvsx.yml -f tag=v0.9.22
 ```
 
 ---
@@ -141,7 +177,7 @@ gh workflow run publish-openvsx.yml -f tag=v0.9.8
 
 ```powershell
 # 1. GitHub Release 상태 및 첨부 파일 확인
-gh release view v0.9.8
+gh release view v0.9.22
 
 # 2. CI/CD 워크플로우 실행 로그 실시간 확인
 gh run list --workflow=publish-openvsx.yml --limit 3
