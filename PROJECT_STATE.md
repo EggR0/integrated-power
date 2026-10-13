@@ -2,7 +2,7 @@
 
 Updated: 2026-10-13
 
-## Desktop ↔ IDE integration checkpoint
+## Earlier desktop ↔ IDE integration checkpoint (0.9.21)
 
 Backend, desktop and IDE integration, including the user-requested per-model
 prewarm buttons and five-hour/weekly gauge divisions, passed isolated runtime
@@ -282,3 +282,35 @@ user approval; no installer was activated.
 - No commit or push was made by the implementation agent. The live broker on
   port 37241, installed application, and user IDE state were not accessed;
   native GUI activation remains unverified.
+
+## 2026-10-13 deployment readback
+
+- User approved continuing the Git/VSIX/Windows deployment. Root committed
+  Windows version alignment and prerequisite documentation as `c50bfba` and
+  pushed it to `EggR0/integrated-power` main. Root committed the reviewed
+  standalone integration as `ed1c901` and pushed it to
+  `EggR0/integrated-power-control-center` main. Both remote main refs matched
+  their local commits after push. The pre-existing VSIX tag `v0.9.22` remains
+  on `d6d3f8a`; it was not moved.
+- GitHub release `v0.9.22` now includes
+  `Integrated.Power.Control.Center_0.9.22_x64-setup.exe` (GitHub normalized
+  spaces to dots), 35,421,614 bytes. The public asset digest matches local
+  SHA-256 `BE947302D579B776DEDFCC25EC5F30FCCD9819AA2AC4BB7C4698F4D868B6D882`.
+  The existing VSIX remains 1,037,127 bytes with its unchanged SHA-256
+  `CE5DC3F94898802D38D2C1FEDA76938DDB2EDB7609CBC0CB35578A5100D3B351`.
+- Root added `SHA256SUMS.txt` and extended the existing release notes with
+  Windows installation dependencies, exact source checkpoint and verification
+  limits. Release URL:
+  https://github.com/EggR0/integrated-power/releases/tag/v0.9.22
+- Open VSX CI logs report publishing 0.9.22 successfully. A direct retry with
+  the official ovsx CLI and existing token reports the version is already
+  published but inactive. Public API still returns 404 for 0.9.22 and latest
+  resolves to 0.9.20. Upload is confirmed; marketplace visibility is not.
+  No version was deleted, overwritten or republished under a different identity.
+- GitHub CLI authentication worked through the approved unsandboxed command
+  under account EggR0; sandboxed authenticated requests returned 401. Tokens
+  were not printed or committed. The temporary ovsx CLI cache is ignored.
+- The installation/restart step and native GUI interaction remain outstanding.
+  This deployment did not launch or install the app, restart the live broker,
+  invoke models or change GPUs. Open VSX visibility requires registry activation
+  before that channel can be marked complete.
