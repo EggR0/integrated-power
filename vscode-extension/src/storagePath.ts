@@ -230,6 +230,11 @@ export function resolveIntegratedPowerStateRoot(
   return resolved;
 }
 
+/** Single broker-ledger authority shared by the IDE extension and desktop host. */
+export function getCanonicalBrokerLedgerPath(stateRoot = resolveIntegratedPowerStateRoot()): string {
+  return path.join(path.resolve(stateRoot), "broker", "events.enc.jsonl");
+}
+
 /**
  * Compatibility export for integrations that imported the old function name.
  * New code and new state always use the Integrated Power product root.

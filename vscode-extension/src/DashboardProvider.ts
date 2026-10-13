@@ -2,14 +2,15 @@ import * as crypto from "crypto";
 import * as vscode from "vscode";
 import { DashboardController } from "./DashboardController";
 import { DashboardOutboundMessage } from "./types";
+import { BrokerController } from "./BrokerController";
 
 export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly controller: DashboardController;
 
-  constructor(private readonly context: vscode.ExtensionContext) {
-    this.controller = new DashboardController(this.context, (message) => this.postMessage(message));
+  constructor(private readonly context: vscode.ExtensionContext, brokerController: BrokerController) {
+    this.controller = new DashboardController(this.context, (message) => this.postMessage(message), brokerController);
     this.disposables.push(this.controller);
   }
 
@@ -53,6 +54,14 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
     return this.controller.refresh(force);
   }
 
+  public refreshQuotaSettings(force = false): Promise<void> {
+    return this.controller.refreshQuotaSettings(force);
+  }
+
+  public useLegacyQuotaSettingsFallback(): void {
+    this.controller.useLegacyQuotaSettingsFallback();
+  }
+
   public openRunsFile(): Promise<void> {
     return this.controller.openRunsFile();
   }
@@ -68,6 +77,9 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
     );
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "webview", "main.js"),
+    );
+    const brokerControlsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "webview", "broker-controls.js"),
     );
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "webview", "styles.css"),
@@ -93,6 +105,7 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
 <body>
   <main id="app"></main>
   <script nonce="${nonce}" src="${coreScriptUri}"></script>
+  <script nonce="${nonce}" src="${brokerControlsUri}"></script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

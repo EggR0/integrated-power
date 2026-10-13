@@ -15,6 +15,7 @@ import {
 import { offerFirstRunSetup } from "./configurationModel";
 import { BrokerController } from "./BrokerController";
 import { setForceRefreshHandler } from "./broker";
+import { AntigravityHistorySyncManager } from "./AntigravityHistorySync";
 
 async function installOrUpdateEggROrchestrator(
   context: vscode.ExtensionContext,
@@ -38,8 +39,8 @@ async function installOrUpdateEggROrchestrator(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new DashboardProvider(context);
   const brokerController = new BrokerController();
+  const provider = new DashboardProvider(context, brokerController);
   context.subscriptions.push(brokerController);
 
   // Broker `GET /v1/tokens/status?force=1` asks the live IDE to bypass its 5s
@@ -136,13 +137,20 @@ export function activate(context: vscode.ExtensionContext): void {
     toolbarItem,
   );
 
-  void brokerController.start(context).catch((error) => {
+  void brokerController.start(context).then(() => provider.refreshQuotaSettings(true)).catch((error) => {
+    provider.useLegacyQuotaSettingsFallback();
     void vscode.window.showWarningMessage(
       `Integrated Power broker could not start: ${error instanceof Error ? error.message : String(error)}`,
     );
   });
   void provider.refresh();
   void offerFirstRunSetup(context, () => openConfigurationCenter("overview"));
+
+  // Antigravity IDE exclusive history auto-sync manager
+  const historySyncDisposable = AntigravityHistorySyncManager.register(context);
+  if (historySyncDisposable) {
+    context.subscriptions.push(historySyncDisposable);
+  }
 }
 
 export function deactivate(): void {

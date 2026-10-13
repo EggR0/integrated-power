@@ -34,10 +34,12 @@ var IPQuota = (() => {
     PREWARM_MODE_OPTIONS: () => PREWARM_MODE_OPTIONS,
     PREWARM_PING_PROMPT: () => PREWARM_PING_PROMPT,
     PREWARM_TARGETS: () => PREWARM_TARGETS,
+    QUOTA_NOTIFICATION_DEFAULTS: () => QUOTA_NOTIFICATION_DEFAULTS,
     QUOTA_NOTIFICATION_TARGETS: () => QUOTA_NOTIFICATION_TARGETS,
     QUOTA_SETTINGS_DEFAULTS: () => QUOTA_SETTINGS_DEFAULTS,
     absoluteTokenText: () => absoluteTokenText,
     applyPrewarmTransition: () => applyPrewarmTransition,
+    buildGaugeTickGradient: () => buildGaugeTickGradient,
     buildTokenMetric: () => buildTokenMetric,
     calculateCapacitySummary: () => calculateCapacitySummary,
     calculateEffective5HourQuota: () => calculateEffective5HourQuota,
@@ -409,6 +411,22 @@ var IPQuota = (() => {
   }
 
   // shared/quota/metric.ts
+  function buildGaugeTickGradient(segments) {
+    if (!Number.isInteger(segments) || segments < 2 || segments > 20) {
+      throw new RangeError("Gauge segments must be an integer from 2 to 20.");
+    }
+    const stops = [];
+    for (let i = 1; i < segments; i++) {
+      const at = `${100 * i / segments}%`;
+      stops.push(
+        `transparent ${at}`,
+        `rgba(255, 255, 255, 0.55) ${at}`,
+        `rgba(255, 255, 255, 0.55) calc(${at} + 2px)`,
+        `transparent calc(${at} + 2px)`
+      );
+    }
+    return `linear-gradient(90deg, ${stops.join(", ")})`;
+  }
   function absoluteTokenText(left, max, estimated) {
     const safeLeft = toFiniteNumber(left);
     const safeMax = toFiniteNumber(max);
@@ -474,8 +492,13 @@ var IPQuota = (() => {
         effectiveResetTime = pairedResetTime;
       }
     }
-    const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== void 0) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
-    const countdown = is5HourReady ? void 0 : formatRefreshCountdown(effectiveResetTime);
+    const is5HourAt100 = label === "5Hours" && (hasAbsolute || percentage !== void 0) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+    const countdown = formatRefreshCountdown(effectiveResetTime);
+    const hasActiveFutureCountdown = Boolean(
+      countdown && effectiveResetTime && new Date(effectiveResetTime).getTime() > Date.now()
+    );
+    const is5HourReady = is5HourAt100 && !hasActiveFutureCountdown;
+    const isPrewarmed = false;
     let refreshFull = "";
     let refreshMedium = "";
     let refreshShort = "";
@@ -525,7 +548,8 @@ var IPQuota = (() => {
       isWeeklyExhausted,
       isWeeklyCapped,
       canPrewarm,
-      isReady
+      isReady,
+      isPrewarmed
     };
   }
   function capacitySummaryEntry(labelFull, labelMedium, labelShort, exactPercentage, left, max) {
@@ -820,7 +844,7 @@ var IPQuota = (() => {
     { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude" }
   ]);
   function canTriggerPrewarm(metric) {
-    return metric.label === "5Hours" && metric.percentage >= 99.95 && !metric.isWeeklyExhausted;
+    return metric.label === "5Hours" && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
   }
   function generateAntigravityStopScript() {
     return `(function() {
@@ -872,13 +896,25 @@ var IPQuota = (() => {
   }
 
   // shared/quota/settings.ts
+  var QUOTA_NOTIFICATION_DEFAULTS = Object.freeze({
+    antigravityGemini5h: true,
+    antigravityGeminiWeekly: true,
+    antigravityClaude5h: true,
+    antigravityClaudeWeekly: true,
+    chatgpt5h: true,
+    chatgptWeekly: true,
+    claude5h: true,
+    claudeWeekly: true
+  });
   var MIN_POLL_INTERVAL_MS = 1e3;
   var MAX_POLL_INTERVAL_MS = 6e4;
   var DEFAULT_POLL_INTERVAL_MS = 5e3;
   var QUOTA_SETTINGS_DEFAULTS = Object.freeze({
     pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
     notifyOnFull: true,
-    prewarmMode: "click"
+    prewarmMode: "click",
+    prewarmModes: Object.freeze({ antigravity: "click", opus: "click", codex: "click" }),
+    notifications: QUOTA_NOTIFICATION_DEFAULTS
   });
   function clampPollInterval(value) {
     const number = Number(value);
@@ -887,10 +923,25 @@ var IPQuota = (() => {
   }
   function mergeQuotaSettings(partial) {
     const source = partial && typeof partial === "object" ? partial : {};
+    const legacyMode = normalizePrewarmMode(source.prewarmMode);
+    const sourceModes = source.prewarmModes;
+    const modes = sourceModes && typeof sourceModes === "object" ? sourceModes : {};
+    const sourceNotifications = source.notifications;
+    const notifications = sourceNotifications && typeof sourceNotifications === "object" ? sourceNotifications : {};
+    const prewarmModes = {
+      antigravity: normalizePrewarmMode(modes.antigravity ?? legacyMode),
+      opus: normalizePrewarmMode(modes.opus ?? legacyMode),
+      codex: normalizePrewarmMode(modes.codex ?? legacyMode)
+    };
     return {
       pollIntervalMs: clampPollInterval(source.pollIntervalMs),
       notifyOnFull: typeof source.notifyOnFull === "boolean" ? source.notifyOnFull : QUOTA_SETTINGS_DEFAULTS.notifyOnFull,
-      prewarmMode: normalizePrewarmMode(source.prewarmMode)
+      prewarmMode: prewarmModes.antigravity,
+      prewarmModes,
+      notifications: Object.fromEntries(Object.entries(QUOTA_NOTIFICATION_DEFAULTS).map(([key, defaultValue]) => [
+        key,
+        typeof notifications[key] === "boolean" ? notifications[key] : defaultValue
+      ]))
     };
   }
   return __toCommonJS(index_exports);

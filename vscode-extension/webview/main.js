@@ -1,6 +1,7 @@
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
 
 let dashboardState = emptyState();
+let brokerControlState = { tasks: [], approvals: [], loading: true, busy: false };
 
 const root = document.getElementById("app") || document.body;
 let refreshRenderTimer;
@@ -38,6 +39,23 @@ window.addEventListener("message", (event) => {
       isTokenLoading: nextIsTokenLoading,
       refreshStartedAt: nextIsLoading || nextIsTokenLoading ? dashboardState.refreshStartedAt || new Date().toISOString() : undefined,
     };
+    render();
+    return;
+  }
+
+  if (message.type === "brokerState") {
+    brokerControlState = {
+      ...brokerControlState,
+      ...(message.state && typeof message.state === "object" ? message.state : {}),
+      loading: false,
+      busy: false,
+    };
+    render();
+    return;
+  }
+
+  if (message.type === "brokerLoading") {
+    brokerControlState = { ...brokerControlState, loading: true, busy: Boolean(message.busy) };
     render();
     return;
   }
@@ -302,7 +320,7 @@ function render() {
         </div>
         <div class="header-actions">
           <button type="button" class="header-settings-btn" data-command="configureViews" title="Configure Dashboard Views and Panel Visibility">
-            ⚙️ View Settings
+            ⚙️ <span class="text-full">View Settings</span><span class="text-medium">Settings</span><span class="text-short">View</span>
           </button>
         </div>
       </header>
@@ -318,18 +336,25 @@ function render() {
         ${dashboardState.viewConfig?.showCodex !== false && dashboardState.viewConfig?.showMetrics !== false && dashboardState.metricsCsv ? renderMetricsPanel(dashboardState.metricsCsv) : ""}
         ${dashboardState.viewConfig?.showErrors !== false ? renderErrorsPanel(dashboardState.parseErrors, dashboardState.systemErrors) : ""}
       </section>
+      <section id="broker-controls-root" aria-label="Broker tasks and approvals"></section>
     </main>
   `;
 
   if (nextHtml === lastRenderedHtml) {
+    renderBrokerControls();
     return;
   }
 
   const prevScrollTop = window.scrollY || document.documentElement.scrollTop;
   const activeCommand = document.activeElement?.getAttribute("data-command");
+  const activeBrokerFocus = document.activeElement?.getAttribute("data-broker-focus");
+  const brokerSelection = activeBrokerFocus && typeof document.activeElement.selectionStart === "number"
+    ? [document.activeElement.selectionStart, document.activeElement.selectionEnd]
+    : undefined;
 
   lastRenderedHtml = nextHtml;
   root.innerHTML = nextHtml;
+  renderBrokerControls();
 
   if (prevScrollTop > 0) {
     window.scrollTo({ top: prevScrollTop, behavior: "instant" });
@@ -338,6 +363,16 @@ function render() {
     const el = root.querySelector(`[data-command="${activeCommand}"]`);
     if (el) {
       el.focus();
+    }
+  }
+  if (activeBrokerFocus) {
+    const focusTarget = [...root.querySelectorAll("[data-broker-focus]")]
+      .find((element) => element.getAttribute("data-broker-focus") === activeBrokerFocus);
+    if (focusTarget) {
+      focusTarget.focus();
+      if (brokerSelection && typeof focusTarget.setSelectionRange === "function") {
+        focusTarget.setSelectionRange(brokerSelection[0], brokerSelection[1]);
+      }
     }
   }
 
@@ -410,6 +445,18 @@ function render() {
   if (isRefreshing) {
     refreshRenderTimer = setTimeout(render, 1000);
   }
+}
+
+function renderBrokerControls() {
+  const brokerControlsRoot = root.querySelector("#broker-controls-root");
+  if (!brokerControlsRoot || !window.IPBrokerControls) return;
+  window.IPBrokerControls.render(brokerControlsRoot, {
+    ...brokerControlState,
+    workspaceName: dashboardState.workspaceName,
+    artifacts: dashboardState.artifacts,
+  }, (message) => {
+    if (vscode) vscode.postMessage(message);
+  });
 }
 
 function hasDashboardContent(state) {
@@ -653,7 +700,11 @@ function renderLocalComputeStatus(tokenStatus) {
           <p class="eyebrow">Local Compute</p>
           <h2>Local LLM</h2>
         </div>
-        <span class="status-pill ${serverBadgeClass}">${escapeHtml(serverBadgeText)}</span>
+        <span class="status-pill ${serverBadgeClass}">
+          <span class="text-full">${escapeHtml(serverBadgeText)}</span>
+          <span class="text-medium">${escapeHtml(serverBadgeText)}</span>
+          <span class="text-short">${escapeHtml(hasLoadedModels ? "Active" : isServerRunning ? "Ready" : "Off")}</span>
+        </span>
       </div>
 
       <details class="token-section" data-section="localLlm" ${sectionStates.localLlm ? "open" : ""}>
@@ -781,10 +832,11 @@ function renderCapacitySummary(status) {
 function getPrewarmTargetForGroup(title) {
   const t = (title || "").toLowerCase().trim();
   if (t.includes("api") || t.includes("cli")) return undefined;
-  if (t.includes("gemini") || t === "antigravity") return "antigravity";
-  if (t === "claude" || t.includes("opus")) return "opus";
-  if (t.includes("chatgpt") || t.includes("codex") || t === "openai") return "codex";
-  return undefined;
+  const model = t.includes("gemini") || t === "antigravity" ? "antigravity"
+    : t === "claude" || t.includes("opus") ? "opus"
+    : t.includes("chatgpt") || t.includes("codex") || t === "openai" ? "codex"
+    : undefined;
+  return model && IPQuota.PREWARM_TARGETS.some((target) => target.model === model) ? model : undefined;
 }
 
 function renderPrewarmInlineControl(target, label) {
@@ -906,16 +958,31 @@ function renderCapacityGroup(title, metrics, titleVariants) {
 }
 
 function renderCapacityMetric(metric, groupTitle = "") {
-  const combined = `${metric.ariaLabel || ""} ${metric.labelFull || ""} ${metric.label || ""} ${groupTitle}`.toLowerCase();
-  const prewarmTarget = combined.includes("gemini") || combined.includes("antigravity")
-    ? "antigravity"
-    : combined.includes("claude") || combined.includes("opus")
-    ? "opus"
-    : "codex";
-
-  const prewarmBtn = metric.canPrewarm
-    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(prewarmTarget)}" title="${escapeAttr("5-hour quota pre-warm: starts 5h recharge timer with >99.9% capacity retained")}"><span class="text-full">⚡ Pre-warm</span><span class="text-medium">⚡ Pre-warm</span><span class="text-short">⚡ Pre</span></button>`
+  const targetFromGroup = getPrewarmTargetForGroup(groupTitle);
+  const combined = `${metric.ariaLabel || ""} ${metric.labelFull || ""} ${metric.label || ""}`.toLowerCase();
+  const inferredTarget = combined.includes("gemini") || combined.includes("antigravity") ? "antigravity"
+    : combined.includes("claude") || combined.includes("opus") ? "opus"
+    : combined.includes("chatgpt") || combined.includes("codex") ? "codex"
+    : undefined;
+  const isEligibleGroup = !groupTitle.toLowerCase().includes("api") && !groupTitle.toLowerCase().includes("cli");
+  const prewarmTarget = isEligibleGroup ? targetFromGroup || inferredTarget : undefined;
+  const supportedTarget = prewarmTarget && IPQuota.PREWARM_TARGETS.find((target) => target.model === prewarmTarget);
+  const canPrewarm = metric.label === "5Hours" && Boolean(supportedTarget) && IPQuota.canTriggerPrewarm(metric);
+  const disabledReason = metric.unavailable
+    ? "쿼터 정보를 확인할 수 없습니다."
+    : metric.isWeeklyExhausted
+      ? "주간 쿼터 소진으로 프리웜을 실행할 수 없습니다."
+      : metric.refreshFull && metric.refreshFull !== "· Ready"
+        ? `5시간 재충전 중입니다 (${metric.refreshFull}).`
+        : "5시간 쿼터가 100% Ready일 때 실행할 수 있습니다.";
+  const prewarmTitle = canPrewarm
+    ? "브로커에 프리웜 실행을 요청합니다. 실제 실행 여부와 원격 타이머 시작은 확인되지 않습니다."
+    : disabledReason;
+  const prewarmBtn = metric.label === "5Hours" && supportedTarget
+    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(supportedTarget.model)}" aria-label="${escapeAttr(`${supportedTarget.displayName} pre-warm${canPrewarm ? "" : ` disabled: ${disabledReason}`}`)}" title="${escapeAttr(prewarmTitle)}"${canPrewarm ? "" : " disabled"}><span class="text-full">⚡ Pre-warm</span><span class="text-medium">⚡ Pre-warm</span><span class="text-short">⚡ Pre</span></button>`
     : "";
+  const segments = metric.label === "Weekly" ? 7 : 5;
+  const ticks = IPQuota.buildGaugeTickGradient(segments);
 
   return `
     <div class="capacity-metric-row token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}" title="${escapeAttr(metric.tooltip || "")}">
@@ -939,6 +1006,7 @@ function renderCapacityMetric(metric, groupTitle = "") {
       </div>
       <div class="progress-track" aria-label="${escapeHtml(metric.ariaLabel)} usage">
         <div class="progress-fill" data-progress="${escapeAttr(metric.percentage.toFixed(1))}"></div>
+        <div class="progress-ticks" data-segments="${segments}" aria-hidden="true" style="background-image:${escapeAttr(ticks)}"></div>
       </div>
     </div>
   `;
@@ -1132,7 +1200,8 @@ function renderQueuePanel(content) {
 function renderMetricsPanel(csv) {
   const lines = csv.split('\n').filter(l => l.trim().length > 0);
   if (lines.length === 0) return '';
-  const header = lines[0].split(',').map(c => escapeHtml(c));
+  const headerValues = lines[0].split(',');
+  const header = headerValues.map(c => escapeHtml(c));
   const rows = lines.slice(Math.max(1, lines.length - 5)).map(l => l.split(',').map(c => escapeHtml(c)));
 
   return `
@@ -1146,7 +1215,7 @@ function renderMetricsPanel(csv) {
             <tr>${header.map(h => `<th>${h}</th>`).join('')}</tr>
           </thead>
           <tbody>
-            ${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}
+            ${rows.map(r => `<tr>${r.map((c, index) => `<td data-label="${escapeAttr(headerValues[index] || `Column ${index + 1}`)}" title="${escapeAttr(c)}">${c}</td>`).join('')}</tr>`).join('')}
           </tbody>
         </table>
       </div>

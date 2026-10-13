@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.9.22] - 2026-10-13
+
+### Added & Enhanced
+
+- **Antigravity IDE Trajectory & Chat History Auto-Recovery (`AntigravityHistorySync.ts`, `sync_history.py`)**:
+  - Automatically recovers and synchronizes missing Antigravity IDE conversation history and session trajectories from local brain logs and checkpoints into VS Code/Antigravity storage.
+  - Protobuf Wire Spec compliant reconstruction of `antigravityTrajectorySummaries` in LevelDB storage.
+  - Periodic background sync and real-time brain directory watcher with host platform guard (`isAntigravityHost`).
+- **Configuration Center Force Sync Button (`ConfigurationCenter.ts`, `configurationModel.ts`)**:
+  - Added dedicated "대화 기록 강제 동기화 (Force Sync History)" button to both Overview and Dashboard tabs in the Configuration Center.
+  - Host environment guard ensures the sync button and status feedback are exclusively active in Antigravity IDE while cleanly hidden in standard VS Code hosts.
+
+## [0.9.21] - 2026-10-12
+
+### Fixed & Enhanced
+
+- **Live Zero-Token ChatGPT/Codex Quota Telemetry via App-Server RPC (`codexAppServer.ts`, `TokenManager.ts`, `tokenScanner.ts`)**:
+  - Implemented direct, periodic live rate limits query using the official Codex app-server JSON-RPC method `account/rateLimits/read` over stdio.
+  - **Zero Token Consumption**: Fetches live OpenAI primary (5-hour window, `usedPercent`, `resetsAt`), secondary (weekly window, `usedPercent`, `resetsAt`), and reset credits (`rateLimitResetCredits.availableCount`) in <500ms without executing model prompts or consuming user quota.
+  - Eliminates stale session discrepancies between ChatGPT Desktop App and the IDE dashboard: users no longer need to perform any coding work or execute CLI turns to view authentic live reset times and quota percentages.
+  - Gracefully falls back to passive `~/.codex/sessions` JSONL parsing when the Codex app-server is offline.
+  - Cached for 20 seconds during background continuous polling, and refreshed immediately upon manual user refresh (`forceRefresh = true`).
+
+## [0.9.20] - 2026-10-11
+
+### Fixed & Enhanced
+
+- **Native Claude / Gemini 5-Hour Reset Time Ingestion Fix (`TokenManager`)**:
+  - Fixed root cause where `TokenManager.fetchQuotaData` explicitly discarded `bucket.resetTime` (`(percentage < 99.95) ? bucket.resetTime : undefined`) when remaining fraction was 1.0 (100%), wiping out Claude's active rolling recharge timestamp (`3p-5h`).
+  - Directly preserved `bucket.resetTime` across all 5-hour quota buckets from Cloud Code API so active countdowns (`· Refreshes in 1m`, `· 3:54`) render reliably matching AGQ.
+- **Removed Synthetic Overrides & Pure Telemetry Grounding (`DashboardController`)**:
+  - Eliminated artificial `isPrewarmedRecently` overrides that previously forged 99.9% quota and synthetic timestamps in `mergeTokenStatus`, ensuring 100% authentic upstream API telemetry is displayed.
+- **Clean AGQ Timer Parity & UI Target Accuracy (`webview/main.js`)**:
+  - Cleaned up metric display to match AGQ: whenever an active reset time exists, the genuine refresh countdown is rendered directly without synthetic badge distractions.
+  - Hardened prewarm button group targeting: excluded non-applicable `Claude (API & CLI)` local direct usage row from prewarm actions.
+- **Broker Prewarm Validation Parity (`broker/server.ts`)**:
+  - Synchronized `/prewarm` endpoint validation with `DashboardController`, checking for existing active rolling recharge cycles to prevent duplicate pings.
+
+## [0.9.19] - 2026-10-11
+
+### Fixed & Enhanced
+
+- **Active Rolling Recharge Countdown Display for 100% 5-Hour Windows**:
+  - Fixed bug where 5-hour quota windows at 100% capacity unconditionally suppressed active countdown timers and forced `· Ready`, even when upstream providers already have an active rolling cycle running ahead of time (e.g. resets in 28m or 4h 18m matching AGQ).
+  - Preserved valid future reset timestamps (`new Date(resetTime).getTime() > Date.now()`) across `TokenManager.sanitizeResetTime` and `DashboardController.sanitizeResetTime` instead of wiping them to `undefined` when percentage is 100%.
+  - In `shared/quota/metric.ts`, distinguished between dormant 100% windows (no active rolling timer -> `· Ready` and `canPrewarm = true`) and active pre-warmed 100% windows (rolling timer running -> live countdown rendered, `canPrewarm = false`, `isPrewarmed = true`).
+- **Dynamic Pre-Warm Button to Active Status Tag Transition**:
+  - When a 5-hour window has an active recharge cycle running ahead of time, the `[⚡ Pre-warm]` action button automatically disappears and transitions to a compact `⚡ Active` badge (`<span class="prewarm-active-tag">⚡</span>`) alongside the live refresh countdown.
+  - In `DashboardController.getPrewarmEligibility`, pre-warm requests for windows already running an active rolling cycle are cleanly refused with remaining time info, preventing duplicate pings.
+  - Zero overflow guaranteed under narrow viewport widths (< 200px) with comprehensive regression test verification.
+
 ## [0.9.18] - 2026-10-11
 
 ### Fixed & Enhanced

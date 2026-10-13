@@ -78,6 +78,19 @@ assert.strictEqual(shared.mergeQuotaSettings({ prewarmMode: "once" }).prewarmMod
 const baseTime = Date.now();
 const resetIn = (h) => new Date(baseTime + h * 3600e3).toISOString();
 
+// A window is Ready ONLY when dormant (no active future reset timer)
+const dormantMetric = shared.buildTokenMetric("5Hours", {
+  antigravityPercentage: 100,
+  antigravityWeeklyPercentage: 100,
+  antigravityWeeklyResetTime: resetIn(48),
+}, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+
+assert.strictEqual(dormantMetric.isReady, true);
+assert.strictEqual(dormantMetric.canPrewarm, true);
+assert.strictEqual(dormantMetric.isPrewarmed, false);
+assert.strictEqual(shared.canTriggerPrewarm(dormantMetric), true);
+
+// When 100% full BUT resetTime is active in the future, it is prewarmed / active rolling recharge (NOT ready)
 const fullMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 100,
   antigravityResetTime: resetIn(3),
@@ -85,9 +98,11 @@ const fullMetric = shared.buildTokenMetric("5Hours", {
   antigravityWeeklyResetTime: resetIn(48),
 }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
 
-assert.strictEqual(fullMetric.isReady, true);
-assert.strictEqual(fullMetric.canPrewarm, true);
-assert.strictEqual(shared.canTriggerPrewarm(fullMetric), true);
+assert.strictEqual(fullMetric.isReady, false);
+assert.strictEqual(fullMetric.canPrewarm, false);
+assert.strictEqual(fullMetric.isPrewarmed, false);
+assert.strictEqual(shared.canTriggerPrewarm(fullMetric), false);
+assert.ok(fullMetric.refreshFull.includes("2h 59m") || fullMetric.refreshFull.includes("3h 0m") || fullMetric.refreshFull.includes("3h"));
 
 const activeMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 95,

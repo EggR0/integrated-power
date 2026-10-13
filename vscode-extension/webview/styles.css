@@ -48,6 +48,68 @@ body {
   border-left: 4px solid var(--vscode-focusBorder);
 }
 
+.broker-panel,
+.broker-card,
+.broker-form,
+.broker-field,
+.broker-heading,
+.broker-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.broker-panel {
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 6px;
+  container-type: inline-size;
+}
+
+.broker-heading,
+.broker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.broker-heading { justify-content: space-between; }
+.broker-title,
+.broker-subtitle,
+.broker-card-title { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.broker-title { font-size: 13px; }
+.broker-subtitle { margin: 10px 0 5px; font-size: 12px; }
+.broker-workspace,
+.broker-muted,
+.broker-task-state,
+.broker-task-goal,
+.broker-error { margin: 5px 0; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.broker-workspace,
+.broker-muted,
+.broker-task-state { color: var(--vscode-descriptionForeground); font-size: 11px; }
+.broker-error { color: var(--vscode-errorForeground); }
+.broker-list { display: grid; gap: 6px; min-width: 0; }
+.broker-card { padding: 7px; border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25)); border-radius: 4px; }
+.broker-card-title { font-size: 12px; }
+.broker-task-goal { font-size: 11px; white-space: pre-wrap; }
+.broker-summary { cursor: pointer; overflow-wrap: anywhere; }
+.broker-form { display: grid; gap: 6px; margin-top: 7px; }
+.broker-field { display: grid; gap: 3px; }
+.broker-field-label { font-size: 11px; overflow-wrap: anywhere; }
+.broker-input { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; font: inherit; padding: 5px; }
+.broker-input[aria-label="Goal"],
+.broker-input[aria-label="Delegation prompt"] { min-height: 54px; resize: vertical; }
+.broker-action { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.broker-primary { justify-self: start; }
+.broker-approvals { min-width: 0; margin-top: 8px; }
+
+@container (max-width: 200px) {
+  .broker-panel { padding: 5px; }
+  .broker-heading { align-items: flex-start; }
+  .broker-action { padding: 4px 5px; font-size: 10px; }
+}
+
 .task-content {
   margin-top: 0.5rem;
   font-size: 0.9rem;
@@ -503,6 +565,7 @@ button:focus-visible {
 }
 
 .progress-track {
+  position: relative;
   width: 100%;
   height: 7px;
   overflow: hidden;
@@ -510,6 +573,13 @@ button:focus-visible {
   border-radius: 999px;
   background: var(--vscode-input-background);
   cursor: help;
+}
+
+.progress-ticks {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
 }
 
 .progress-fill {
@@ -700,6 +770,8 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  max-width: 100%;
+  white-space: nowrap;
   padding: 1px 6px;
   margin-right: 4px;
   font-size: 11px;
@@ -724,8 +796,16 @@ button:focus-visible {
 .prewarm-btn.loading {
   opacity: 0.65;
   cursor: wait;
-  pointer-events: none;
   transform: none;
+}
+
+.prewarm-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.prewarm-btn.loading {
+  pointer-events: none;
 }
 
 .capacity-metric-label,
@@ -1301,10 +1381,25 @@ button {
   }
   .capacity-summary {
     gap: 3px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
   }
   .capacity-summary .summary-pill {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     font-size: 9px;
     padding: 1px 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .capacity-summary .summary-pill > * {
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .status-pill {
     padding: 1px 3px;
@@ -1321,5 +1416,91 @@ button {
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+  .capacity-group-header h3 .text-short {
+    display: inline-block !important;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+
+  .dashboard-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel-heading {
+    flex-wrap: wrap;
+  }
+
+  .panel-heading > .status-pill {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-header > div:first-child,
+  .header-actions {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .header-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .header-settings-btn {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .table-container {
+    overflow: visible;
+    min-width: 0;
+  }
+
+  .table-container table,
+  .table-container tbody,
+  .table-container tr {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .table-container thead {
+    display: none;
+  }
+
+  .table-container tbody {
+    display: grid;
+    gap: 5px;
+  }
+
+  .table-container tr {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--vscode-panel-border);
+  }
+
+  .table-container th,
+  .table-container td {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    padding: 3px 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .table-container td::before {
+    content: attr(data-label);
+    color: var(--vscode-foreground);
+    font-size: 9px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
   }
 }

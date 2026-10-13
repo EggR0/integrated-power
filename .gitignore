@@ -29,6 +29,9 @@ dist/
 *.vsix
 *.zip
 *.log
+*.bak_*
+.pnpm-store/
+.tmp-*
 coverage/
 
 # Machine-specific state

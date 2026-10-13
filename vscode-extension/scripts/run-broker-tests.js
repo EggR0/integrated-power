@@ -3,6 +3,12 @@ const fs = require("fs");
 const http = require("http");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
+const { execFileSync } = require("child_process");
+const { parseRunJsonl, parseLocalLlmMetricsCsv } = require("../../shared/telemetry/runState");
+const { BrokerClient } = require("../out/broker/client");
+const { scanLiveTokenStatus } = require("../out/broker/tokenScanner");
+const { findExecutableOnPath } = require("../out/broker/executable");
 const {
   EncryptedEventLedger,
   IntegratedPowerBroker,
@@ -15,6 +21,7 @@ const {
   processMcpRequest,
   startBrokerServer,
   loadOrCreateLedgerKey,
+  loadExistingLedgerKey,
   createFirstWaveAdapters,
   listHostIntegrations,
   discoverInstallations,
@@ -22,11 +29,209 @@ const {
   saveHostIntegrationConfig,
   createPreferredEventLedger,
   SqlCipherEventLedger,
+  migrateBrokerLedgers,
+  migrateEncryptedLedger,
 } = require("../out/broker");
 
 async function main() {
+  {
+    const measuredAt = "2026-10-13T04:00:00.000Z";
+    const tokenManager = {
+      async getStatus(fileUri, options) {
+        assert.strictEqual(fileUri, undefined);
+        assert.deepStrictEqual(options, { refreshQuota: true, forceRefresh: true });
+        return {
+          antigravityTokensLeft: 40, antigravityMax: 100, antigravityPercentage: 40,
+          antigravityWeeklyTokensLeft: 70, antigravityWeeklyMax: 200,
+          opusTokensLeft: 10, opusMax: 50, opusWeeklyTokensLeft: 20, opusWeeklyMax: 80,
+          codexTokensLeft: 60, codexMax: 100, codexWeeklyTokensLeft: 120, codexWeeklyMax: 200,
+          codexStatus: "Measured", recommendedTaskWeight: "degraded", activity: [],
+          errors: ["synthetic provider warning"],
+          quotaPools: [{ id: "codex.5h", provider: "codex", remainingPercentage: 60, source: "official-api", confidence: "reported-quota" }],
+          localComputeStatus: { endpointHealth: "ok", loadedModels: ["qwen3.8:27b"], gpus: [{ id: 0, name: "Synthetic GPU", utilizationPercentage: 12, vramUsedMb: 1024, vramTotalMb: 8192 }] },
+          claudeDirectUsage: { status: "measured", sources: ["synthetic"], lastMeasuredAt: measuredAt, today: { totalTokens: 11, billableTokens: 9, reasoningOutputTokens: 2, eventCount: 1 }, sevenDays: { totalTokens: 21, billableTokens: 18, reasoningOutputTokens: 3, eventCount: 2 } },
+        };
+      },
+    };
+    const collected = await scanLiveTokenStatus({ force: true, tokenManager, now: () => new Date(measuredAt) });
+    assert.strictEqual(collected.lastSync, measuredAt, "cold-start collection reports completion time");
+    assert.strictEqual(collected.codexTokensLeft, 60);
+    assert.strictEqual(collected.taskRouting, "degraded");
+    assert.strictEqual(collected.quotaPools[0].source, "official-api");
+    assert.strictEqual(collected.localComputeStatus.loadedModels[0], "qwen3.8:27b");
+    assert.strictEqual(collected.directUsage.lastMeasuredAt, measuredAt);
+    assert.deepStrictEqual(collected.errors, ["synthetic provider warning"]);
+    const staleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-stale-token-"));
+    try {
+      const staleFile = path.join(staleRoot, "token_status.json");
+      fs.writeFileSync(staleFile, JSON.stringify({ lastSync: "2020-01-01T00:00:00.000Z", codexPercentage: 100 }));
+      let staleCollectionCalls = 0;
+      const staleResult = await scanLiveTokenStatus({
+        tokenStatusPath: staleFile,
+        now: () => new Date(measuredAt),
+        tokenManager: { async getStatus(_uri, options) { staleCollectionCalls++; assert.deepStrictEqual(options, { refreshQuota: true, forceRefresh: false }); return { codexPercentage: 33, codexTokensLeft: 33, codexMax: 100, codexWeeklyTokensLeft: 50, codexWeeklyMax: 100, antigravityTokensLeft: 0, antigravityMax: 0, antigravityWeeklyTokensLeft: 0, antigravityWeeklyMax: 0, opusTokensLeft: 0, opusMax: 0, opusWeeklyTokensLeft: 0, opusWeeklyMax: 0, codexStatus: "fresh", llmStatus: "offline", recommendedTaskWeight: "normal", activity: [] }; } },
+      });
+      assert.strictEqual(staleCollectionCalls, 1, "stale file triggers the shared collector exactly once");
+      assert.strictEqual(staleResult.codexPercentage, 33);
+      assert.strictEqual(staleResult.lastSync, measuredAt);
+    } finally {
+      fs.rmSync(staleRoot, { recursive: true, force: true });
+    }
+  }
+
+  const manifestPath = path.join(__dirname, "..", "out", "broker", "broker-manifest.json");
+  execFileSync(process.execPath, [path.join(__dirname, "build-broker-package.js")], { stdio: "inherit" });
+  execFileSync(process.execPath, [path.join(__dirname, "write-broker-manifest.js")], { stdio: "pipe" });
+  const brokerManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  assert.strictEqual(brokerManifest.entrypoint, "index.js");
+  assert.strictEqual(brokerManifest.schemaVersion, 2);
+  assert.ok(brokerManifest.capabilities.includes("runs.read"));
+  const brokerRoot = path.dirname(manifestPath);
+  assert.strictEqual(brokerManifest.assetRoot, "../..");
+  const brokerAssets = path.resolve(brokerRoot, brokerManifest.assetRoot);
+  assert.ok(fs.existsSync(path.join(brokerAssets, "scripts", "read-agy-credential.ps1")), "manifest resource root includes existing credential authority");
+  assert.ok(fs.existsSync(path.join(brokerAssets, "assets", "ip-orchestrator-plugin", "skills", "ip-orchestrator", "scripts", "Select-LocalLLMModel.ps1")), "manifest resource root includes existing selector authority");
+  const sourceHash = crypto.createHash("sha256");
+  const runtimeFiles = fs.readdirSync(brokerRoot, { recursive: true }).filter((entry) => typeof entry === "string" && entry.endsWith(".js")).sort();
+  for (const relativePath of runtimeFiles) {
+    sourceHash.update(relativePath.replace(/\\/g, "/"));
+    sourceHash.update(Buffer.from([0]));
+    sourceHash.update(fs.readFileSync(path.join(brokerRoot, relativePath)));
+  }
+  assert.strictEqual(brokerManifest.sourceDigest, sourceHash.digest("hex"), "manifest digest covers the sorted broker runtime tree");
+  const isolatedPackage = fs.mkdtempSync(path.join(__dirname, "..", ".broker-isolated-"));
+  try {
+    fs.cpSync(brokerRoot, path.join(isolatedPackage, "broker"), { recursive: true });
+    const packagedRuntimeScript = String.raw`
+const fs = require('fs');
+const path = require('path');
+const { IntegratedPowerBroker, EncryptedEventLedger, startBrokerServer } = require('./broker/index.js');
+const stateRoot = process.env.BROKER_TEST_STATE_ROOT;
+const workspaceId = 'packaged-fixture';
+const workspaceRoot = path.join(stateRoot, 'workspaces', workspaceId);
+fs.mkdirSync(path.join(workspaceRoot, '.agent-runs'), { recursive: true });
+fs.mkdirSync(path.join(workspaceRoot, 'reports'), { recursive: true });
+fs.writeFileSync(path.join(workspaceRoot, '.agent-runs', 'runs.jsonl'), JSON.stringify({ id: 'cold-run', status: 'completed' }) + '\n');
+fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), 'Timestamp,TaskTitle,Model,TaskScale,ActualElapsedSeconds,TotalTokens,TaskType,Provider,Success,OutputChars,TokensPerSecond,SelectedBy,SelectionReason,ErrorMessage\n2026-10-13T00:00:00Z,cold,qwen3.8:27b,small,1,2,inference,ollama,true,3,2,selector,fixture,\n');
+(async () => {
+  const key = Buffer.alloc(32, 31);
+  const ledgerPath = path.join(stateRoot, 'broker', 'events.enc.jsonl');
+  let broker = new IntegratedPowerBroker(new EncryptedEventLedger(ledgerPath, key), []);
+  await broker.initialize();
+  let server = await startBrokerServer(broker, 0);
+  const base = 'http://127.0.0.1:' + server.port;
+  const health = await fetch(base + '/health').then((response) => response.json());
+  const quotaSettings = await fetch(base + '/v1/settings/quota').then((response) => response.json());
+  const runs = await fetch(base + '/v1/runs?workspaceId=' + workspaceId).then((response) => response.json());
+  const metrics = await fetch(base + '/v1/metrics/local-llm?workspaceId=' + workspaceId).then((response) => response.json());
+  const created = await fetch(base + '/v1/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'cold-start continuity', goal: 'persist state', originProvider: 'local.openai-compatible' }) }).then((response) => response.json());
+  await server.close();
+  broker = new IntegratedPowerBroker(new EncryptedEventLedger(ledgerPath, key), []);
+  await broker.initialize();
+  server = await startBrokerServer(broker, 0);
+  const tasks = await fetch('http://127.0.0.1:' + server.port + '/v1/tasks').then((response) => response.json());
+  await server.close();
+  if (health.schemaVersion !== 2 || quotaSettings.initialized !== false || runs.runs[0]?.id !== 'cold-run' || metrics.metrics[0]?.taskTitle !== 'cold' || !tasks.tasks.some((task) => task.id === created.task.id)) throw new Error('packaged cold-start HTTP/state continuity failed');
+  process.stdout.write(JSON.stringify({ schemaVersion: health.schemaVersion, runId: runs.runs[0].id, metricTask: metrics.metrics[0].taskTitle, taskId: created.task.id, settingsInitialized: quotaSettings.initialized }));
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+`;
+    const packagedEvidence = execFileSync(process.execPath, ["-e", packagedRuntimeScript], {
+      cwd: isolatedPackage,
+      env: { ...process.env, USERPROFILE: isolatedPackage, HOME: isolatedPackage, LOCALAPPDATA: isolatedPackage, INTEGRATED_POWER_STATE_ROOT: path.join(isolatedPackage, "state"), BROKER_TEST_STATE_ROOT: path.join(isolatedPackage, "state") },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    assert.deepStrictEqual(JSON.parse(packagedEvidence), { schemaVersion: 2, runId: "cold-run", metricTask: "cold", taskId: JSON.parse(packagedEvidence).taskId, settingsInitialized: false });
+  } finally {
+    fs.rmSync(isolatedPackage, { recursive: true, force: true });
+  }
+  {
+    const notificationRoot = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-notifications-"));
+    const notificationBroker = new IntegratedPowerBroker(new EncryptedEventLedger(path.join(notificationRoot, "broker", "events.enc.jsonl"), Buffer.alloc(32, 77)), []);
+    await notificationBroker.initialize();
+    let authoritativeStatus;
+    const notificationServerOptions = { stateRoot: notificationRoot, autoSchedule: false, tokenStatusReader: async () => authoritativeStatus };
+    let notificationServer = await startBrokerServer(notificationBroker, 0, notificationServerOptions);
+    const notificationUrl = () => `http://127.0.0.1:${notificationServer.port}/v1/notifications/quota-refill`;
+    const settingsUrl = () => `http://127.0.0.1:${notificationServer.port}/v1/settings/quota`;
+    const sample = (value) => ({
+      antigravityPercentage: value, antigravityWeeklyPercentage: value,
+      opusPercentage: value, opusWeeklyPercentage: value,
+      codexPercentage: value, codexWeeklyPercentage: value,
+      claudePercentage: value, claudeWeeklyPercentage: value,
+    });
+    const postStatus = async (status, requestId) => fetch(notificationUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotencyKey: requestId }) });
+    try {
+      const initial = await fetch(settingsUrl()).then((response) => response.json());
+      const initialize = await fetch(settingsUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: initial.revision, initializeFrom: "desktop", idempotencyKey: "notify-settings", settings: { notifyOnFull: true } }) });
+      assert.strictEqual(initialize.status, 200);
+      authoritativeStatus = sample(20);
+      const baseline = await postStatus(sample(20), "notify-baseline");
+      assert.strictEqual(baseline.status, 200, "broker exposes the canonical refill claim API");
+      assert.deepStrictEqual((await baseline.json()).notifications, []);
+      authoritativeStatus = sample(100);
+      const [firstClaim, secondClaim] = await Promise.all([postStatus(sample(100), "notify-refill-client-a"), postStatus(sample(100), "notify-refill-client-b")]);
+      const claims = await Promise.all([firstClaim.json(), secondClaim.json()]);
+      assert.deepStrictEqual(claims.map((claim) => claim.notifications.length).sort(), [0, 8], "competing UI clients receive one shared set of eight refill events");
+      assert.strictEqual(claims.flatMap((claim) => claim.notifications).filter((item) => item.configKey === "notifications.antigravityGemini5h").length, 1);
+      const staleOutOfOrder = await postStatus(sample(20), "notify-stale-client").then((response) => response.json());
+      assert.deepStrictEqual(staleOutOfOrder.notifications, [], "an out-of-order stale client payload cannot rewind the authoritative shared snapshot");
+      await notificationServer.close();
+      notificationServer = await startBrokerServer(notificationBroker, 0, notificationServerOptions);
+      const afterRestart = await fetch(notificationUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((response) => response.json());
+      assert.deepStrictEqual(afterRestart.notifications, [], "restart preserves the shared baseline and notified window IDs");
+      const unchanged = await postStatus(sample(100), "notify-still-full").then((response) => response.json());
+      assert.deepStrictEqual(unchanged.notifications, [], "repeated full snapshots do not duplicate notifications");
+      authoritativeStatus = sample(30);
+      const reset = await postStatus(sample(30), "notify-reset").then((response) => response.json());
+      assert.deepStrictEqual(reset.notifications, []);
+      authoritativeStatus = sample(100);
+      const refillAgain = await postStatus(sample(100), "notify-refill-again").then((response) => response.json());
+      assert.strictEqual(refillAgain.notifications.length, 8, "dropping below 100 resets notification claims for the next refill");
+      const saved = await fetch(settingsUrl()).then((response) => response.json());
+      const perWindowOff = await fetch(settingsUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: saved.revision, idempotencyKey: "notify-window-off", settings: { notifications: { antigravityGemini5h: false } } }) }).then((response) => response.json());
+      authoritativeStatus = sample(20);
+      await postStatus(sample(20), "notify-reset-window-off");
+      authoritativeStatus = sample(100);
+      const windowGated = await postStatus(sample(100), "notify-window-off-refill").then((response) => response.json());
+      assert.strictEqual(windowGated.notifications.length, 7, "per-window setting filters only that shared event");
+      const masterOff = await fetch(settingsUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: perWindowOff.revision, idempotencyKey: "notify-master-off", settings: { notifyOnFull: false } }) }).then((response) => response.json());
+      authoritativeStatus = sample(20);
+      await postStatus(sample(20), "notify-reset-master-off");
+      authoritativeStatus = sample(100);
+      const masterGated = await postStatus(sample(100), "notify-master-off-refill").then((response) => response.json());
+      assert.strictEqual(masterGated.notifications.length, 0, "master setting gates all eight shared events");
+      assert.strictEqual(masterOff.revision, perWindowOff.revision + 1);
+    } finally {
+      await notificationServer.close();
+      fs.rmSync(notificationRoot, { recursive: true, force: true });
+    }
+  }
+  const parsedRuns = parseRunJsonl([
+    JSON.stringify({ id: "run-shared", title: "Quoted, title", status: "running", startedAt: "2026-10-13T01:00:00Z", artifacts: ["src/a.ts"] }),
+    "{ malformed",
+    JSON.stringify({ id: "run-shared", status: "completed", updatedAt: "2026-10-13T01:02:00Z", contextFiles: ["src/a.ts", "src/b.ts"] }),
+  ].join("\n"), { normalizeArtifactPath: (value) => value });
+  assert.strictEqual(parsedRuns.runs.length, 1, "shared run parser merges event deltas by id");
+  assert.strictEqual(parsedRuns.runs[0].status, "completed");
+  assert.strictEqual(parsedRuns.runs[0].active, false);
+  assert.strictEqual(parsedRuns.runs[0].title, "Quoted, title");
+  assert.strictEqual(parsedRuns.runs[0].contextFiles.length, 2);
+  assert.strictEqual(parsedRuns.parseErrors.length, 1, "malformed JSONL is reported while valid records survive");
+  const parsedMetrics = parseLocalLlmMetricsCsv('Timestamp,TaskTitle,Model,TaskScale,ActualElapsedSeconds,TotalTokens,TaskType,Provider,Success,OutputChars,TokensPerSecond,SelectedBy,SelectionReason,ErrorMessage\n2026-10-13T01:00:00Z,"task, one","qwen3.8:27b",large,4.5,28,inference,ollama,true,95,6.2,selector,"reason: ""selected""",');
+  assert.strictEqual(parsedMetrics.metrics.length, 1, "shared CSV reader handles quoted commas and escaped quotes");
+  assert.strictEqual(parsedMetrics.metrics[0].taskTitle, "task, one");
+  assert.strictEqual(parsedMetrics.metrics[0].selectionReason, 'reason: "selected"');
+  const multilineMetrics = parseLocalLlmMetricsCsv('Timestamp,TaskTitle,Model,TaskScale,ActualElapsedSeconds,TotalTokens,TaskType,Provider,Success,OutputChars,TokensPerSecond,SelectedBy,SelectionReason,ErrorMessage\n2026-10-13T01:00:00Z,"task\ncontinued",qwen3.8:27b,large,4.5,28,inference,ollama,true,95,6.2,selector,"line one\nline two",\n');
+  assert.strictEqual(multilineMetrics.metrics[0].taskTitle, "task\ncontinued", "quoted CSV fields may span lines");
+  assert.strictEqual(multilineMetrics.metrics[0].selectionReason, "line one\nline two");
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-broker-"));
   try {
+    const customAgyRoot = path.join(temp, "custom-antigravity", "bin");
+    fs.mkdirSync(customAgyRoot, { recursive: true });
+    const customAgyPath = path.join(customAgyRoot, process.platform === "win32" ? "agy.cmd" : "agy");
+    fs.writeFileSync(customAgyPath, "fixture only; not executed");
+    assert.strictEqual(findExecutableOnPath(process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"], { PATH: customAgyRoot }), customAgyPath, "prewarm resolves the installed CLI through existing PATH authority, including custom install roots");
     const ledger = new EncryptedEventLedger(path.join(temp, "events.enc.jsonl"), Buffer.alloc(32, 7));
     const adapters = [{
       provider: "google.antigravity.ide",
@@ -140,6 +345,48 @@ async function main() {
     assert.strictEqual(restored.getTask(task.id).revision, task.revision);
     assert.strictEqual(restored.getTask(task.id).delegationDepth, 1);
     assert.strictEqual(restored.getTask(task.id).status, "completed");
+    const sourceLedgerPath = path.join(temp, "legacy", "events.enc.jsonl");
+    const canonicalLedgerPath = path.join(temp, "canonical", "events.enc.jsonl");
+    const legacyKey = Buffer.alloc(32, 41);
+    const canonicalKey = Buffer.alloc(32, 42);
+    const legacyEvent = (await broker.events(task.id))[0];
+    await new EncryptedEventLedger(sourceLedgerPath, legacyKey).append(legacyEvent);
+    assert.strictEqual(await migrateEncryptedLedger(sourceLedgerPath, canonicalLedgerPath, legacyKey, canonicalKey), "migrated");
+    assert.deepStrictEqual(await new EncryptedEventLedger(canonicalLedgerPath, canonicalKey).list(), [legacyEvent]);
+    assert.strictEqual(await migrateEncryptedLedger(sourceLedgerPath, canonicalLedgerPath, legacyKey, canonicalKey), "destination-current");
+    const sqlLegacyPath = path.join(temp, "sql-legacy", "events.enc.jsonl");
+    const sqlLegacy = new SqlCipherEventLedger(sqlLegacyPath, legacyKey);
+    await sqlLegacy.append(legacyEvent);
+    sqlLegacy.close();
+    const sqlMigrationTarget = path.join(temp, "sql-migration-target", "events.enc.jsonl");
+    await migrateBrokerLedgers([{ path: sqlLegacyPath, key: legacyKey }], sqlMigrationTarget, () => canonicalKey);
+    assert.deepStrictEqual(await new EncryptedEventLedger(sqlMigrationTarget, canonicalKey).list(), [legacyEvent], "legacy SQLCipher history is re-encrypted without deleting its source");
+    assert.strictEqual(fs.existsSync(sqlLegacyPath), true);
+    const divergedSourcePath = path.join(temp, "legacy-diverged", "events.enc.jsonl");
+    const divergedEvent = { ...legacyEvent, id: `${legacyEvent.id}-other` };
+    await new EncryptedEventLedger(divergedSourcePath, legacyKey).append(divergedEvent);
+    const pairConflictTarget = path.join(temp, "pair-conflict", "events.enc.jsonl");
+    await assert.rejects(() => migrateBrokerLedgers([
+      { path: sourceLedgerPath, key: legacyKey },
+      { path: divergedSourcePath, key: legacyKey },
+    ], pairConflictTarget, () => canonicalKey), /histories diverge/);
+    assert.strictEqual(fs.existsSync(pairConflictTarget), false, "all legacy histories are preflighted before destination writes");
+    const fallbackCanonicalPath = path.join(temp, "fallback-canonical", "events.enc.jsonl");
+    const fallbackCanonicalEvent = { ...legacyEvent, id: `${legacyEvent.id}-fallback` };
+    await new EncryptedEventLedger(`${fallbackCanonicalPath}.jsonl`, canonicalKey).append(fallbackCanonicalEvent);
+    const selectedFallback = createPreferredEventLedger(fallbackCanonicalPath, canonicalKey);
+    assert.deepStrictEqual(await selectedFallback.list(), [fallbackCanonicalEvent], "existing encrypted fallback remains the selected canonical ledger");
+    const corruptSource = path.join(temp, "corrupt", "events.enc.jsonl");
+    fs.mkdirSync(path.dirname(corruptSource), { recursive: true });
+    fs.writeFileSync(corruptSource, '{"version":1,"iv":"bad","tag":"bad","ciphertext":"bad"}\n', "utf8");
+    await assert.rejects(() => migrateEncryptedLedger(corruptSource, path.join(temp, "corrupt-target", "events.enc.jsonl"), legacyKey, canonicalKey), /Unable to read encrypted ledger record/);
+    assert.strictEqual(fs.existsSync(path.join(temp, "corrupt-target", "events.enc.jsonl")), false);
+    const conflictPath = path.join(temp, "conflict", "events.enc.jsonl");
+    const conflictingEvent = { ...legacyEvent, id: `${legacyEvent.id}-divergent`, revision: legacyEvent.revision + 100 };
+    await new EncryptedEventLedger(conflictPath, canonicalKey).append(conflictingEvent);
+    const conflictingBefore = fs.readFileSync(conflictPath);
+    await assert.rejects(() => migrateEncryptedLedger(sourceLedgerPath, conflictPath, legacyKey, canonicalKey), /histories diverge/);
+    assert.deepStrictEqual(fs.readFileSync(conflictPath), conflictingBefore, "conflicting target history is preserved for user review");
     const approval = await restored.requestApproval(task.id, "merge", "Merge reviewed work", "google.antigravity.ide");
     const approvalRestored = new IntegratedPowerBroker(new EncryptedEventLedger(path.join(temp, "events.enc.jsonl"), Buffer.alloc(32, 7)), adapters);
     await approvalRestored.initialize();
@@ -267,10 +514,29 @@ async function main() {
     assert.ok(mcpTools.result.tools.some((tool) => tool.name === "integrated_power_cancel"));
     assert.ok(mcpTools.result.tools.some((tool) => tool.name === "integrated_power_merge"));
     const keyPath = path.join(temp, "secure", "events.key");
-    const firstKey = loadOrCreateLedgerKey(keyPath);
-    const secondKey = loadOrCreateLedgerKey(keyPath);
+    const keyring = new Map();
+    const testKeyStore = {
+      read(target) { return keyring.get(target); },
+      write(target, value) { keyring.set(target, Buffer.from(value)); return true; },
+      readFallback(target) { return keyring.get(`fallback:${target}`); },
+      writeFallback(target, value) { keyring.set(`fallback:${target}`, Buffer.from(value)); return true; },
+    };
+    const firstKey = loadOrCreateLedgerKey(keyPath, testKeyStore);
+    const secondKey = loadOrCreateLedgerKey(keyPath, testKeyStore);
     assert.strictEqual(firstKey.length, 32);
     assert.strictEqual(firstKey.equals(secondKey), true);
+    const legacyKeyPath = path.join(temp, "legacy-key", "events.key");
+    fs.mkdirSync(path.dirname(legacyKeyPath), { recursive: true });
+    fs.writeFileSync(legacyKeyPath, Buffer.alloc(32, 91));
+    const fallbackKeyring = new Map();
+    const unavailableKeyStore = {
+      read() { return undefined; }, write() { return false; },
+      readFallback(target) { return fallbackKeyring.get(target); },
+      writeFallback(target, value) { fallbackKeyring.set(target, Buffer.from(value)); return true; },
+    };
+    const preservedKey = loadOrCreateLedgerKey(legacyKeyPath, unavailableKeyStore);
+    assert.deepStrictEqual(preservedKey, Buffer.alloc(32, 91), "an existing legacy key is never replaced with random bytes");
+    assert.deepStrictEqual(loadExistingLedgerKey(legacyKeyPath, unavailableKeyStore), Buffer.alloc(32, 91));
     const providers = createFirstWaveAdapters().map((adapter) => adapter.provider);
     for (const provider of ["openai.chatgpt.app", "anthropic.claude.desktop", "anthropic.cowork", "xai.grok"]) assert.ok(providers.includes(provider));
     const hostIntegrations = listHostIntegrations();
@@ -311,10 +577,133 @@ async function main() {
     assert.strictEqual(sqlLedger instanceof SqlCipherEventLedger, true);
     assert.strictEqual(fs.readFileSync(sqlCipherPath).includes(Buffer.from("task.created")), false);
     sqlLedger.close?.();
-    const httpServer = await startBrokerServer(broker, 0);
+    const telemetryRoot = path.join(temp, "telemetry-state");
+    const workspaceId = "path-sharedfixture";
+    const workspaceState = path.join(telemetryRoot, "workspaces", workspaceId);
+    fs.mkdirSync(path.join(workspaceState, ".agent-runs"), { recursive: true });
+    fs.mkdirSync(path.join(workspaceState, "reports"), { recursive: true });
+    fs.writeFileSync(path.join(workspaceState, ".agent-runs", "runs.jsonl"), [
+      JSON.stringify({ id: "shared-api-run", title: "Shared state", status: "running" }),
+      "{ malformed",
+      JSON.stringify({ id: "shared-api-run", status: "completed" }),
+    ].join("\n"), "utf8");
+    fs.writeFileSync(path.join(workspaceState, "reports", "local_llm_metrics.csv"), 'Timestamp,TaskTitle,Model,TaskScale,ActualElapsedSeconds,TotalTokens,TaskType,Provider,Success,OutputChars,TokensPerSecond,SelectedBy,SelectionReason,ErrorMessage\n2026-10-13T01:00:00Z,"task, one","qwen3.8:27b",large,4.5,28,inference,ollama,true,95,6.2,selector,"selected, preferred",\n', "utf8");
+    const previousTelemetryRoot = process.env.INTEGRATED_POWER_STATE_ROOT;
+    process.env.INTEGRATED_POWER_STATE_ROOT = telemetryRoot;
+    let persistedTaskId;
+    let dispatchCount = 0;
+    let allowDispatch = true;
+    const fakeQuota = {
+      antigravityPercentage: 100, antigravityWeeklyPercentage: 80, antigravityResetTime: "2026-10-12T00:00:00.000Z",
+      opusPercentage: 100, opusWeeklyPercentage: 80, opusResetTime: "2026-10-12T00:00:00.000Z",
+      codexPercentage: 100, codexWeeklyPercentage: 80, codexResetTime: "2026-10-12T00:00:00.000Z",
+      lastSync: new Date().toISOString(),
+    };
+    const httpServer = await startBrokerServer(broker, 0, {
+      stateRoot: telemetryRoot,
+      autoSchedule: false,
+      tokenStatusReader: async () => fakeQuota,
+      prewarmDispatcher: async () => { dispatchCount++; return { spawned: allowDispatch }; },
+    });
     try {
       const health = await fetch(`http://127.0.0.1:${httpServer.port}/health`).then((response) => response.json());
       assert.strictEqual(health.ok, true);
+      assert.strictEqual(health.schemaVersion, 2);
+      assert.ok(health.capabilities.includes("runs.read"));
+      const quotaSettingsUrl = `http://127.0.0.1:${httpServer.port}/v1/settings/quota`;
+      const initialSettings = await fetch(quotaSettingsUrl).then((response) => response.json());
+      assert.strictEqual(initialSettings.initialized, false);
+      const seededSettings = {
+        pollIntervalMs: 7000,
+        notifyOnFull: false,
+        prewarmModes: { antigravity: "once", opus: "click", codex: "always" },
+        notifications: { antigravityGemini5h: false, claudeWeekly: false },
+      };
+      const settingsWrite = { expectedRevision: 0, initializeFrom: "ide", idempotencyKey: "settings-seed-1", settings: seededSettings };
+      const settingsSaved = await fetch(quotaSettingsUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(settingsWrite) });
+      assert.strictEqual(settingsSaved.status, 200);
+      const settingsSnapshot = await settingsSaved.json();
+      assert.strictEqual(settingsSnapshot.settings.notifyOnFull, false);
+      assert.strictEqual(settingsSnapshot.settings.notifications.antigravityGemini5h, false);
+      assert.strictEqual(settingsSnapshot.settings.notifications.chatgptWeekly, true);
+      const settingsRetry = await fetch(quotaSettingsUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(settingsWrite) });
+      assert.deepStrictEqual(await settingsRetry.json(), settingsSnapshot, "idempotent settings retry returns the original save result");
+      const prewarmBody = { model: "antigravity", manual: false, expectedSettingsRevision: 1, idempotencyKey: "auto-once-window-a" };
+      const [prewarmResponseA, prewarmResponseB] = await Promise.all([
+        fetch(`http://127.0.0.1:${httpServer.port}/v1/tokens/prewarm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(prewarmBody) }),
+        fetch(`http://127.0.0.1:${httpServer.port}/v1/tokens/prewarm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...prewarmBody, idempotencyKey: "auto-once-window-b" }) }),
+      ]);
+      const prewarmResults = await Promise.all([prewarmResponseA.json(), prewarmResponseB.json()]);
+      assert.deepStrictEqual(prewarmResults.map((item) => item.status).sort(), ["dispatched", "duplicate"]);
+      assert.strictEqual(prewarmResults.every((item) => item.timerConfirmed === false), true);
+      assert.strictEqual(dispatchCount, 1, "two clients in one quota window cause one prewarm dispatch");
+      const afterOnce = await fetch(quotaSettingsUrl).then((response) => response.json());
+      assert.strictEqual(afterOnce.settings.prewarmModes.antigravity, "click", "successful Once dispatch resets the shared mode");
+      assert.strictEqual(afterOnce.revision, 2);
+      const armFailedOnce = await fetch(quotaSettingsUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 2, idempotencyKey: "settings-opus-once", settings: { ...afterOnce.settings, prewarmModes: { ...afterOnce.settings.prewarmModes, opus: "once" } } }) });
+      assert.strictEqual(armFailedOnce.status, 200);
+      allowDispatch = false;
+      const failedPrewarm = await fetch(`http://127.0.0.1:${httpServer.port}/v1/tokens/prewarm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "opus", manual: false, expectedSettingsRevision: 3, idempotencyKey: "opus-once-failed" }) }).then((response) => response.json());
+      assert.strictEqual(failedPrewarm.status, "failed");
+      assert.strictEqual((await fetch(quotaSettingsUrl).then((response) => response.json())).settings.prewarmModes.opus, "once", "failed dispatch leaves Once armed");
+      const staleSettings = await fetch(quotaSettingsUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...settingsWrite, idempotencyKey: "settings-stale-1", settings: { ...seededSettings, pollIntervalMs: 9000 } }) });
+      assert.strictEqual(staleSettings.status, 409);
+      const staleSettingsBody = await staleSettings.json();
+      assert.strictEqual(staleSettingsBody.revision, 3);
+      assert.strictEqual(staleSettingsBody.settings.pollIntervalMs, 7000);
+      const partialSettings = await fetch(quotaSettingsUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 3, idempotencyKey: "settings-partial-notify", settings: { notifyOnFull: true } }) }).then((response) => response.json());
+      assert.strictEqual(partialSettings.settings.notifyOnFull, true);
+      assert.strictEqual(partialSettings.settings.notifications.antigravityGemini5h, false, "partial save preserves another target's disabled notification");
+      assert.strictEqual(partialSettings.settings.notifications.claudeWeekly, false, "partial save preserves an unrelated disabled notification");
+      assert.strictEqual(partialSettings.settings.prewarmModes.opus, "once", "partial save preserves an armed prewarm mode");
+      assert.strictEqual(partialSettings.settings.pollIntervalMs, 7000);
+      process.env.INTEGRATED_POWER_STATE_ROOT = path.join(temp, "different-process-default");
+      const workspaces = await fetch(`http://127.0.0.1:${httpServer.port}/v1/workspaces`).then((response) => response.json());
+      assert.deepStrictEqual(workspaces.workspaces.map((item) => item.workspaceId), [workspaceId]);
+      const runsResponse = await fetch(`http://127.0.0.1:${httpServer.port}/v1/runs?workspaceId=${workspaceId}`);
+      assert.strictEqual(runsResponse.status, 200);
+      const runsBody = await runsResponse.json();
+      assert.strictEqual(runsBody.ok, true);
+      assert.strictEqual(runsBody.activeCount, 0);
+      assert.strictEqual(runsBody.runs[0].status, "completed");
+      assert.strictEqual(runsBody.errors.length, 1);
+      assert.strictEqual(runsBody.workspaceId, workspaceId);
+      const metricsResponse = await fetch(`http://127.0.0.1:${httpServer.port}/v1/metrics/local-llm?workspaceId=${workspaceId}`);
+      assert.strictEqual(metricsResponse.status, 200);
+      const metricsBody = await metricsResponse.json();
+      assert.strictEqual(metricsBody.metrics[0].taskTitle, "task, one");
+      assert.strictEqual(metricsBody.ok, true);
+      const missingMetrics = await fetch(`http://127.0.0.1:${httpServer.port}/v1/metrics/local-llm?workspaceId=path-missingfixture`);
+      assert.strictEqual(missingMetrics.status, 404);
+      assert.strictEqual((await missingMetrics.json()).ok, false, "missing metrics must not be reported as an empty success");
+      process.env.INTEGRATED_POWER_STATE_ROOT = telemetryRoot;
+      const client = new BrokerClient(() => httpServer.port);
+      const clientHealth = await client.health();
+      assert.ok(clientHealth.capabilities.includes("approvals.userDecision"));
+      const clientWorkspaces = await client.listWorkspaces();
+      assert.strictEqual(clientWorkspaces.workspaces[0].workspaceId, workspaceId);
+      const scopedTask = await client.createTask({ title: "scoped UI task", goal: "verify workspace scoping", originProvider: "google.antigravity.ide", workspacePath: temp });
+      persistedTaskId = scopedTask.id;
+      const scopedTaskDetails = await client.getTaskDetails(scopedTask.id, { workspacePath: temp });
+      assert.strictEqual(scopedTaskDetails.task.id, scopedTask.id);
+      assert.ok(scopedTaskDetails.events.some((event) => event.type === "task.created"));
+      const clientWorkspacesAfterTask = await client.listWorkspaces();
+      assert.ok(clientWorkspacesAfterTask.workspaces.some((item) => item.workspaceId === scopedTaskDetails.workspaceId), "task workspaces appear even before a telemetry directory exists");
+      assert.ok(clientWorkspacesAfterTask.workspaces.every((item) => !("workspacePath" in item)), "workspace discovery does not disclose paths");
+      await assert.rejects(client.getTaskDetails(scopedTask.id, { workspaceId }), /404.*task_not_found/i, "task detail must not leak across workspace scopes");
+      assert.strictEqual((await client.listTasks({ workspacePath: temp })).tasks.some((item) => item.id === scopedTask.id), true);
+      assert.strictEqual((await client.listTasks({ workspaceId })).tasks.some((item) => item.id === scopedTask.id), false);
+      const delegated = await client.delegateTask({ taskId: scopedTask.id, provider: "google.antigravity.ide", prompt: "review", expectedRevision: scopedTask.revision, idempotencyKey: "http-approval-delegate" });
+      assert.strictEqual(delegated.type, "task.delegated");
+      const delegatedTask = (await client.listTasks({ workspacePath: temp })).tasks.find((item) => item.id === scopedTask.id);
+      const approval = await client.requestApproval({ taskId: scopedTask.id, action: "merge", description: "user review", requestedBy: "user", expectedRevision: delegatedTask.revision });
+      assert.strictEqual((await client.listApprovals({ workspacePath: temp })).approvals.some((item) => item.id === approval.id), true);
+      const queuedApproval = (await client.listApprovals({ workspacePath: temp })).approvals.find((item) => item.id === approval.id);
+      assert.strictEqual(approval.requestedRevision, delegatedTask.revision);
+      assert.strictEqual(queuedApproval.expectedRevision, delegatedTask.revision + 1);
+      assert.strictEqual((await client.getTaskDetails(scopedTask.id, { workspacePath: temp })).task.revision, queuedApproval.expectedRevision);
+      await client.approve(approval.id, queuedApproval.expectedRevision);
+      assert.strictEqual((await client.listApprovals({ workspacePath: temp })).approvals.some((item) => item.id === approval.id), false);
       const card = await fetch(`http://127.0.0.1:${httpServer.port}/.well-known/agent-card.json`).then((response) => response.json());
       assert.strictEqual(card.supportedInterfaces[0].protocolBinding, "HTTP+JSON");
       const integrations = await fetch(`http://127.0.0.1:${httpServer.port}/v1/integrations`).then((response) => response.json());
@@ -374,7 +763,35 @@ async function main() {
       }
     } finally {
       await httpServer.close();
+      if (previousTelemetryRoot === undefined) delete process.env.INTEGRATED_POWER_STATE_ROOT; else process.env.INTEGRATED_POWER_STATE_ROOT = previousTelemetryRoot;
     }
+    {
+      const schedulerRoot = path.join(temp, "broker-owned-scheduler");
+      const scheduledBroker = new IntegratedPowerBroker(new EncryptedEventLedger(path.join(schedulerRoot, "broker", "events.enc.jsonl"), Buffer.alloc(32, 44)), []);
+      await scheduledBroker.initialize();
+      let scheduledDispatches = 0;
+      const schedulerServer = await startBrokerServer(scheduledBroker, 0, {
+        stateRoot: schedulerRoot,
+        tokenStatusReader: async () => fakeQuota,
+        prewarmDispatcher: async () => { scheduledDispatches++; return { spawned: true }; },
+      });
+      try {
+        const schedulerBase = `http://127.0.0.1:${schedulerServer.port}`;
+        const schedulerSettings = await fetch(`${schedulerBase}/v1/settings/quota`).then((response) => response.json());
+        const schedulerSave = await fetch(`${schedulerBase}/v1/settings/quota`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: schedulerSettings.revision, initializeFrom: "ide", idempotencyKey: "scheduler-once-seed", settings: { pollIntervalMs: 1000, prewarmModes: { antigravity: "once", opus: "click", codex: "click" } } }) });
+        assert.strictEqual(schedulerSave.status, 200);
+        const deadline = Date.now() + 3500;
+        while (!scheduledDispatches && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
+        assert.strictEqual(scheduledDispatches, 1, "broker-owned scheduler dispatches an armed Once window without an IDE client");
+        const schedulerAfter = await fetch(`${schedulerBase}/v1/settings/quota`).then((response) => response.json());
+        assert.strictEqual(schedulerAfter.settings.prewarmModes.antigravity, "click", "headless scheduler consumes Once only after spawn");
+      } finally {
+        await schedulerServer.close();
+      }
+    }
+    const afterHttpRestart = new IntegratedPowerBroker(new EncryptedEventLedger(path.join(temp, "events.enc.jsonl"), Buffer.alloc(32, 7)), createFirstWaveAdapters());
+    await afterHttpRestart.initialize();
+    assert.strictEqual(afterHttpRestart.getTask(persistedTaskId).title, "scoped UI task", "HTTP-created task state survives broker reconstruction from the same ledger");
 
     // --- /v1/tokens/status: schema passthrough + ?force=1 -------------------
     // The broker must surface the original token_status.json fields (absolute
@@ -401,6 +818,7 @@ async function main() {
       codexEstimatedAbsolute: 333,
       codexWeeklyEstimatedAbsolute: 444,
       codexStatus: "working",
+      lastSync: new Date().toISOString(),
       errors: ["telemetry hiccup"],
       quotaPools: [
         { id: "codex.5h", provider: "codex", remainingPercentage: 100, resetTime: "2026-09-01T14:41:19.000Z", source: "cli-json", confidence: "reported-quota" },
@@ -424,10 +842,33 @@ async function main() {
     };
     fs.writeFileSync(tokenFile, JSON.stringify(baseFixture), "utf8");
     const savedLocalAppData = process.env.LOCALAPPDATA;
+    const savedStateRootEnv = process.env.INTEGRATED_POWER_STATE_ROOT;
     process.env.LOCALAPPDATA = stateRoot;
+    process.env.INTEGRATED_POWER_STATE_ROOT = stateDir;
     let forceHandlerCalls = 0;
     try {
       const { setForceRefreshHandler, startBrokerServer: startTokenServer } = require("../out/broker");
+      const standaloneTokenServer = await startTokenServer(broker, 0);
+      try {
+        const standaloneForce = await fetch(`http://127.0.0.1:${standaloneTokenServer.port}/v1/tokens/status?force=1`).then((r) => r.json());
+        assert.strictEqual(standaloneForce.forced, false, "an unavailable in-process refresh must not be reported as successful");
+        assert.strictEqual(standaloneForce.tokenStatus.lastSync, baseFixture.lastSync, "reading fresh token state must preserve its source measurement timestamp");
+      } finally {
+        await standaloneTokenServer.close();
+      }
+      let injectedReaderCalls = 0;
+      const injectedTokenServer = await startTokenServer(broker, 0, {
+        stateRoot: path.join(stateRoot, "injected-reader"),
+        tokenStatusReader: async () => { injectedReaderCalls++; return { marker: "injected-fake-status" }; },
+      });
+      try {
+        const injected = await fetch(`http://127.0.0.1:${injectedTokenServer.port}/v1/tokens/status?force=1`).then((r) => r.json());
+        assert.deepStrictEqual(injected.tokenStatus, { marker: "injected-fake-status" }, "HTTP token status must use the injected reader instead of the production scanner");
+        assert.strictEqual(injectedReaderCalls, 1, "HTTP force reads should use the injected fake provider exactly once");
+        assert.strictEqual(forceHandlerCalls, 0, "injected readers must not invoke the IDE force-refresh hook");
+      } finally {
+        await injectedTokenServer.close();
+      }
       setForceRefreshHandler(async () => {
         forceHandlerCalls++;
         // Simulate the live IDE re-probing and rewriting the state file. Codex
@@ -436,6 +877,7 @@ async function main() {
           tokenFile,
           JSON.stringify({
             ...baseFixture,
+            lastSync: new Date().toISOString(),
             codexPercentage: 55,
             codexTokensLeft: 777,
             quotaPools: baseFixture.quotaPools.map((p) =>
@@ -450,6 +892,7 @@ async function main() {
         const normal = await fetch(`http://127.0.0.1:${tokenServer.port}/v1/tokens/status`).then((r) => r.json());
         assert.strictEqual(normal.ok, true);
         assert.strictEqual(normal.forced, false);
+        assert.strictEqual(normal.tokenStatus.lastSync, baseFixture.lastSync);
         const ts = normal.tokenStatus;
         // Absolute token passthrough
         assert.strictEqual(ts.antigravityTokensLeft, 12345);
@@ -483,12 +926,14 @@ async function main() {
         // The handler rewrote the file; the broker re-read it (codex now 55/777).
         assert.strictEqual(forced.tokenStatus.codexPercentage, 55);
         assert.strictEqual(forced.tokenStatus.codexTokensLeft, 777);
+        assert.ok(Date.parse(forced.tokenStatus.lastSync) >= Date.parse(baseFixture.lastSync));
       } finally {
         await tokenServer.close();
         setForceRefreshHandler(undefined);
       }
     } finally {
       if (savedLocalAppData === undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA = savedLocalAppData;
+      if (savedStateRootEnv === undefined) delete process.env.INTEGRATED_POWER_STATE_ROOT; else process.env.INTEGRATED_POWER_STATE_ROOT = savedStateRootEnv;
       fs.rmSync(stateRoot, { recursive: true, force: true });
     }
     console.log("broker tests passed");

@@ -177,6 +177,8 @@ export interface ApprovalRequest {
   description: string;
   requestedBy: ProviderId | "user" | "broker";
   expectedRevision: number;
+  /** Revision observed when approval was requested; retained for audit only. */
+  requestedRevision?: number;
   createdAt: string;
   expiresAt?: string;
 }

@@ -1,0 +1,6 @@
+@echo off
+chcp 65001 > nul
+echo [Integrated Power - Antigravity IDE] 대화 기록 인덱스 자동 동기화 중...
+python "%~dp0sync_history.py"
+echo [Integrated Power - Antigravity IDE] 실행 중...
+start "" "C:\Users\jsp0\AppData\Local\Programs\Antigravity IDE\Antigravity IDE.exe" %*

@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { ChildProcessWithoutNullStreams, spawn } from "child_process";
+import { ChildProcess, ChildProcessWithoutNullStreams, spawn } from "child_process";
 import * as readline from "readline";
 import { AgentCapability, AgentAdapter, AgentStateKind, ProviderId, TaskEnvelope } from "./protocol";
 
@@ -370,5 +370,137 @@ export function findCodexCliSync(): string | undefined {
   }
 
   return "codex";
+}
+
+export interface LiveCodexRateLimits {
+  codexPercentage?: number;
+  codexResetTime?: string;
+  codexWeeklyPercentage?: number;
+  codexWeeklyResetTime?: string;
+  resetCredits?: number;
+}
+
+let cachedCodexRateLimits: { fetchedAt: number; data: LiveCodexRateLimits } | undefined;
+
+export async function fetchLiveCodexRateLimits(force = false): Promise<LiveCodexRateLimits | undefined> {
+  const now = Date.now();
+  // 20 second cache to keep it fresh and responsive without overhead
+  if (!force && cachedCodexRateLimits && now - cachedCodexRateLimits.fetchedAt < 20_000) {
+    return cachedCodexRateLimits.data;
+  }
+
+  const codexCli = findCodexCliSync();
+  if (!codexCli) return undefined;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let child: ChildProcess | undefined;
+
+    const finish = (res?: LiveCodexRateLimits) => {
+      if (!settled) {
+        settled = true;
+        if (child) {
+          try {
+            if (!child.killed) child.kill();
+          } catch {}
+        }
+        if (res) {
+          cachedCodexRateLimits = { fetchedAt: Date.now(), data: res };
+        }
+        resolve(res);
+      }
+    };
+
+    const timer = setTimeout(() => finish(undefined), 3500);
+
+    try {
+      child = spawn(codexCli, ["app-server", "--listen", "stdio://"], {
+        stdio: ["pipe", "pipe", "ignore"],
+        windowsHide: true,
+        shell: codexCli === "codex" || codexCli.endsWith(".cmd") || codexCli.endsWith(".bat"),
+      });
+    } catch {
+      clearTimeout(timer);
+      return resolve(undefined);
+    }
+
+    if (!child || !child.stdout || !child.stdin) {
+      clearTimeout(timer);
+      return resolve(undefined);
+    }
+
+    const activeChild = child;
+    activeChild.on("error", () => {
+      clearTimeout(timer);
+      finish(undefined);
+    });
+
+    const rl = readline.createInterface({ input: activeChild.stdout! });
+    let nextId = 1;
+
+    const sendRpc = (method: string, params: any) => {
+      const id = nextId++;
+      try {
+        activeChild.stdin?.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+      } catch {
+        finish(undefined);
+      }
+      return id;
+    };
+
+    rl.on("line", (line) => {
+      if (!line.trim()) return;
+      try {
+        const data = JSON.parse(line);
+        if (data.id === 1) {
+          sendRpc("account/rateLimits/read", null);
+        } else if (data.id === 2 && data.result) {
+          clearTimeout(timer);
+          const rateLimits = data.result.rateLimits;
+          const primary = rateLimits?.primary;
+          const secondary = rateLimits?.secondary;
+
+          let codexPercentage: number | undefined;
+          let codexResetTime: string | undefined;
+          let codexWeeklyPercentage: number | undefined;
+          let codexWeeklyResetTime: string | undefined;
+
+          if (primary) {
+            const usedPercent = typeof primary.usedPercent === "number" ? primary.usedPercent : undefined;
+            const resetsAt = typeof primary.resetsAt === "number" ? primary.resetsAt : undefined;
+            const isReset = Boolean(resetsAt && resetsAt * 1000 < Date.now());
+            codexPercentage = usedPercent !== undefined ? (isReset ? 100 : Math.max(0, Math.min(100, 100 - usedPercent))) : undefined;
+            codexResetTime = (!isReset && resetsAt) ? new Date(resetsAt * 1000).toISOString() : undefined;
+          }
+
+          if (secondary) {
+            const usedPercent = typeof secondary.usedPercent === "number" ? secondary.usedPercent : undefined;
+            const resetsAt = typeof secondary.resetsAt === "number" ? secondary.resetsAt : undefined;
+            const isReset = Boolean(resetsAt && resetsAt * 1000 < Date.now());
+            codexWeeklyPercentage = usedPercent !== undefined ? (isReset ? 100 : Math.max(0, Math.min(100, 100 - usedPercent))) : undefined;
+            codexWeeklyResetTime = (!isReset && resetsAt) ? new Date(resetsAt * 1000).toISOString() : undefined;
+          }
+
+          const resetCredits = typeof data.result.rateLimitResetCredits?.availableCount === "number"
+            ? data.result.rateLimitResetCredits.availableCount
+            : undefined;
+
+          finish({
+            codexPercentage,
+            codexResetTime,
+            codexWeeklyPercentage,
+            codexWeeklyResetTime,
+            resetCredits,
+          });
+        }
+      } catch {
+        // ignore malformed line
+      }
+    });
+
+    sendRpc("initialize", {
+      clientInfo: { name: "integrated_power", title: "Integrated Power", version: "0.9.21" },
+    });
+  });
 }
 

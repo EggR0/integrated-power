@@ -61,15 +61,122 @@ export class SqlCipherEventLedger implements EventLedger {
 }
 
 export function createPreferredEventLedger(filePath: string, key?: Buffer): EventLedger {
-  try {
-    if (fs.existsSync(filePath) && fs.readFileSync(filePath, { encoding: "utf8", flag: "r" }).trimStart().startsWith("{")) {
-      return new EncryptedEventLedger(filePath, key);
-    }
-  } catch { /* probe below */ }
+  const fallbackPath = filePath.endsWith(".enc.jsonl") ? `${filePath}.jsonl` : `${filePath}.jsonl`;
+  if (fs.existsSync(filePath) && fs.existsSync(fallbackPath)) {
+    throw new Error(`Multiple broker ledger formats exist beside ${filePath}. Preserve both files and resolve the conflict before startup.`);
+  }
+  if (fs.existsSync(filePath)) {
+    const format = detectLedgerFormat(filePath);
+    if (format === "jsonl") return new EncryptedEventLedger(filePath, key);
+    return new SqlCipherEventLedger(filePath, key);
+  }
+  if (fs.existsSync(fallbackPath)) return new EncryptedEventLedger(fallbackPath, key);
   try { return new SqlCipherEventLedger(filePath, key); } catch (error) {
-    const fallbackPath = filePath.endsWith(".enc.jsonl") ? filePath : `${filePath}.jsonl`;
     return new EncryptedEventLedger(fallbackPath, key);
   }
+}
+
+/** Re-encrypt an existing encrypted JSONL ledger into a canonical location.
+ * The source is never modified or deleted. Existing destination history must
+ * be an exact prefix of the source (or contain the full source as a prefix). */
+export async function migrateEncryptedLedger(
+  sourcePath: string,
+  destinationPath: string,
+  sourceKey: Buffer,
+  destinationKey: Buffer,
+): Promise<"migrated" | "destination-current" | "unchanged"> {
+  return migrateBrokerLedgers(
+    [{ path: sourcePath, key: sourceKey }],
+    destinationPath,
+    () => destinationKey,
+  );
+}
+
+export interface BrokerLedgerSource {
+  path: string;
+  key: Buffer;
+}
+
+/** Preflight every legacy/canonical history before writing; source files are never modified. */
+export async function migrateBrokerLedgers(
+  sources: BrokerLedgerSource[],
+  destinationPath: string,
+  destinationKeyProvider: (path: string, existing: boolean) => Buffer,
+): Promise<"migrated" | "destination-current" | "unchanged"> {
+  const existingSources = sources.filter((source) => fs.existsSync(source.path) && path.resolve(source.path) !== path.resolve(destinationPath));
+  if (!existingSources.length) return "unchanged";
+  const sourceHistories = await Promise.all(existingSources.map((source) => readLedgerEvents(source.path, source.key)));
+  for (let left = 0; left < sourceHistories.length; left++) {
+    for (let right = left + 1; right < sourceHistories.length; right++) {
+      if (!historiesComparable(sourceHistories[left], sourceHistories[right])) {
+        throw new Error("Broker ledger migration conflict: legacy histories diverge; neither ledger was changed.");
+      }
+    }
+  }
+  const latestSource = sourceHistories.reduce((latest, history) => history.length > latest.length ? history : latest, [] as TaskEvent[]);
+  const destinationExists = fs.existsSync(destinationPath);
+  const destinationKey = destinationKeyProvider(destinationPath, destinationExists);
+  if (destinationKey.length !== 32) throw new Error("Broker ledger migration destination key must be 32 bytes.");
+  const destination = destinationExists ? await readLedgerEvents(destinationPath, destinationKey) : [];
+  if (!historiesComparable(destination, latestSource)) {
+    throw new Error("Broker ledger migration conflict: source and canonical histories diverge; neither ledger was changed.");
+  }
+  const expected = destination.length > latestSource.length ? destination : latestSource;
+  if (destination.length >= latestSource.length) return "destination-current";
+
+  const target = destinationExists && detectLedgerFormat(destinationPath) === "sqlite"
+    ? new SqlCipherEventLedger(destinationPath, destinationKey)
+    : new EncryptedEventLedger(destinationPath, destinationKey);
+  for (const event of latestSource.slice(destination.length)) await target.append(event);
+  const readBack = await target.list();
+  if (readBack.length !== expected.length || !isEventPrefix(expected, readBack)) {
+    throw new Error(`Broker ledger migration verification failed: expected ${expected.length} events, read ${readBack.length}.`);
+  }
+  return "migrated";
+}
+
+async function readLedgerEvents(filePath: string, key: Buffer): Promise<TaskEvent[]> {
+  const format = detectLedgerFormat(filePath);
+  if (format === "jsonl") return new EncryptedEventLedger(filePath, key).list();
+  let Database: ((file: string, options?: { readonly?: boolean; fileMustExist?: boolean }) => SqlCipherDatabase) | undefined;
+  try { Database = require("better-sqlite3-multiple-ciphers"); }
+  catch (error) { throw new Error(`Cannot inspect legacy SQLCipher ledger without its native backend: ${error instanceof Error ? error.message : String(error)}`); }
+  let database: SqlCipherDatabase | undefined;
+  try {
+    database = Database!(filePath, { readonly: true, fileMustExist: true });
+    database.pragma("cipher='sqlcipher'");
+    database.key(key);
+    if (!database.pragma("cipher_version")) throw new Error("SQLCipher is not active.");
+    return database.prepare("SELECT event_json FROM events ORDER BY sequence").all().map((row) => JSON.parse(row.event_json) as TaskEvent);
+  } catch (error) {
+    throw new Error(`Unable to read legacy SQLCipher ledger at ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    database?.close();
+  }
+}
+
+function detectLedgerFormat(filePath: string): "jsonl" | "sqlite" {
+  const descriptor = fs.openSync(filePath, "r");
+  try {
+    const header = Buffer.alloc(16);
+    const count = fs.readSync(descriptor, header, 0, header.length, 0);
+    const prefix = header.subarray(0, count);
+    if (prefix.toString("utf8").trimStart().startsWith("{")) return "jsonl";
+    // SQLCipher encrypts the SQLite page header, so encrypted databases do not
+    // carry the ordinary SQLite magic bytes. The caller opens this candidate
+    // read-only and fails explicitly if it is not a valid SQLCipher ledger.
+    return "sqlite";
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function historiesComparable(left: TaskEvent[], right: TaskEvent[]): boolean {
+  return isEventPrefix(left, right) || isEventPrefix(right, left);
+}
+
+function isEventPrefix(prefix: TaskEvent[], history: TaskEvent[]): boolean {
+  return prefix.every((event, index) => JSON.stringify(event) === JSON.stringify(history[index]));
 }
 
 /**
@@ -117,10 +224,13 @@ export class EncryptedEventLedger implements EventLedger {
       throw error;
     }
     const events: TaskEvent[] = [];
-    for (const line of text.split(/\r?\n/).filter(Boolean)) {
+    for (const [index, line] of text.split(/\r?\n/).entries()) {
+      if (!line.trim()) continue;
       try {
         const record = JSON.parse(line) as EncryptedRecord;
-        if (record.version !== 1 || !record.iv || !record.tag || !record.ciphertext) continue;
+        if (record.version !== 1 || !record.iv || !record.tag || !record.ciphertext) {
+          throw new Error("unsupported or incomplete encrypted record");
+        }
         const decipher = crypto.createDecipheriv(
           "aes-256-gcm",
           this.key,
@@ -133,8 +243,8 @@ export class EncryptedEventLedger implements EventLedger {
         ]).toString("utf8");
         const event = JSON.parse(plaintext) as TaskEvent;
         if (!taskId || event.taskId === taskId) events.push(event);
-      } catch {
-        // Gracefully ignore legacy binary SQLite data or unparseable records
+      } catch (error) {
+        throw new Error(`Unable to read encrypted ledger record at line ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     return events;

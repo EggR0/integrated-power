@@ -109,7 +109,7 @@ export interface PrewarmResult {
 
 /** Check if a given metric qualifies for pre-warming. */
 export function canTriggerPrewarm(metric: TokenMetric): boolean {
-  return metric.label === "5Hours" && metric.percentage >= 99.95 && !metric.isWeeklyExhausted;
+  return metric.label === "5Hours" && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
 }
 
 /**

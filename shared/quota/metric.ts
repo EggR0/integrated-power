@@ -28,6 +28,24 @@ import {
 import { calculateEffective5HourQuota } from "./capacity";
 import { formatRefreshCountdown, formatTokenCount } from "./format";
 
+/** Build the existing desktop gauge divider gradient for an equal-segment track. */
+export function buildGaugeTickGradient(segments: number): string {
+  if (!Number.isInteger(segments) || segments < 2 || segments > 20) {
+    throw new RangeError("Gauge segments must be an integer from 2 to 20.");
+  }
+  const stops: string[] = [];
+  for (let i = 1; i < segments; i++) {
+    const at = `${(100 * i) / segments}%`;
+    stops.push(
+      `transparent ${at}`,
+      `rgba(255, 255, 255, 0.55) ${at}`,
+      `rgba(255, 255, 255, 0.55) calc(${at} + 2px)`,
+      `transparent calc(${at} + 2px)`
+    );
+  }
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
 /** A token_status object: a flat bag of per-window numeric/string fields. */
 export type TokenStatus = Record<string, unknown>;
 
@@ -57,6 +75,7 @@ export interface TokenMetric {
   isWeeklyCapped: boolean;
   canPrewarm: boolean;
   isReady: boolean;
+  isPrewarmed: boolean;
 }
 
 /** One entry in the Best / Lowest summary (a single window). */
@@ -182,8 +201,17 @@ export function buildTokenMetric(
     }
   }
 
-  const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
-  const countdown = is5HourReady ? undefined : formatRefreshCountdown(effectiveResetTime);
+  const is5HourAt100 = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+  const countdown = formatRefreshCountdown(effectiveResetTime);
+  const hasActiveFutureCountdown = Boolean(
+    countdown &&
+    effectiveResetTime &&
+    new Date(effectiveResetTime).getTime() > Date.now()
+  );
+
+  // A 5-hour window is Ready ONLY when 100% full AND no rolling recharge timer is currently running ahead of time.
+  const is5HourReady = is5HourAt100 && !hasActiveFutureCountdown;
+  const isPrewarmed = false;
   let refreshFull = "";
   let refreshMedium = "";
   let refreshShort = "";
@@ -238,6 +266,7 @@ export function buildTokenMetric(
     isWeeklyCapped,
     canPrewarm,
     isReady,
+    isPrewarmed,
   };
 }
 

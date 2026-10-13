@@ -83,7 +83,12 @@ export class IntegratedPowerBroker {
   }
 
   public getApprovals(): ApprovalRequest[] {
-    return [...this.approvals.values()];
+    return [...this.approvals.values()].map((approval) => {
+      const task = this.tasks.get(approval.taskId);
+      return task
+        ? { ...approval, requestedRevision: approval.requestedRevision ?? approval.expectedRevision, expectedRevision: task.revision }
+        : approval;
+    });
   }
 
   public async events(taskId?: string): Promise<TaskEvent[]> {
@@ -336,7 +341,7 @@ export class IntegratedPowerBroker {
       const task = this.requireTask(taskId);
       const key = idempotencyKey ?? createIdempotencyKey();
       const prior = this.approvalIdempotency.get(key);
-      if (prior) return prior;
+      if (prior) return { ...prior, requestedRevision: prior.requestedRevision ?? prior.expectedRevision, expectedRevision: task.revision };
       const revision = expectedRevision ?? task.revision;
       if (task.revision !== revision) throw new BrokerConflictError(task.revision);
       const approval: ApprovalRequest = {
@@ -345,7 +350,8 @@ export class IntegratedPowerBroker {
         action,
         description,
         requestedBy,
-        expectedRevision: revision,
+        expectedRevision: revision + 1,
+        requestedRevision: revision,
         createdAt: new Date().toISOString(),
       };
       this.approvals.set(approval.id, approval);

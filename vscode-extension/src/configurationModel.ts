@@ -18,6 +18,7 @@ import {
   inspectKnowledgeTools,
   installKnowledgeTools,
 } from "./KnowledgeToolInstaller";
+import { isAntigravityHost } from "./AntigravityHistorySync";
 
 const DASHBOARD_SETUP_KEY = "eggr.setup.dashboard.completed.v1";
 const FIRST_RUN_PROMPT_KEY = "eggr.setup.firstRunPromptShown.v1";
@@ -142,6 +143,7 @@ export interface ConfigurationCenterSnapshot {
     };
   };
   extensionVersion: string;
+  isAntigravityHost: boolean;
 }
 
 interface OrchestratorLocalLlmSettings {
@@ -330,6 +332,7 @@ export function loadConfigurationCenterSnapshot(
       },
     },
     extensionVersion: String(context.extension.packageJSON.version ?? "unknown"),
+    isAntigravityHost: isAntigravityHost(),
   };
 }
 

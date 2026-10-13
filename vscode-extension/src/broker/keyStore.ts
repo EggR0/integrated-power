@@ -5,23 +5,59 @@ import { execFileSync } from "child_process";
 
 const SERVICE = "IntegratedPower";
 
+export interface LedgerKeyStore {
+  read(target: string): Buffer | undefined;
+  write(target: string, value: Buffer): boolean;
+  readFallback(filePath: string): Buffer | undefined;
+  writeFallback(filePath: string, value: Buffer): boolean;
+}
+
 /** Require a platform secret store; a legacy key is accepted only while it is
  * migrated into that store. Windows additionally uses user-scoped DPAPI. */
-export function loadOrCreateLedgerKey(filePath: string): Buffer {
+export function loadOrCreateLedgerKey(
+  filePath: string,
+  keyStore: LedgerKeyStore = { read: readSecure, write: writeSecure, readFallback: readDpapi, writeFallback: writeDpapi },
+): Buffer {
   const target = `${SERVICE}/${crypto.createHash("sha256").update(path.resolve(filePath)).digest("hex")}`;
-  const secure = readSecure(target);
+  const secure = keyStore.read(target);
   if (secure?.length === 32) return secure;
-  const dpapi = readDpapi(`${filePath}.dpapi`);
+  const dpapi = keyStore.readFallback(`${filePath}.dpapi`);
   if (dpapi?.length === 32) return dpapi;
+  let legacy: Buffer | undefined;
+  try {
+    legacy = fs.readFileSync(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (legacy) {
+    if (legacy.length !== 32) throw new Error("Existing ledger key file is invalid; refusing to replace it.");
+    if (keyStore.write(target, legacy)) return legacy;
+    if (keyStore.writeFallback(`${filePath}.dpapi`, legacy)) return legacy;
+    throw new Error("Existing ledger key cannot be migrated into a secure platform store; refusing to replace it.");
+  }
+  const generated = crypto.randomBytes(32);
+  if (!keyStore.write(target, generated) && !keyStore.writeFallback(`${filePath}.dpapi`, generated)) throw new Error("No platform secure key store is available for the Integrated Power ledger.");
+  return generated;
+}
+
+/** Read an existing key without creating or migrating one. */
+export function loadExistingLedgerKey(
+  filePath: string,
+  keyStore: LedgerKeyStore = { read: readSecure, write: writeSecure, readFallback: readDpapi, writeFallback: writeDpapi },
+): Buffer | undefined {
+  const target = `${SERVICE}/${crypto.createHash("sha256").update(path.resolve(filePath)).digest("hex")}`;
+  const secure = keyStore.read(target);
+  if (secure?.length === 32) return secure;
+  const fallback = keyStore.readFallback(`${filePath}.dpapi`);
+  if (fallback?.length === 32) return fallback;
   try {
     const legacy = fs.readFileSync(filePath);
-    if (legacy.length === 32) {
-      if (writeSecure(target, legacy)) return legacy;
-    }
-  } catch { /* create below */ }
-  const generated = crypto.randomBytes(32);
-  if (!writeSecure(target, generated) && !writeDpapi(`${filePath}.dpapi`, generated)) throw new Error("No platform secure key store is available for the Integrated Power ledger.");
-  return generated;
+    if (legacy.length !== 32) throw new Error("Existing ledger key file is invalid.");
+    return legacy;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
 }
 
 function readSecure(target: string): Buffer | undefined {

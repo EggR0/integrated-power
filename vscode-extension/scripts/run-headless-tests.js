@@ -201,6 +201,7 @@ test("package commands exclude removed Athena workflow and legacy terminals", ()
     "integratedPower.agentRuns.openCompact",
     "integratedPower.agentRuns.openRunsFile",
     "integratedPower.agentRuns.refresh",
+    "integratedPower.antigravity.syncHistory",
     "integratedPower.broker.openDashboard",
     "integratedPower.broker.showLogs",
     "integratedPower.broker.start",

@@ -1,4 +1,15 @@
+import type { ApprovalRequest, ProviderId, TaskEnvelope } from "./broker/protocol";
+
 export type JsonObject = Record<string, unknown>;
+
+export interface BrokerDashboardState {
+  workspaceName: string;
+  tasks: TaskEnvelope[];
+  approvals: ApprovalRequest[];
+  error?: string;
+  loading?: boolean;
+  busy?: boolean;
+}
 
 export interface ArtifactRef {
   id: string;
@@ -206,11 +217,18 @@ export type WebviewToExtensionMessage =
   | { type: "showOllama" }
   | { type: "showWebUI" }
   | { type: "prewarm"; model?: string }
-  | { type: "setPrewarmMode"; mode: PrewarmMode; target?: string };
+  | { type: "setPrewarmMode"; mode: PrewarmMode; target?: string }
+  | { type: "refreshBroker" }
+  | { type: "createBrokerTask"; title: string; goal: string; originProvider: ProviderId }
+  | { type: "delegateBrokerTask"; taskId: string; expectedRevision: number; provider: ProviderId; prompt: string }
+  | { type: "cancelBrokerTask"; taskId: string; expectedRevision: number }
+  | { type: "resolveBrokerApproval"; approvalId: string; expectedRevision: number; action: "approve" | "reject" };
 
 export type ExtensionToWebviewMessage =
   | { type: "state"; state: DashboardState }
   | { type: "loading"; isLoading?: boolean; isTokenLoading?: boolean }
+  | { type: "brokerState"; state: BrokerDashboardState }
+  | { type: "brokerLoading"; busy?: boolean }
   | { type: "error"; message: string };
 
 export type DashboardInboundMessage = WebviewToExtensionMessage;

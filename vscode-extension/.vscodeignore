@@ -3,11 +3,13 @@
 src/
 scripts/run-headless-tests.js
 scripts/build-extension.js
+scripts/test-vsix-runtime.js
 node_modules/
 out/**/*.map
 out/test/
 out/**
 !out/extension.js
+!out/shared-quota.js
 package-lock.json
 pnpm-lock.yaml
 pnpm-workspace.yaml

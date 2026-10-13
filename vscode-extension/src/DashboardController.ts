@@ -2,14 +2,30 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import * as cp from "child_process";
-import { DashboardOutboundMessage, DashboardState, RunSummary, WebviewToExtensionMessage, TokenStatus, LocalLlmMetric, PrewarmMode } from "./types";
+import { randomUUID } from "crypto";
+import { DashboardOutboundMessage, DashboardState, RunSummary, WebviewToExtensionMessage, TokenStatus, LocalLlmMetric, PrewarmMode, BrokerDashboardState } from "./types";
 import { RunStore } from "./RunStore";
 import { TokenManager, getLowestCodexModel, getLowestAgyModel } from "./TokenManager";
 import { WorkspacePaths } from "./WorkspacePaths";
 import { resolveIntegratedPowerStateRoot } from "./storagePath";
 import { detectRefilledQuotaWindows } from "./quotaNotifications";
+import { BrokerController } from "./BrokerController";
+import { ApprovalRequest, TaskEnvelope } from "./broker/protocol";
+import { WorkspaceScope } from "./broker/client";
+import type { QuotaSettings } from "./broker/quotaSettingsStore";
 
 type PostMessage = (message: DashboardOutboundMessage) => void;
+
+const QUOTA_NOTIFICATION_KEYS = [
+  "antigravityGemini5h",
+  "antigravityGeminiWeekly",
+  "antigravityClaude5h",
+  "antigravityClaudeWeekly",
+  "chatgpt5h",
+  "chatgptWeekly",
+  "claude5h",
+  "claudeWeekly",
+] as const;
 
 export class DashboardController implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
@@ -18,6 +34,9 @@ export class DashboardController implements vscode.Disposable {
   private readonly runStore = new RunStore();
   private readonly tokenManager = new TokenManager();
   private readonly paths: WorkspacePaths;
+  private readonly brokerState: BrokerDashboardState = { workspaceName: "Current workspace", tasks: [], approvals: [], loading: true };
+  private readonly brokerTasks = new Map<string, TaskEnvelope>();
+  private readonly brokerApprovals = new Map<string, ApprovalRequest>();
   private refreshTimer?: ReturnType<typeof setTimeout>;
   private writeTimer?: ReturnType<typeof setTimeout>;
   private tokenPollingTimer?: ReturnType<typeof setInterval>;
@@ -33,9 +52,22 @@ export class DashboardController implements vscode.Disposable {
     codex: "click",
   };
   private lastAutoPrewarmByTarget: Record<string, number> = {};
+  private quotaSettingsRevision?: number;
+  private sharedQuotaSettingsReady = false;
+  private sharedQuotaSettingsCapabilityKnown = false;
+  private sharedQuotaSettingsSupported = false;
+  private brokerStartupFailed = false;
+  private syncedQuotaSettingsFingerprint = "";
+  private applyingQuotaSettings = false;
+  private quotaSettingsRefresh?: Promise<void>;
+  private quotaSettingsRetryAt = 0;
   private state: DashboardState = this.emptyState();
 
-  constructor(private readonly context: vscode.ExtensionContext, private readonly postMessage: PostMessage) {
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly postMessage: PostMessage,
+    private readonly brokerController?: BrokerController,
+  ) {
     this.paths = new WorkspacePaths(context);
     this.disposables.push(this.output);
     this.currentPrewarmModes = this.loadPrewarmModesFromConfig();
@@ -43,6 +75,7 @@ export class DashboardController implements vscode.Disposable {
     this.state.prewarmMode = this.currentPrewarmMode;
     this.state.prewarmModes = { ...this.currentPrewarmModes };
     this.resetWatchers();
+    void this.refreshQuotaSettings();
 
     this.disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => {
@@ -65,6 +98,12 @@ export class DashboardController implements vscode.Disposable {
           if (e.affectsConfiguration("integratedPower.quota.pollInterval")) {
             this.restartTokenPolling();
           }
+        }
+        if (e.affectsConfiguration("integratedPower.notifications")) {
+          if (!this.applyingQuotaSettings) void this.persistLocalQuotaSettings();
+        }
+        if (e.affectsConfiguration("integratedPower.quota") && !this.applyingQuotaSettings) {
+          void this.persistLocalQuotaSettings();
         }
       })
     );
@@ -104,10 +143,28 @@ export class DashboardController implements vscode.Disposable {
       case "ready":
         this.seedVisibleState(message.state);
         this.postState();
+        await this.refreshQuotaSettings(true);
+        await this.refreshBrokerControls();
         await this.refresh();
         return;
       case "refresh":
         await this.refresh(true);
+        await this.refreshBrokerControls();
+        return;
+      case "refreshBroker":
+        await this.refreshBrokerControls();
+        return;
+      case "createBrokerTask":
+        await this.createBrokerTask(message.title, message.goal, message.originProvider);
+        return;
+      case "delegateBrokerTask":
+        await this.delegateBrokerTask(message.taskId, message.expectedRevision, message.provider, message.prompt);
+        return;
+      case "cancelBrokerTask":
+        await this.cancelBrokerTask(message.taskId, message.expectedRevision);
+        return;
+      case "resolveBrokerApproval":
+        await this.resolveBrokerApproval(message.approvalId, message.expectedRevision, message.action);
         return;
       case "configureViews":
         await vscode.commands.executeCommand("integratedPower.agentRuns.configureViews");
@@ -141,6 +198,115 @@ export class DashboardController implements vscode.Disposable {
         await this.setPrewarmMode(prewarmMsg.mode, prewarmMsg.target);
         return;
     }
+  }
+
+  private brokerScope(): WorkspaceScope {
+    const folder = this.paths.primaryFolder;
+    if (!folder) throw new Error("Open a workspace before using broker tasks.");
+    return { workspacePath: folder.uri.fsPath };
+  }
+
+  private async refreshBrokerControls(): Promise<void> {
+    this.brokerState.loading = true;
+    this.brokerState.error = undefined;
+    this.postMessage({ type: "brokerLoading" });
+    try {
+      const scope = this.brokerScope();
+      this.brokerState.workspaceName = this.paths.workspaceName;
+      const client = this.getBrokerClient();
+      const [taskResult, approvalResult] = await Promise.all([
+        client.listTasks(scope),
+        client.listApprovals(scope),
+      ]);
+      if (!taskResult.ok || taskResult.errors.length || !approvalResult.ok || approvalResult.errors.length) {
+        throw new Error([...taskResult.errors, ...approvalResult.errors].filter(Boolean).join("; ") || "Broker workspace data is unavailable.");
+      }
+      this.brokerState.tasks = taskResult.tasks;
+      this.brokerState.approvals = approvalResult.approvals;
+      this.brokerTasks.clear();
+      this.brokerApprovals.clear();
+      for (const task of taskResult.tasks) this.brokerTasks.set(task.id, task);
+      for (const approval of approvalResult.approvals) this.brokerApprovals.set(approval.id, approval);
+    } catch (error) {
+      this.brokerState.error = this.errorMessage(error);
+      this.brokerState.tasks = [];
+      this.brokerState.approvals = [];
+      this.brokerTasks.clear();
+      this.brokerApprovals.clear();
+    } finally {
+      this.brokerState.loading = false;
+      this.postMessage({ type: "brokerState", state: { ...this.brokerState } });
+    }
+  }
+
+  private async runBrokerAction(action: () => Promise<void>): Promise<void> {
+    this.brokerState.busy = true;
+    this.brokerState.error = undefined;
+    this.postMessage({ type: "brokerLoading", busy: true });
+    let actionError: string | undefined;
+    try {
+      await action();
+    } catch (error) {
+      actionError = this.errorMessage(error);
+    }
+    this.brokerState.busy = false;
+    await this.refreshBrokerControls();
+    if (actionError) {
+      this.brokerState.error = actionError;
+      this.postMessage({ type: "brokerState", state: { ...this.brokerState } });
+    }
+  }
+
+  private async createBrokerTask(title: string, goal: string, originProvider: import("./broker/protocol").ProviderId): Promise<void> {
+    await this.runBrokerAction(async () => {
+      const scope = this.brokerScope();
+      await this.getBrokerClient().createTask({
+        title: title.trim(), goal: goal.trim(), originProvider,
+        workspacePath: scope.workspacePath,
+        idempotencyKey: randomUUID(),
+      });
+    });
+  }
+
+  private async delegateBrokerTask(taskId: string, expectedRevision: number, provider: import("./broker/protocol").ProviderId, prompt: string): Promise<void> {
+    await this.runBrokerAction(async () => {
+      const task = this.requireScopedTask(taskId, expectedRevision);
+      await this.getBrokerClient().delegateTask({
+        taskId, provider, prompt: prompt.trim(), expectedRevision: task.revision, idempotencyKey: randomUUID(),
+      });
+    });
+  }
+
+  private async cancelBrokerTask(taskId: string, expectedRevision: number): Promise<void> {
+    await this.runBrokerAction(async () => {
+      const task = this.requireScopedTask(taskId, expectedRevision);
+      await this.getBrokerClient().cancelTask(taskId, task.revision, randomUUID());
+    });
+  }
+
+  private async resolveBrokerApproval(approvalId: string, expectedRevision: number, action: "approve" | "reject"): Promise<void> {
+    await this.runBrokerAction(async () => {
+      const approval = this.brokerApprovals.get(approvalId);
+      if (!approval || approval.expectedRevision !== expectedRevision) {
+        throw new Error("This approval is no longer in the selected workspace or has changed. Refresh and review it again.");
+      }
+      const client = this.getBrokerClient();
+      if (action === "approve") await client.approve(approvalId, expectedRevision, randomUUID());
+      else await client.reject(approvalId, expectedRevision, randomUUID());
+    });
+  }
+
+  private requireScopedTask(taskId: string, expectedRevision: number): TaskEnvelope {
+    const task = this.brokerTasks.get(taskId);
+    if (!task || task.revision !== expectedRevision) {
+      throw new Error("This task is no longer in the selected workspace or has changed. Refresh and review it again.");
+    }
+    return task;
+  }
+
+  private getBrokerClient() {
+    if (!this.brokerController) throw new Error("Broker controls are unavailable in this dashboard instance.");
+    return this.brokerController.getClient();
   }
 
   public async refresh(force: boolean = false): Promise<void> {
@@ -244,6 +410,159 @@ export class DashboardController implements vscode.Disposable {
     return Math.min(Math.max(Math.round(ms), 1000), 60000);
   }
 
+  public refreshQuotaSettings(force = false): Promise<void> {
+    if (this.quotaSettingsRefresh) {
+      return force
+        ? this.quotaSettingsRefresh.then(() => this.refreshQuotaSettings(true))
+        : this.quotaSettingsRefresh;
+    }
+    if (!force && Date.now() < this.quotaSettingsRetryAt) return Promise.resolve();
+    const refresh = this.loadQuotaSettings();
+    this.quotaSettingsRefresh = refresh.finally(() => { this.quotaSettingsRefresh = undefined; });
+    return this.quotaSettingsRefresh;
+  }
+
+  public useLegacyQuotaSettingsFallback(): void {
+    this.brokerStartupFailed = true;
+    this.sharedQuotaSettingsCapabilityKnown = true;
+    this.sharedQuotaSettingsSupported = false;
+    void this.checkAutoPrewarm(this.state.tokenStatus);
+  }
+
+  private async loadQuotaSettings(): Promise<void> {
+    const client = this.brokerController?.getClient();
+    if (!client) return;
+    try {
+      let result = await client.getQuotaSettings();
+      if (!result.initialized && result.revision === 0) {
+        result = await client.putQuotaSettings({
+          expectedRevision: 0,
+          initializeFrom: "ide",
+          idempotencyKey: randomUUID(),
+          settings: this.readLocalQuotaSettings(),
+        });
+        if (result.conflict) result = await client.getQuotaSettings();
+      }
+      if (!result.initialized || result.revision < 0) {
+        this.sharedQuotaSettingsCapabilityKnown = true;
+        this.sharedQuotaSettingsSupported = true;
+        this.sharedQuotaSettingsReady = false;
+        return;
+      }
+      this.sharedQuotaSettingsCapabilityKnown = true;
+      this.sharedQuotaSettingsSupported = true;
+      this.quotaSettingsRetryAt = 0;
+      await this.applyQuotaSettings(result.revision, result.settings);
+    } catch (error) {
+      // A legacy broker has no shared-settings capability; keep the validated IDE settings path.
+      const health = this.brokerController?.getAttachedHealth() ?? await this.brokerController?.getClient().health().catch(() => undefined);
+      this.sharedQuotaSettingsCapabilityKnown = Boolean(health);
+      this.sharedQuotaSettingsSupported = Boolean(health?.capabilities?.includes("quota.settings.read"));
+      this.sharedQuotaSettingsReady = false;
+      this.quotaSettingsRetryAt = Date.now() + 30_000;
+      this.output.appendLine(`[quota settings] Shared settings unavailable; using IDE fallback: ${this.errorMessage(error)}`);
+    }
+  }
+
+  private readLocalQuotaSettings(): QuotaSettings {
+    const quota = vscode.workspace.getConfiguration("integratedPower.quota");
+    const notifications = vscode.workspace.getConfiguration("integratedPower.notifications");
+    const legacyMode = this.normalizeMode(quota.get<string>("prewarmMode", "click"));
+    const prewarmModes = {
+      antigravity: this.normalizeMode(quota.get<string>("prewarmModeGemini", legacyMode)),
+      opus: this.normalizeMode(quota.get<string>("prewarmModeClaude", legacyMode)),
+      codex: this.normalizeMode(quota.get<string>("prewarmModeChatGPT", legacyMode)),
+    };
+    return {
+      pollIntervalMs: this.getPollIntervalMs(),
+      notifyOnFull: notifications.get<boolean>("notifyOnFullTokens", true),
+      prewarmMode: prewarmModes.antigravity,
+      prewarmModes,
+      notifications: Object.fromEntries(QUOTA_NOTIFICATION_KEYS.map((key) => [key, notifications.get<boolean>(key, true)])),
+    };
+  }
+
+  private quotaSettingsFingerprint(settings: QuotaSettings): string {
+    return JSON.stringify({
+      pollIntervalMs: settings.pollIntervalMs,
+      notifyOnFull: settings.notifyOnFull,
+      prewarmModes: settings.prewarmModes,
+      notifications: Object.fromEntries(QUOTA_NOTIFICATION_KEYS.map((key) => [key, settings.notifications[key] !== false])),
+    });
+  }
+
+  private async applyQuotaSettings(revision: number, settings: QuotaSettings): Promise<void> {
+    this.quotaSettingsRevision = revision;
+    this.sharedQuotaSettingsReady = true;
+    this.syncedQuotaSettingsFingerprint = this.quotaSettingsFingerprint(settings);
+    this.currentPrewarmModes = {
+      antigravity: this.normalizeMode(settings.prewarmModes?.antigravity ?? settings.prewarmMode),
+      opus: this.normalizeMode(settings.prewarmModes?.opus ?? settings.prewarmMode),
+      codex: this.normalizeMode(settings.prewarmModes?.codex ?? settings.prewarmMode),
+    };
+    this.currentPrewarmMode = this.currentPrewarmModes.antigravity;
+    this.state = {
+      ...this.state,
+      prewarmMode: this.currentPrewarmMode,
+      prewarmModes: { ...this.currentPrewarmModes },
+    };
+    this.postState();
+
+    const current = this.readLocalQuotaSettings();
+    if (this.quotaSettingsFingerprint(current) === this.syncedQuotaSettingsFingerprint) return;
+    this.applyingQuotaSettings = true;
+    try {
+      const quota = vscode.workspace.getConfiguration("integratedPower.quota");
+      const notifications = vscode.workspace.getConfiguration("integratedPower.notifications");
+      const pollInterval = Math.min(60, Math.max(1, Math.round(settings.pollIntervalMs / 1000)));
+      if (current.pollIntervalMs !== pollInterval * 1000) await quota.update("pollInterval", pollInterval, vscode.ConfigurationTarget.Global);
+      if (current.prewarmMode !== settings.prewarmMode) await quota.update("prewarmMode", settings.prewarmMode, vscode.ConfigurationTarget.Global);
+      if (current.prewarmModes.antigravity !== settings.prewarmModes.antigravity) await quota.update("prewarmModeGemini", settings.prewarmModes.antigravity, vscode.ConfigurationTarget.Global);
+      if (current.prewarmModes.opus !== settings.prewarmModes.opus) await quota.update("prewarmModeClaude", settings.prewarmModes.opus, vscode.ConfigurationTarget.Global);
+      if (current.prewarmModes.codex !== settings.prewarmModes.codex) await quota.update("prewarmModeChatGPT", settings.prewarmModes.codex, vscode.ConfigurationTarget.Global);
+      if (current.notifyOnFull !== settings.notifyOnFull) await notifications.update("notifyOnFullTokens", settings.notifyOnFull, vscode.ConfigurationTarget.Global);
+      for (const key of QUOTA_NOTIFICATION_KEYS) {
+        if (current.notifications[key] !== settings.notifications[key]) {
+          await notifications.update(key, settings.notifications[key], vscode.ConfigurationTarget.Global);
+        }
+      }
+    } finally {
+      this.applyingQuotaSettings = false;
+    }
+    this.restartTokenPolling();
+  }
+
+  private async persistLocalQuotaSettings(): Promise<void> {
+    if (!this.brokerController || !this.sharedQuotaSettingsReady || this.applyingQuotaSettings || this.quotaSettingsRevision === undefined) return;
+    const settings = this.readLocalQuotaSettings();
+    if (this.quotaSettingsFingerprint(settings) === this.syncedQuotaSettingsFingerprint) return;
+    await this.writeSharedQuotaSettings(settings);
+  }
+
+  private async writeSharedQuotaSettings(settings: QuotaSettings): Promise<boolean> {
+    if (!this.brokerController || this.quotaSettingsRevision === undefined) return false;
+    try {
+      const result = await this.brokerController.getClient().putQuotaSettings({
+        expectedRevision: this.quotaSettingsRevision,
+        idempotencyKey: randomUUID(),
+        settings,
+      });
+      if (result.conflict) {
+        await this.applyQuotaSettings(result.revision, result.settings);
+        return false;
+      }
+      if (!result.ok || !result.initialized) {
+        this.output.appendLine(`[quota settings] Shared settings save failed: ${result.errors.join("; ")}`);
+        return false;
+      }
+      await this.applyQuotaSettings(result.revision, result.settings);
+      return true;
+    } catch (error) {
+      this.output.appendLine(`[quota settings] Shared settings save failed: ${this.errorMessage(error)}`);
+      return false;
+    }
+  }
+
   private restartTokenPolling(): void {
     this.stopTokenPolling(false);
     this.startTokenPolling();
@@ -259,6 +578,7 @@ export class DashboardController implements vscode.Disposable {
       if (this.isRefreshing) {
         return;
       }
+      void this.refreshQuotaSettings();
       const pollGeneration = ++this.tokenRefreshGeneration;
       try {
         await this.refreshTokenStatus(pollGeneration, false);
@@ -387,7 +707,7 @@ export class DashboardController implements vscode.Disposable {
       const previousTokenStatus = this.state.tokenStatus;
       const safeTokenStatus: TokenStatus | undefined = this.mergeTokenStatus(previousTokenStatus, tokenStatus);
 
-      this.checkFullTokenNotification(previousTokenStatus, safeTokenStatus);
+      void this.checkFullTokenNotification(previousTokenStatus, safeTokenStatus);
       this.persistTokenStatusCache(safeTokenStatus);
 
       this.state = {
@@ -418,7 +738,51 @@ export class DashboardController implements vscode.Disposable {
     }
   }
 
-  private checkFullTokenNotification(
+  private async checkFullTokenNotification(
+    previous: TokenStatus | undefined,
+    current: TokenStatus | undefined,
+  ): Promise<void> {
+    if (!current) return;
+
+    if (this.brokerStartupFailed) {
+      this.notifyFromLegacyQuotaState(previous, current);
+      return;
+    }
+
+    const client = this.brokerController?.getClient();
+    if (client) {
+      let health;
+      try {
+        health = await client.health();
+      } catch (error) {
+        // A running broker may own cross-client deduplication. If its health is
+        // unavailable, fail closed rather than emitting a duplicate locally.
+        this.output.appendLine(`[quota notifications] Broker capability check failed: ${this.errorMessage(error)}`);
+        return;
+      }
+      if (health.capabilities?.includes("quota.notifications.claim")) {
+        try {
+          const result = await client.claimQuotaRefillNotifications();
+          if (!result.ok || result.errors.length > 0) {
+            this.output.appendLine(`[quota notifications] Shared claim failed: ${result.errors.join("; ") || "broker returned an unsuccessful claim"}`);
+            return;
+          }
+          for (const item of result.notifications) {
+            void vscode.window.showInformationMessage(
+              `${item.title}: ${item.message}`,
+            );
+          }
+        } catch (error) {
+          this.output.appendLine(`[quota notifications] Shared claim request failed: ${this.errorMessage(error)}`);
+        }
+        return;
+      }
+    }
+
+    this.notifyFromLegacyQuotaState(previous, current);
+  }
+
+  private notifyFromLegacyQuotaState(
     previous: TokenStatus | undefined,
     current: TokenStatus | undefined,
   ): void {
@@ -458,17 +822,15 @@ export class DashboardController implements vscode.Disposable {
 
   private sanitizeResetTime(
     resetTime: string | undefined,
-    percentage: number | undefined,
-    is5Hour: boolean,
+    _percentage: number | undefined,
+    _is5Hour: boolean,
   ): string | undefined {
     if (!resetTime) return undefined;
     const time = new Date(resetTime).getTime();
     if (!Number.isFinite(time) || time <= Date.now()) {
       return undefined;
     }
-    if (is5Hour && typeof percentage === "number" && percentage >= 99.95) {
-      return undefined;
-    }
+    // Future reset time is a genuine active recharge cycle and must be preserved
     return resetTime;
   }
 
@@ -479,47 +841,30 @@ export class DashboardController implements vscode.Disposable {
     if (!previous) return current;
     if (!current) return previous;
 
-    const isPrewarmedRecently = (prefix: string) => {
-      const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
-      return (Date.now() - lastPrewarm) < 5 * 60 * 1000;
-    };
-
-    let antigravityPct = current.antigravityPercentage ?? previous.antigravityPercentage;
-    let antigravityReset = current.antigravityPercentage !== undefined
+    const antigravityPct = current.antigravityPercentage ?? previous.antigravityPercentage;
+    const antigravityReset = current.antigravityPercentage !== undefined
       ? this.sanitizeResetTime(current.antigravityResetTime, antigravityPct, true)
       : this.sanitizeResetTime(current.antigravityResetTime ?? previous.antigravityResetTime, antigravityPct, true);
-    if (isPrewarmedRecently("antigravity") && (antigravityPct === undefined || antigravityPct >= 99.95) && previous.antigravityResetTime) {
-      antigravityPct = Math.min(previous.antigravityPercentage ?? 99.9, 99.9);
-      antigravityReset = previous.antigravityResetTime;
-    }
 
     const antigravityWeeklyPct = current.antigravityWeeklyPercentage ?? previous.antigravityWeeklyPercentage;
     const antigravityWeeklyReset = current.antigravityWeeklyPercentage !== undefined
       ? this.sanitizeResetTime(current.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
       : this.sanitizeResetTime(current.antigravityWeeklyResetTime ?? previous.antigravityWeeklyResetTime, antigravityWeeklyPct, false);
 
-    let opusPct = current.opusPercentage ?? previous.opusPercentage;
-    let opusReset = current.opusPercentage !== undefined
+    const opusPct = current.opusPercentage ?? previous.opusPercentage;
+    const opusReset = current.opusPercentage !== undefined
       ? this.sanitizeResetTime(current.opusResetTime, opusPct, true)
       : this.sanitizeResetTime(current.opusResetTime ?? previous.opusResetTime, opusPct, true);
-    if (isPrewarmedRecently("opus") && (opusPct === undefined || opusPct >= 99.95) && previous.opusResetTime) {
-      opusPct = Math.min(previous.opusPercentage ?? 99.9, 99.9);
-      opusReset = previous.opusResetTime;
-    }
 
     const opusWeeklyPct = current.opusWeeklyPercentage ?? previous.opusWeeklyPercentage;
     const opusWeeklyReset = current.opusWeeklyPercentage !== undefined
       ? this.sanitizeResetTime(current.opusWeeklyResetTime, opusWeeklyPct, false)
       : this.sanitizeResetTime(current.opusWeeklyResetTime ?? previous.opusWeeklyResetTime, opusWeeklyPct, false);
 
-    let codexPct = current.codexPercentage ?? previous.codexPercentage;
-    let codexReset = current.codexPercentage !== undefined
+    const codexPct = current.codexPercentage ?? previous.codexPercentage;
+    const codexReset = current.codexPercentage !== undefined
       ? this.sanitizeResetTime(current.codexResetTime, codexPct, true)
       : this.sanitizeResetTime(current.codexResetTime ?? previous.codexResetTime, codexPct, true);
-    if (isPrewarmedRecently("codex") && (codexPct === undefined || codexPct >= 99.95) && previous.codexResetTime) {
-      codexPct = Math.min(previous.codexPercentage ?? 99.9, 99.9);
-      codexReset = previous.codexResetTime;
-    }
 
     const codexWeeklyPct = current.codexWeeklyPercentage ?? previous.codexWeeklyPercentage;
     const codexWeeklyReset = current.codexWeeklyPercentage !== undefined
@@ -781,6 +1126,7 @@ export class DashboardController implements vscode.Disposable {
     if (
       typed.type === "ready" ||
       typed.type === "refresh" ||
+      typed.type === "refreshBroker" ||
       typed.type === "configureViews" ||
       typed.type === "openConfigurationCenter" ||
       typed.type === "openRunsFile" ||
@@ -788,6 +1134,29 @@ export class DashboardController implements vscode.Disposable {
       typed.type === "setPrewarmMode"
     ) {
       return true;
+    }
+
+    const input = message as Record<string, unknown>;
+    const knownProvider = (value: unknown): value is import("./broker/protocol").ProviderId =>
+      value === "local.openai-compatible" || value === "openai.codex.app" || value === "google.antigravity.ide";
+    if (input.type === "createBrokerTask") {
+      return typeof input.title === "string" && input.title.trim().length > 0 && input.title.length <= 120
+        && typeof input.goal === "string" && input.goal.trim().length > 0 && input.goal.length <= 12000
+        && knownProvider(input.originProvider);
+    }
+    if (input.type === "delegateBrokerTask") {
+      return typeof input.taskId === "string" && input.taskId.length > 0
+        && typeof input.expectedRevision === "number" && Number.isInteger(input.expectedRevision) && knownProvider(input.provider)
+        && typeof input.prompt === "string" && input.prompt.trim().length > 0 && input.prompt.length <= 12000;
+    }
+    if (input.type === "cancelBrokerTask") {
+      return typeof input.taskId === "string" && input.taskId.length > 0
+        && typeof input.expectedRevision === "number" && Number.isInteger(input.expectedRevision);
+    }
+    if (input.type === "resolveBrokerApproval") {
+      return typeof input.approvalId === "string" && input.approvalId.length > 0
+        && typeof input.expectedRevision === "number" && Number.isInteger(input.expectedRevision)
+        && (input.action === "approve" || input.action === "reject");
     }
 
     return typed.type === "openArtifact" && typeof typed.artifactId === "string" && typed.artifactId.length > 0;
@@ -860,7 +1229,22 @@ export class DashboardController implements vscode.Disposable {
       return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
     }
 
-    // 5-hour pre-warm operates on 100% full windows (>= 99.95%)
+    // Refuse pre-warm if 5-hour rolling recharge cycle is already active ahead of time
+    const currentResetTime = (status as any)[`${prefix}ResetTime`] as string | undefined;
+    if (currentResetTime) {
+      const resetMs = new Date(currentResetTime).getTime();
+      if (Number.isFinite(resetMs) && resetMs > Date.now()) {
+        const remainingMin = Math.max(1, Math.ceil((resetMs - Date.now()) / 60000));
+        return {
+          eligible: false,
+          reason: `${label} 5-hour rolling recharge cycle is already active (${remainingMin}m remaining until reset).`,
+          prefix,
+          targetModel,
+          cliModel,
+          label,
+        };
+      }
+    }
 
     if (!isManual) {
       // Auto-prewarm cooldown (minimum 30 minutes to prevent repeated automated pings)
@@ -899,6 +1283,28 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async handlePrewarm(modelKey?: string, isManual = false): Promise<void> {
+    if (this.sharedQuotaSettingsReady && this.brokerController) {
+      if (!isManual) return; // Once/Always scheduling belongs to the shared broker.
+      try {
+        const result = await this.brokerController.getClient().prewarm({
+          model: modelKey,
+          manual: true,
+          idempotencyKey: randomUUID(),
+          expectedSettingsRevision: this.quotaSettingsRevision,
+        });
+        this.output.appendLine(`[prewarm] Shared broker result: ${result.status}; timer confirmed: ${result.timerConfirmed}.`);
+        if (result.status === "failed" || result.status === "skipped") {
+          void vscode.window.showWarningMessage(`[Integrated Power] Pre-warm ${result.status}: ${result.error || "The broker did not dispatch the request."}`);
+        } else if (result.status === "dispatched" && !result.timerConfirmed) {
+          void vscode.window.showInformationMessage("[Integrated Power] Pre-warm dispatch accepted; the remote timer is not confirmed yet.");
+        }
+      } catch (error) {
+        this.output.appendLine(`[prewarm] Shared broker request failed: ${this.errorMessage(error)}`);
+        void vscode.window.showWarningMessage(`[Integrated Power] Pre-warm request failed: ${this.errorMessage(error)}`);
+      }
+      return;
+    }
+
     const check = this.getPrewarmEligibility(modelKey, this.state.tokenStatus, isManual);
     if (!check.eligible) {
       this.output.appendLine(`[prewarm] Refusing pre-warm for ${check.label}: ${check.reason}`);
@@ -1137,21 +1543,35 @@ export class DashboardController implements vscode.Disposable {
   private async setPrewarmMode(mode: PrewarmMode, target?: string): Promise<void> {
     const validMode = this.normalizeMode(mode);
     const targetKey = target?.toLowerCase();
+    const nextModes = { ...this.currentPrewarmModes };
 
     if (targetKey && (targetKey.includes("gemini") || targetKey.includes("antigravity"))) {
-      this.currentPrewarmModes.antigravity = validMode;
+      nextModes.antigravity = validMode;
     } else if (targetKey && (targetKey.includes("claude") || targetKey.includes("opus"))) {
-      this.currentPrewarmModes.opus = validMode;
+      nextModes.opus = validMode;
     } else if (targetKey && (targetKey.includes("codex") || targetKey.includes("chatgpt"))) {
-      this.currentPrewarmModes.codex = validMode;
+      nextModes.codex = validMode;
     } else {
-      this.currentPrewarmModes = {
+      Object.assign(nextModes, {
         antigravity: validMode,
         opus: validMode,
         codex: validMode,
-      };
+      });
     }
 
+    if (this.sharedQuotaSettingsReady) {
+      const settings = this.readLocalQuotaSettings();
+      settings.prewarmModes = {
+        antigravity: nextModes.antigravity,
+        opus: nextModes.opus,
+        codex: nextModes.codex,
+      };
+      settings.prewarmMode = nextModes.antigravity;
+      await this.writeSharedQuotaSettings(settings);
+      return;
+    }
+
+    this.currentPrewarmModes = nextModes;
     this.currentPrewarmMode = this.currentPrewarmModes.antigravity;
     this.state = {
       ...this.state,
@@ -1160,7 +1580,7 @@ export class DashboardController implements vscode.Disposable {
     };
     this.postState();
 
-    if (validMode === "once" || validMode === "always") {
+    if (!this.sharedQuotaSettingsReady && (validMode === "once" || validMode === "always")) {
       void this.checkAutoPrewarm(this.state.tokenStatus);
     }
 
@@ -1184,6 +1604,7 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async checkAutoPrewarm(status: TokenStatus | undefined): Promise<void> {
+    if (!this.sharedQuotaSettingsCapabilityKnown || this.sharedQuotaSettingsSupported) return;
     if (!status) return;
 
     const targets = ["antigravity", "opus", "codex"];

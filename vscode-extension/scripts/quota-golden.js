@@ -182,8 +182,16 @@ function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) 
     }
   }
 
-  const is5HourReady = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
-  const countdown = is5HourReady ? undefined : formatRefreshCountdown(effectiveResetTime);
+  const is5HourAt100 = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+  const countdown = formatRefreshCountdown(effectiveResetTime);
+  const hasActiveFutureCountdown = Boolean(
+    countdown &&
+    effectiveResetTime &&
+    new Date(effectiveResetTime).getTime() > Date.now()
+  );
+
+  const is5HourReady = is5HourAt100 && !hasActiveFutureCountdown;
+  const isPrewarmed = false;
   let refreshFull = "";
   let refreshMedium = "";
   let refreshShort = "";
@@ -238,6 +246,7 @@ function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) 
     isWeeklyCapped,
     canPrewarm,
     isReady,
+    isPrewarmed,
   };
 }
 

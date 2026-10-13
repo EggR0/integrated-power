@@ -45,6 +45,13 @@ function test(name, fn) {
 console.log("quota-core: shared module unit tests");
 const shared = loadIIFE(bundlePath);
 
+assert.strictEqual(typeof shared.buildGaugeTickGradient, "function", "shared quota must expose the existing desktop gauge tick gradient builder");
+for (const [segments, dividers] of [[5, 4], [7, 6]]) {
+  const gradient = shared.buildGaugeTickGradient(segments);
+  assert.strictEqual((gradient.match(/rgba\(255, 255, 255, 0\.55\)/g) || []).length, dividers * 2, `${segments}-segment gauge must keep ${dividers} full-track dividers`);
+  for (let i = 1; i < segments; i++) assert(gradient.includes(`${(100 * i) / segments}%`), `${segments}-segment gauge is missing divider at ${i}/${segments}`);
+}
+
 test("K ratios frozen and correct", () => {
   assert.strictEqual(shared.K_CAPACITY_RATIOS.antigravity, 5.0);
   assert.strictEqual(shared.K_CAPACITY_RATIOS.opus, 4.5);
@@ -136,6 +143,13 @@ test("settings merge + coercion", () => {
   assert.strictEqual(shared.mergeQuotaSettings({ pollIntervalMs: "abc" }).pollIntervalMs, 5000);
   assert.strictEqual(shared.mergeQuotaSettings({ notifyOnFull: false }).notifyOnFull, false);
   assert.strictEqual(shared.mergeQuotaSettings(null).notifyOnFull, true);
+  const expandedSettings = shared.mergeQuotaSettings({ prewarmModes: { antigravity: "once", opus: "always", codex: "click" }, notifications: { antigravityGemini5h: false } });
+  assert.strictEqual(expandedSettings.prewarmModes.antigravity, "once");
+  assert.strictEqual(expandedSettings.prewarmModes.opus, "always");
+  assert.strictEqual(expandedSettings.prewarmModes.codex, "click");
+  assert.strictEqual(expandedSettings.prewarmMode, "once", "legacy single mode remains aliased to Antigravity");
+  assert.strictEqual(expandedSettings.notifications.antigravityGemini5h, false);
+  assert.strictEqual(expandedSettings.notifications.chatgpt5h, true, "missing per-window flags keep current true default");
 });
 
 // ---------------------------------------------------------------------------
@@ -639,34 +653,48 @@ test("detectRefilledQuotaWindows detects transitions from <100% to >=100%", () =
   assert.strictEqual(third.updatedNotifiedSet.has("antigravity-gemini-5h"), false);
 });
 
-test("phantom countdown eliminated for 100% quota", () => {
+test("dormant vs active rolling countdown for 100% quota", () => {
   const base = Date.now();
   const resetIn = (hours) => new Date(base + hours * 3600e3).toISOString();
 
-  // 100% 5Hours quota displays Ready (timer starts on first request), and canPrewarm is true
-  const ready5h = shared.buildTokenMetric("5Hours", {
-    antigravityPercentage: 100,
-    antigravityResetTime: resetIn(3),
-    antigravityWeeklyPercentage: 100,
-    antigravityWeeklyResetTime: resetIn(48),
-  }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
-
-  assert.strictEqual(ready5h.isReady, true);
-  assert.strictEqual(ready5h.canPrewarm, true);
-  assert.strictEqual(ready5h.refreshFull, "· Ready");
-  assert.ok(ready5h.tooltip.includes("Ready · Timer starts on first request"));
-
-  // When reset time is absent, displays Ready
+  // When reset time is absent or expired, 100% 5Hours quota displays Ready (timer starts on first request)
   const readyNoTimer = shared.buildTokenMetric("5Hours", {
     antigravityPercentage: 100,
     antigravityWeeklyPercentage: 100,
   }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
   assert.strictEqual(readyNoTimer.isReady, true);
   assert.strictEqual(readyNoTimer.canPrewarm, true);
+  assert.strictEqual(readyNoTimer.isPrewarmed, false);
   assert.strictEqual(readyNoTimer.refreshFull, "· Ready");
   assert.ok(readyNoTimer.tooltip.includes("Ready · Timer starts on first request"));
 
-  // Once tokens are consumed (< 99.95%), rolling countdown activates
+  // Expired past reset time is treated as dormant Ready (phantom past timestamp eliminated)
+  const pastReset = new Date(base - 3600e3).toISOString();
+  const readyPastTimer = shared.buildTokenMetric("5Hours", {
+    antigravityPercentage: 100,
+    antigravityResetTime: pastReset,
+    antigravityWeeklyPercentage: 100,
+  }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+  assert.strictEqual(readyPastTimer.isReady, true);
+  assert.strictEqual(readyPastTimer.canPrewarm, true);
+  assert.strictEqual(readyPastTimer.refreshFull, "· Ready");
+
+  // When 100% full BUT has an active future reset time (e.g. pre-warmed or rolling cycle running),
+  // countdown MUST be displayed, isReady is false, and canPrewarm is false (active recharge cycle)
+  const active100Pct5h = shared.buildTokenMetric("5Hours", {
+    antigravityPercentage: 100,
+    antigravityResetTime: resetIn(3),
+    antigravityWeeklyPercentage: 100,
+    antigravityWeeklyResetTime: resetIn(48),
+  }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+
+  assert.strictEqual(active100Pct5h.isReady, false);
+  assert.strictEqual(active100Pct5h.canPrewarm, false);
+  assert.strictEqual(active100Pct5h.isPrewarmed, false);
+  assert.ok(active100Pct5h.refreshFull.includes("2h 59m") || active100Pct5h.refreshFull.includes("3h 0m") || active100Pct5h.refreshFull.includes("3h"));
+  assert.ok(active100Pct5h.tooltip.includes("Healthy: over 35%"));
+
+  // Once tokens are consumed (< 99.95%), rolling countdown activates normally
   const active5h = shared.buildTokenMetric("5Hours", {
     antigravityPercentage: 90,
     antigravityResetTime: resetIn(3),
@@ -676,6 +704,7 @@ test("phantom countdown eliminated for 100% quota", () => {
 
   assert.strictEqual(active5h.isReady, false);
   assert.strictEqual(active5h.canPrewarm, false);
+  assert.strictEqual(active5h.isPrewarmed, false);
   assert.ok(active5h.refreshFull.includes("2h 59m") || active5h.refreshFull.includes("3h 0m"));
 
   // Weekly 100% window still shows normal calendar reset, cannot prewarm

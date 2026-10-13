@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.22] - 2026-10-13
+
+### Added & Enhanced
+
+- **Antigravity IDE Trajectory & Chat History Auto-Recovery (`AntigravityHistorySync.ts`, `sync_history.py`)**:
+  - Automatically recovers and synchronizes missing Antigravity IDE conversation history and session trajectories from local brain logs and checkpoints into VS Code/Antigravity storage.
+  - Protobuf Wire Spec compliant reconstruction of `antigravityTrajectorySummaries` in LevelDB storage.
+  - Periodic background sync and real-time brain directory watcher with host platform guard (`isAntigravityHost`).
+- **Configuration Center Force Sync Button (`ConfigurationCenter.ts`, `configurationModel.ts`)**:
+  - Added dedicated "대화 기록 강제 동기화 (Force Sync History)" button to both Overview and Dashboard tabs in the Configuration Center.
+  - Host environment guard ensures the sync button and status feedback are exclusively active in Antigravity IDE while cleanly hidden in standard VS Code hosts.
+
 ## [0.9.8] - 2026-10-10
 
 ### Fixed & Enhanced

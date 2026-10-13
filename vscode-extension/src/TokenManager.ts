@@ -3,8 +3,7 @@ import * as fs from "fs";
 import * as http from "http";
 import * as os from "os";
 import * as path from "path";
-import * as vscode from "vscode";
-import {
+import type {
   ClaudeDirectUsageStatus,
   JsonObject,
   TokenStatus,
@@ -17,9 +16,9 @@ import {
 } from "./types";
 import { AgyQuotaClient, AgyNotInstalledError, AgyNotAuthenticatedError } from "./AgyQuotaClient";
 import matter from "gray-matter";
-import { getLowestCodexModel, findCodexCliSync, CodexModelResolution } from "./broker/codexAppServer";
+import { getLowestCodexModel, findCodexCliSync, CodexModelResolution, fetchLiveCodexRateLimits, LiveCodexRateLimits } from "./broker/codexAppServer";
 import { getLowestAgyModel, AgyModelResolution } from "./broker/agyModelResolver";
-export { getLowestCodexModel, findCodexCliSync, CodexModelResolution, getLowestAgyModel, AgyModelResolution };
+export { getLowestCodexModel, findCodexCliSync, CodexModelResolution, getLowestAgyModel, AgyModelResolution, fetchLiveCodexRateLimits, LiveCodexRateLimits };
 
 const QUOTA_CACHE_TTL_MS = 5_000;
 const MAX_SESSION_SCAN_DEPTH = 5;
@@ -102,8 +101,60 @@ interface StatusOptions {
   forceRefresh?: boolean;
 }
 
+export interface TokenFileUri {
+  fsPath: string;
+}
+
+export interface TokenManagerHost {
+  readFile(uri: TokenFileUri): Promise<Uint8Array>;
+  notifyAgyMissing(): void | Promise<void>;
+  notifyAgyAuthRequired(): void | Promise<void>;
+}
+
+function createIdeTokenManagerHost(): TokenManagerHost {
+  return {
+    readFile: async (uri) => {
+      const vscode = await import("vscode");
+      return vscode.workspace.fs.readFile(vscode.Uri.file(uri.fsPath));
+    },
+    notifyAgyMissing: async () => {
+      const vscode = await import("vscode");
+      const selection = await vscode.window.showErrorMessage(
+        "Antigravity CLI (agy) is not installed. It is required for accurate quota telemetry.",
+        "Install Agy CLI",
+      );
+      if (selection === "Install Agy CLI") {
+        const terminal = vscode.window.createTerminal("Install Antigravity CLI");
+        terminal.show();
+        terminal.sendText("powershell -NoProfile -ExecutionPolicy Bypass -Command \"iex ((New-Object System.Net.WebClient).DownloadString('https://antigravity.google/cli/install.ps1'))\"");
+      }
+    },
+    notifyAgyAuthRequired: async () => {
+      const vscode = await import("vscode");
+      const selection = await vscode.window.showErrorMessage(
+        "Antigravity CLI is not authenticated. Please sign in to view accurate quota usage.",
+        "Sign In",
+      );
+      if (selection === "Sign In") {
+        const terminal = vscode.window.createTerminal("Antigravity Auth");
+        terminal.show();
+        terminal.sendText("& \"$env:LOCALAPPDATA\\agy\\bin\\agy.exe\" auth login");
+      }
+    },
+  };
+}
+
+export function createHeadlessTokenManagerHost(): TokenManagerHost {
+  return {
+    readFile: async (uri) => fs.promises.readFile(uri.fsPath),
+    notifyAgyMissing: () => {},
+    notifyAgyAuthRequired: () => {},
+  };
+}
+
 export class TokenManager {
-  private readonly agyQuotaClient = new AgyQuotaClient(path.join(__dirname, ".."));
+  private readonly host: TokenManagerHost;
+  private readonly agyQuotaClient: AgyQuotaClient;
   private quotaCache?: { lastFetchTime: number; data: QuotaData };
   private fetchPromise?: Promise<QuotaData>;
   private hasShownAgyMissingPrompt = false;
@@ -111,6 +162,11 @@ export class TokenManager {
   private lastGpuMetrics?: GpuStatus[];
   private lastCodexLiveRefreshAt = 0;
   private readonly circuitBreakers = new Map<string, { failures: number; cooldownUntil: number }>();
+
+  public constructor(host?: TokenManagerHost, resourceRoot = path.join(__dirname, "..")) {
+    this.host = host ?? createIdeTokenManagerHost();
+    this.agyQuotaClient = new AgyQuotaClient(resourceRoot);
+  }
 
   private isCircuitOpen(providerKey: string): boolean {
     const state = this.circuitBreakers.get(providerKey);
@@ -154,7 +210,7 @@ export class TokenManager {
   }
 
   public async getStatus(
-    fileUri: vscode.Uri | undefined,
+    fileUri: TokenFileUri | undefined,
     options: StatusOptions = {},
   ): Promise<TokenStatus | undefined> {
     const activity: string[] = ["Token manager initialized."];
@@ -207,8 +263,8 @@ export class TokenManager {
     return tokenStatus;
   }
 
-  private async readDashboardFile(fileUri: vscode.Uri): Promise<{ data: JsonObject; content: string }> {
-    const bytes = await vscode.workspace.fs.readFile(fileUri);
+  private async readDashboardFile(fileUri: TokenFileUri): Promise<{ data: JsonObject; content: string }> {
+    const bytes = await this.host.readFile(fileUri);
     return this.parseDashboardMarkdown(Buffer.from(bytes).toString("utf8"));
   }
 
@@ -579,17 +635,15 @@ export class TokenManager {
 
   private sanitizeResetTime(
     resetTime: string | undefined,
-    percentage: number | undefined,
-    is5Hour: boolean,
+    _percentage: number | undefined,
+    _is5Hour: boolean,
   ): string | undefined {
     if (!resetTime) return undefined;
     const time = new Date(resetTime).getTime();
     if (!Number.isFinite(time) || time <= Date.now()) {
       return undefined;
     }
-    if (is5Hour && typeof percentage === "number" && percentage >= 99.95) {
-      return undefined;
-    }
+    // Future reset time is a genuine active recharge cycle and must be preserved
     return resetTime;
   }
 
@@ -648,7 +702,7 @@ export class TokenManager {
           return;
         }
         try {
-          const codexQuota = await this.withTimeout(this.fetchCodexQuota(), 5000, {});
+          const codexQuota = await this.withTimeout(this.fetchCodexQuota(forceRefresh), 5000, {});
           this.recordProviderSuccess("codex");
           data.codexPercentage = codexQuota.codexPercentage;
           data.codexResetTime = codexQuota.codexResetTime;
@@ -809,7 +863,7 @@ export class TokenManager {
     return data;
   }
 
-  private async fetchClaudeDirectUsage(workspaceStateRoot: string | undefined): Promise<ClaudeDirectUsageStatus> {
+  protected async fetchClaudeDirectUsage(workspaceStateRoot: string | undefined): Promise<ClaudeDirectUsageStatus> {
     const events: ClaudeUsageEvent[] = [];
     const errors: string[] = [];
     const sources = new Set<string>();
@@ -1145,7 +1199,7 @@ export class TokenManager {
     return "Claude log";
   }
 
-  private workspaceStateRootFromTokenReport(fileUri: vscode.Uri | undefined): string | undefined {
+  private workspaceStateRootFromTokenReport(fileUri: TokenFileUri | undefined): string | undefined {
     if (!fileUri?.fsPath) {
       return undefined;
     }
@@ -1244,7 +1298,7 @@ export class TokenManager {
   }
 
   // Collector for Local LLM
-  private async fetchLocalLlmStatus(): Promise<{ localComputeStatus: LocalComputeStatus; quotaPool?: QuotaPoolStatus }> {
+  protected async fetchLocalLlmStatus(): Promise<{ localComputeStatus: LocalComputeStatus; quotaPool?: QuotaPoolStatus }> {
     const gpuMetrics = await this.fetchGpuMetrics();
     const withGpuMetrics = (status: LocalComputeStatus): LocalComputeStatus => ({
       ...status,
@@ -1424,7 +1478,7 @@ export class TokenManager {
     });
   }
 
-  private async fetchCodexQuota(): Promise<
+  protected async fetchCodexQuota(forceRefresh = false): Promise<
     Pick<
       QuotaData,
       | "codexPercentage"
@@ -1435,9 +1489,26 @@ export class TokenManager {
       | "codexWeeklyEstimatedAbsolute"
     >
   > {
+    // 1. Live zero-token RPC telemetry via Codex app-server account/rateLimits/read
+    try {
+      const live = await fetchLiveCodexRateLimits(forceRefresh);
+      if (live && (live.codexPercentage !== undefined || live.codexWeeklyPercentage !== undefined)) {
+        return {
+          codexPercentage: live.codexPercentage,
+          codexResetTime: live.codexResetTime,
+          codexEstimatedAbsolute: undefined,
+          codexWeeklyPercentage: live.codexWeeklyPercentage,
+          codexWeeklyResetTime: live.codexWeeklyResetTime,
+          codexWeeklyEstimatedAbsolute: undefined,
+        };
+      }
+    } catch {
+      // Best-effort live query; fall through to passive session scanning
+    }
+
     const sessionsDir = path.join(os.homedir(), ".codex", "sessions");
 
-    // Strictly read existing session files passively. NEVER spawn background processes during quota checks.
+    // Fallback: read existing session files passively when app-server is unreachable.
     const files = await this.walkJsonlFiles(sessionsDir);
     for (const file of files) {
       const content = await this.readFileTail(file.fullPath, MAX_SESSION_FILE_BYTES);
@@ -1633,7 +1704,7 @@ export class TokenManager {
     }
   }
 
-  private async fetchAntigravityQuota(): Promise<
+  protected async fetchAntigravityQuota(): Promise<
     Pick<
       QuotaData,
       | "antigravityPercentage"
@@ -1667,7 +1738,7 @@ export class TokenManager {
               const percentage = typeof bucket.remainingFraction === "number" ? bucket.remainingFraction * 100 : undefined;
               if (window === "5h") {
                 antigravityPercentage = percentage;
-                antigravityResetTime = (percentage !== undefined && percentage < 99.95) ? bucket.resetTime : undefined;
+                antigravityResetTime = bucket.resetTime;
               } else if (window === "weekly" || window === "7d") {
                 antigravityWeeklyPercentage = percentage;
                 antigravityWeeklyResetTime = bucket.resetTime;
@@ -1679,7 +1750,7 @@ export class TokenManager {
               const percentage = typeof bucket.remainingFraction === "number" ? bucket.remainingFraction * 100 : undefined;
               if (window === "5h") {
                 opusPercentage = percentage;
-                opusResetTime = (percentage !== undefined && percentage < 99.95) ? bucket.resetTime : undefined;
+                opusResetTime = bucket.resetTime;
               } else if (window === "weekly" || window === "7d") {
                 opusWeeklyPercentage = percentage;
                 opusWeeklyResetTime = bucket.resetTime;
@@ -1843,31 +1914,13 @@ export class TokenManager {
   private handleAgyMissing(): void {
     if (this.hasShownAgyMissingPrompt) return;
     this.hasShownAgyMissingPrompt = true;
-    vscode.window.showErrorMessage(
-      "Antigravity CLI (agy) is not installed. It is required for accurate quota telemetry.",
-      "Install Agy CLI"
-    ).then(selection => {
-      if (selection === "Install Agy CLI") {
-        const terminal = vscode.window.createTerminal("Install Antigravity CLI");
-        terminal.show();
-        terminal.sendText("powershell -NoProfile -ExecutionPolicy Bypass -Command \"iex ((New-Object System.Net.WebClient).DownloadString('https://antigravity.google/cli/install.ps1'))\"");
-      }
-    });
+    void Promise.resolve(this.host.notifyAgyMissing()).catch(() => {});
   }
 
   private handleAgyAuthRequired(): void {
     if (this.hasShownAgyAuthPrompt) return;
     this.hasShownAgyAuthPrompt = true;
-    vscode.window.showErrorMessage(
-      "Antigravity CLI is not authenticated. Please sign in to view accurate quota usage.",
-      "Sign In"
-    ).then(selection => {
-      if (selection === "Sign In") {
-        const terminal = vscode.window.createTerminal("Antigravity Auth");
-        terminal.show();
-        terminal.sendText("& \"$env:LOCALAPPDATA\\agy\\bin\\agy.exe\" auth login");
-      }
-    });
+    void Promise.resolve(this.host.notifyAgyAuthRequired()).catch(() => {});
   }
 }
 

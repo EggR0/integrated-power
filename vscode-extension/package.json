@@ -3,7 +3,7 @@
   "publisher": "EggR0",
   "displayName": "Integrated Power",
   "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
-  "version": "0.9.18",
+  "version": "0.9.22",
   "author": {
     "name": "EggR0"
   },
@@ -234,6 +234,11 @@
         "title": "Antigravity IDE: Configure Dashboard Views"
       },
       {
+        "command": "integratedPower.antigravity.syncHistory",
+        "title": "Antigravity IDE: Sync & Restore Conversation History",
+        "icon": "$(history)"
+      },
+      {
         "command": "integratedPower.eggr.installOrUpdateOrchestrator",
         "title": "Integrated Power: Install or Update Integrated Orchestrator"
       },
@@ -296,11 +301,11 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "node ./scripts/build-extension.js",
-    "compile": "tsc -p ./",
+    "vscode:prepublish": "pnpm run compile && node ./scripts/build-extension.js",
+    "compile": "tsc -p ./ && node ./scripts/build-broker-package.js && node ./scripts/write-broker-manifest.js",
     "watch": "tsc -watch -p ./",
-    "test": "pnpm run test:reuse && node ./scripts/test-quota-core.js && pnpm run compile && node ./scripts/test-compact-ui.js && node ./scripts/test-prewarm.js && node ./scripts/test-runtime-background-token.js && node ./scripts/test-visual-graph-safety-guard.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && pnpm run test:powershell",
-    "test:ui": "node ./scripts/test-compact-ui.js",
+    "test": "pnpm run test:reuse && node ./scripts/test-quota-core.js && node ./scripts/test-token-manager-headless.js && pnpm run compile && node ./scripts/test-compact-ui.js && node ./scripts/test-dashboard-broker-flow.js && node ./scripts/test-dashboard-approval-revision.js && node ./scripts/test-prewarm.js && node ./scripts/test-runtime-background-token.js && node ./scripts/test-visual-graph-safety-guard.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && pnpm run test:powershell",
+    "test:ui": "node ./scripts/test-compact-ui.js && node ./scripts/test-dashboard-broker-flow.js && node ./scripts/test-dashboard-approval-revision.js && node ./scripts/test-token-manager-headless.js",
     "test:reuse": "node ./scripts/run-reuse-gate.js && node ./scripts/test-gpu-selection.js",
     "test:powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-LocalLLMInventory.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-OnboardingMigration.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/scripts/tests/Invoke-LocalLLM.Tests.ps1",
     "test:extension": "pnpm run compile && node ./out/test/runTest.js",
