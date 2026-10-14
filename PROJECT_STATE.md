@@ -11,7 +11,16 @@ Integrated Power v0.10.0 introduces major architectural expansions with 5TB Goog
 - **Drive Ingestion Service (Option B)**: Auto-scans `IntegratedPower/Inbox/` for mobile/web Gemini notes and documents, auto-converting them into Broker `TaskEnvelope` instances with idempotency and atomic move to `processed/`.
 - **Artifact Cloud Offloader (Option C)**: Background multi-part offloading of large local artifacts (.vsix, WebP/MP4 recordings, logs) to `IntegratedPower/Artifacts/{taskId}/`, protecting local SSD storage while recording permanent cloud links in the `EventLedger`.
 - **Self-Contained Drive MCP Authenticator**: Standalone OAuth 2.0 authenticator in `scripts/setup-gdrive-mcp.js`, solving Windows path normalization bugs (`D:\C:\...`), with full-control scope (`https://www.googleapis.com/auth/drive`).
-- **Unlazy 5-Gate Completion & Live E2E Proof**: Verified 5120.0 GB quota and live artifact creation on Google Drive.
+- **Cross-Platform Standalone Headless Broker Daemon (`scripts/standalone-broker.js`, `vscode-extension/src/broker/platformPaths.ts`, `docs/reference/cross-platform-broker-ipcc.ko.md`)**:
+  - Decoupled broker daemon from Antigravity IDE/VS Code into an independent, headless loopback service (`127.0.0.1:37241`).
+  - Standardized cross-platform OS path and environment resolution across Windows 11 (`%LOCALAPPDATA%`, DPAPI/wincred), macOS (`~/Library/Application Support`, Keychain), and Linux (`$XDG_DATA_HOME`, secret-tool).
+  - Aligned with Integrated Power Control Center (IPCC, Tauri) to operate seamlessly across multiple operating systems as thin clients attaching to port 37241.
+- **Durable Agent-Broker Lifecycle Protocol (`docs/reference/durable-agent-broker-protocol.ko.md`, `gdriveStorage.ts`)**:
+  - Designed around the fundamental insight that "Agents are not autonomous background operators, but ephemeral/fragile inference sessions."
+  - Enforced 7-stage durable lifecycle: `Inbox` -> `Queued` (idempotency key) -> `Dispatched` -> `AwaitingApproval` -> `Executing` -> `Offloaded` -> `Distilled`.
+  - Blocked agent self-approval: approvals are strictly restricted to human UI gestures in IPCC / IDE control panels.
+  - Implemented `DriveKnowledgeDistillationBridge` to organically bridge Google Drive 5TB heavy binary offloading with GitHub/Obsidian curated text knowledge (`eggr-knowledge`) via markdown pointer links.
+- **Unlazy 5-Gate Completion & Live E2E Proof**: Verified 5120.0 GB quota, live artifact offloading, and passed all 5 cross-platform & durable protocol acceptance gates (`GATES.md`).
 
 ## Earlier Release Checkpoints (0.9.23 ~ 0.9.27)
 

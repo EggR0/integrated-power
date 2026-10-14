@@ -13,7 +13,15 @@
   - Generated full-control scope (`https://www.googleapis.com/auth/drive`) tokens with automatic token refresh (`GoogleDriveAuth`).
   - Authored comprehensive, reproducible step-by-step setup and troubleshooting guide for external user deployment.
   - Automatically configured Antigravity IDE global `mcp_config.json` with `gdrive` MCP server entry.
-- **Unlazy Completion Discipline**: Formulated and passed all acceptance gates (`GATES.md`) with live E2E Google Drive API verification (verified 5120.0 GB quota and real-time artifact upload).
+- **Standalone Headless Broker & Cross-Platform Path Resolution (`src/broker/platformPaths.ts`, `scripts/standalone-broker.js`, `docs/reference/cross-platform-broker-ipcc.ko.md`)**:
+  - Decoupled broker service from Antigravity IDE/VS Code into an independent daemon bound to loopback `127.0.0.1:37241`.
+  - Added OS-neutral path and config resolution supporting Windows 11, macOS, and Linux (XDG Base Directory Specification).
+  - Aligned with Integrated Power Control Center (IPCC, Tauri) for seamless multi-platform desktop orchestration.
+- **Durable Agent-Broker Protocol & Knowledge Distillation Bridge (`src/broker/gdriveStorage.ts`, `docs/reference/durable-agent-broker-protocol.ko.md`)**:
+  - Formalized durable task lifecycle accounting for agent non-autonomy, ephemeral sessions, and token exhaustion.
+  - Implemented `DriveKnowledgeDistillationBridge` connecting Google Drive 5TB heavy binary offloading with GitHub/Obsidian curated text knowledge (`eggr-knowledge`) via markdown pointer links.
+  - Enforced strict human-in-the-loop approval discipline and blocked autonomous agent self-approval.
+- **Unlazy Completion Discipline**: Formulated and passed all acceptance gates (`GATES.md`) with live E2E Google Drive API verification (verified 5120.0 GB quota) and 5 cross-platform/durable protocol acceptance gates.
 
 ## [0.9.27] - 2026-10-14
 

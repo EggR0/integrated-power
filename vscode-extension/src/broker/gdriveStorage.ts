@@ -532,3 +532,110 @@ export class DriveArtifactOffloader {
     }
   }
 }
+
+export interface DistillTaskInput {
+  task: TaskEnvelope;
+  summary: string;
+  tags?: string[];
+  keyDecisions?: string[];
+  offloadedArtifacts?: OffloadResult[];
+}
+
+export interface DistilledKnowledgeMarkdown {
+  fileName: string;
+  markdown: string;
+  vaultPath?: string;
+  hasArtifactPointers: boolean;
+  exported: boolean;
+}
+
+/**
+ * 4. Drive Knowledge Distillation Bridge
+ * Bridges Google Drive 5TB heavy binary artifacts with GitHub/Obsidian curated text knowledge (eggr-knowledge).
+ * Enforces:
+ *   - Obsidian Vault: Curated text, summaries, decisions, and markdown backlink graph (lightweight Git).
+ *   - Google Drive: Heavy binary assets (VSIX, WebP, MP4, raw logs) linked via permanent webViewLink.
+ */
+export class DriveKnowledgeDistillationBridge {
+  constructor(private readonly defaultVaultInboxPath: string = process.platform === 'win32' ? 'D:\\obsidian\\00 Inbox' : path.join(process.env.HOME || '', 'obsidian', '00 Inbox')) {}
+
+  public distill(input: DistillTaskInput, targetVaultInbox?: string): DistilledKnowledgeMarkdown {
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const sanitizedTitle = (input.task.title || input.task.id || 'Task')
+      .replace(/[\/\\:*?"<>|]/g, '_')
+      .replace(/\s+/g, '_')
+      .slice(0, 50);
+
+    const fileName = `${dateStr}_${sanitizedTitle}.md`;
+    const tags = Array.from(new Set(['#IntegratedPower', '#Knowledge', ...(input.tags || [])]));
+
+    const lines: string[] = [];
+    lines.push('---');
+    lines.push(`id: "${input.task.id}"`);
+    lines.push(`title: "${input.task.title.replace(/"/g, '\\"')}"`);
+    lines.push(`date: ${dateStr}`);
+    lines.push(`tags: [${tags.map((t) => `"${t.replace(/^#/, '')}"`).join(', ')}]`);
+    lines.push(`status: "${input.task.status || 'completed'}"`);
+    lines.push(`storageTier: "Google Drive 5TB (Tier 2 Offload)"`);
+    lines.push('---');
+    lines.push('');
+    lines.push(`# ${input.task.title}`);
+    lines.push('');
+    lines.push(`> **태스크 ID**: \`${input.task.id}\` | **완료일시**: ${now.toISOString()}`);
+    lines.push('');
+    lines.push('## 1. 개요 및 목표');
+    lines.push(input.task.goal || input.summary || '목표 설명 없음.');
+    lines.push('');
+
+    if (input.keyDecisions && input.keyDecisions.length > 0) {
+      lines.push('## 2. 주요 아키텍처 결정 사항 (Key Decisions)');
+      for (const d of input.keyDecisions) {
+        lines.push(`- ${d}`);
+      }
+      lines.push('');
+    }
+
+    lines.push('## 3. 구현 및 해결 내용 (Summary)');
+    lines.push(input.summary);
+    lines.push('');
+
+    const artifacts = input.offloadedArtifacts || [];
+    const hasArtifactPointers = artifacts.length > 0;
+    if (hasArtifactPointers) {
+      lines.push('## 4. 대용량 산출물 (Google Drive 5TB 클라우드 보관)');
+      lines.push('> *Git 저장소 용량 보존을 위해 무거운 바이너리는 Google Drive에 보관되며, 아래 영구 링크로 즉시 열람/다운로드할 수 있습니다.*');
+      lines.push('');
+      for (const a of artifacts) {
+        const sizeMb = (a.sizeBytes / (1024 * 1024)).toFixed(2);
+        const link = a.webViewLink || '#';
+        lines.push(`- **[${a.fileName}](${link})** (${sizeMb} MB) — \`fileId: ${a.fileId}\``);
+      }
+      lines.push('');
+    }
+
+    const markdown = lines.join('\n');
+    const vaultInbox = targetVaultInbox || this.defaultVaultInboxPath;
+    let exported = false;
+    let fullVaultPath: string | undefined;
+
+    if (fs.existsSync(vaultInbox)) {
+      fullVaultPath = path.join(vaultInbox, fileName);
+      try {
+        fs.writeFileSync(fullVaultPath, markdown, 'utf-8');
+        exported = true;
+      } catch {
+        exported = false;
+      }
+    }
+
+    return {
+      fileName,
+      markdown,
+      vaultPath: fullVaultPath,
+      hasArtifactPointers,
+      exported,
+    };
+  }
+}
+

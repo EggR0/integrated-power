@@ -17,4 +17,6 @@ export * from "./registration";
 export * from "./localRunner";
 export * from "./autostart";
 export * from "./tokenScanner";
+export * from "./gdriveStorage";
+export * from "./platformPaths";
 export { getCanonicalBrokerLedgerPath } from "../storagePath";
