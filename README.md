@@ -63,6 +63,25 @@ Integrated Power는 **Antigravity IDE 전용 확장 프로그램**이다. Window
 
 ---
 
+## ☁️ 멀티 티어 스토리지 & 클라우드 연동 (Storage Architecture)
+
+Integrated Power는 로컬 SSD 용량을 보호하고 모바일/외부 메모를 안전하게 인입하기 위해 **3계층 스토리지 구조**를 지원합니다:
+
+1. **Tier 1 (로컬 원장 - 기본 탑재)**: 클라우드 연결 없이도 100% 오프라인으로 작동하는 로컬 SQLite/암호화 원장.
+2. **Tier 2 (Google Drive 2차 스토리지 - 선택 연동)**:
+   - 사용자가 소유한 개인 구글 계정(무료 15GB ~ Google One 5TB)을 브로커에 연결.
+   - **모바일/웹 메모 인입 (Option B)**: 스마트폰에서 Google Drive `IntegratedPower/Inbox`에 올린 메모를 브로커 태스크로 자동 인입.
+   - **대용량 아티팩트 오프로드 (Option C)**: VSIX 빌드 파일, 브라우저 QA 녹화 영상(WebP/MP4), 거대 로그를 Google Drive로 비동기 업로드하여 로컬 SSD 용량 절약 및 영구 `webViewLink` 제공.
+3. **Tier 3 (GitHub 지식 저장소 - Obsidian Vault)**:
+   - `DriveKnowledgeDistillationBridge`를 통해 핵심 기술 요약과 아키텍처 결정(ADR)만 가벼운 마크다운 문서로 변환하여 Obsidian Vault(`eggr-knowledge`)에 커밋/푸시.
+   - 무거운 바이너리는 Google Drive 링크로 대체하여 Git 저장소 비대화(100MB 한도) 원천 방지.
+
+> 📖 **스토리지 연동 상세 안내서**:
+> - [Google Drive 연동 및 배포 가이드](docs/guides/google-drive-mcp-setup.ko.md) : 본인 구글 계정 연결 3단계 매뉴얼
+> - [멀티 티어 저장 수단 선택 및 연동 가이드](docs/guides/storage-backends.ko.md) : 로컬, 구글 드라이브, Obsidian 연계 총괄 가이드
+
+---
+
 ## 📖 시스템 아키텍처 및 상세 기술 명세
 
 ### 세 가지 독립 구성
