@@ -3,7 +3,7 @@
   "publisher": "EggR0",
   "displayName": "Integrated Power",
   "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
-  "version": "0.9.27",
+  "version": "0.10.0",
   "author": {
     "name": "EggR0"
   },

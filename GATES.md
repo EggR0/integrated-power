@@ -1,25 +1,30 @@
-# Gates: Quota Idle State & Pre-warm Window Activation
+# Gates: Integrated Power Google Drive Ingestion (B) & Artifact Offloader (C)
 
-OWNS: shared/quota/**, vscode-extension/scripts/**, vscode-extension/src/**, vscode-extension/webview/**
+OWNS: vscode-extension/src/broker/gdriveStorage.ts, scripts/test-gdrive-broker-integration.js, docs/reference/google-drive-storage-broker.ko.md, docs/reuse-map.md, GATES.md
 
-Scope: Eliminate phantom countdown when quota is 100%, implement pre-warm window activation with instant cancellation, and integrate stop button selectors.
+Scope: Implement Google Drive Inbox Ingestion Service (Option B) and Artifact Offloader (Option C) for Integrated Power broker with full tests and reuse-map integration.
 
-- [x] G1: When 5-hour quota is 100% or above 99.95%, the refresh timer displays Ready and canPrewarm is true
-  CHECK: node ./vscode-extension/scripts/test-quota-core.js
-  EXPECT: phantom countdown eliminated for 100% quota
-  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=0376c59e871f71e7f0227a7d91a0c83e3565c6753f45cf3831e769e9589ca172; output-bytes=2632
+- [x] G1: Google Drive storage client module is implemented with token refresh and folder management
+  CHECK: node scripts/test-gdrive-broker-integration.js --check-client
+  EXPECT: gdrive client module verified
+  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=f3547d373bd70c3e444dc626ba6ceda570c955ce71338ede639b0f935490f05d; output-bytes=62
 
-- [x] G2: Pre-warm trigger emits a minimal token ping and aborts immediately, transitioning the 5-hour window into active countdown with >99% quota retained
-  CHECK: node ./vscode-extension/scripts/test-prewarm.js
-  EXPECT: pre-warm trigger test passed
-  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=c12c3503fb45a7c5331d81fcac0ba57a10677793be4a735890ccdb33530ab823; output-bytes=264
+- [x] G2: Option B Drive Ingestion Service converts Drive Inbox items to Broker TaskEnvelopes with idempotency
+  CHECK: node scripts/test-gdrive-broker-integration.js --check-ingestion
+  EXPECT: drive ingestion service verified
+  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=393104ec3fa3561753b7740c2f176bfb6ff140b5933d2a553217dc08bf3dd6c7; output-bytes=33
 
-- [x] G3: Webview and control-center expose the pre-warm action button when 5h window is Ready, and Antigravity IDE stop selectors are properly referenced
-  CHECK: node ./vscode-extension/scripts/test-compact-ui.js
-  EXPECT: compact UI regression passed
-  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=8791916324977ffb4b8f2d66fba5af5d10bc149f40eda7d0932bfbd322f8ff06; output-bytes=29
+- [x] G3: Option C Drive Artifact Offloader uploads local artifacts to Drive with metadata and remote links
+  CHECK: node scripts/test-gdrive-broker-integration.js --check-offloader
+  EXPECT: drive artifact offloader verified
+  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=1991f399f0c5c759ede62b76dcd015ee0cd13613ebb8fce934b6fe0a53e4de45; output-bytes=34
 
-- [x] G4: Full headless and broker regression suites pass without regression
-  CHECK: node ./vscode-extension/scripts/run-headless-tests.js
-  EXPECT: headless tests passed
-  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=460cc06ca6c609edef2174526d16ce815b5631f41358d9c09581ebd352da0759; output-bytes=1789
+- [x] G4: End-to-end integration test passes for both Ingestion (B) and Offloader (C)
+  CHECK: node scripts/test-gdrive-broker-integration.js --check-e2e
+  EXPECT: gdrive integration e2e verified
+  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=ffad903c59c42f5dccaace4ca97b8cb131dbbd7bb4b3b030ed55755cb286fbc8; output-bytes=522
+
+- [x] G5: Documentation and reuse-map are updated with Option B and Option C authorities
+  CHECK: node scripts/test-gdrive-broker-integration.js --check-docs
+  EXPECT: gdrive storage docs verified
+  EVIDENCE: exit=0; shell=C:\WINDOWS\system32\cmd.exe; cwd=D:\Workspace\Integrated POWER; path=d87892797d07/22 entries; EXPECT=matched; output-sha256=8e9fee7608d7aa5af2c30b117e3581b3e47698160020ecc9d185f33ee5247147; output-bytes=29

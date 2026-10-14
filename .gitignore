@@ -38,6 +38,7 @@ coverage/
 config/last_scan_state.json
 scripts/__temp_*
 scratch_*
+scratch/
 .*headless*
 .dashboard-broker-flow-*
 .synthetic-workspace

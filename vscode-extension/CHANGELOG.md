@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.0] - 2026-10-15
+
+### Added & Major Features
+
+- **Google Drive 5TB Secondary Storage Broker Integration (`src/broker/gdriveStorage.ts`, `docs/reference/google-drive-storage-broker.ko.md`)**:
+  - Connected 5TB Google One Cloud Storage (user Google account) as a Tier 2 secondary cloud storage tier for the Integrated POWER broker.
+  - **Option B (Drive Ingestion Service)**: Scans Google Drive `IntegratedPower/Inbox` for mobile/web Gemini notes and documents, automatically ingesting them into broker `TaskEnvelope` queues with full idempotency (`idempotencyKey: gdrive_inbox_{fileId}`) and atomic moving to `Inbox/processed`.
+  - **Option C (Artifact Offloader)**: Background multi-part offloading of large local artifacts (.vsix bundles, browser QA WebP/MP4 recordings, heavy logs) to `IntegratedPower/Artifacts/{taskId}/`, preserving permanent `webViewLink` references in the broker `EventLedger` while protecting local SSD disk space.
+- **Self-Contained Google Drive MCP Authenticator (`scripts/setup-gdrive-mcp.js`, `docs/guides/google-drive-mcp-setup.ko.md`)**:
+  - Implemented standalone Node.js OAuth 2.0 authenticator avoiding Windows path normalization bugs (`D:\C:\...`).
+  - Generated full-control scope (`https://www.googleapis.com/auth/drive`) tokens with automatic token refresh (`GoogleDriveAuth`).
+  - Authored comprehensive, reproducible step-by-step setup and troubleshooting guide for external user deployment.
+  - Automatically configured Antigravity IDE global `mcp_config.json` with `gdrive` MCP server entry.
+- **Unlazy Completion Discipline**: Formulated and passed all acceptance gates (`GATES.md`) with live E2E Google Drive API verification (verified 5120.0 GB quota and real-time artifact upload).
+
 ## [0.9.27] - 2026-10-14
 
 ### Fixed & Enhanced

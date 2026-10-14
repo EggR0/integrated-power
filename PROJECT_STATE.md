@@ -2,16 +2,18 @@
 
 Updated: 2026-10-15
 
-## Release Checkpoint (0.9.27)
+## Release Checkpoint (0.10.0)
 
-Integrated Power v0.9.27 passes full headless test suites, compact UI layout constraints (<200px), and broker approval workflow verification.
+Integrated Power v0.10.0 introduces major architectural expansions with 5TB Google One Cloud Storage integration (user Google account), Drive Inbox Task Ingestion (`DriveIngestionService`, Option B), and Large Artifact Cloud Offloading (`DriveArtifactOffloader`, Option C), passing all unlazy gates and live E2E Google Drive API verification.
 
-### Key Enhancements & Bugfixes (0.9.23 ~ 0.9.27):
-- **0.9.23 (Pre-warm 100% Window Activation)**: Unblocked `[⚡ Pre-warm]` button on 100% full capacity; fixed `once -> click` automatic mode reversion upon dispatch.
-- **0.9.24 (Startup Cache & Mutex)**: Added startup disk cache restoration from `token_status.json`; decoupled webview ready/refresh handlers and added token refresh generation mutex.
-- **0.9.25 (Webview Infinite Loading Fix)**: Promoted `optionalNumber` to outer scope in `webview/main.js`, resolving runtime `ReferenceError` on `claudeDirectUsage`; added broker startup grace period and automatic state resync on broker port availability.
-- **0.9.26 (Approval Rejection Route)**: Implemented missing `POST /v1/approvals/:id/reject` HTTP route in `server.ts` and `broker.reject` in `broker.ts`, resolving `404: not_found` on Reject actions.
-- **0.9.27 (Active Countdown Visibility at 100%)**: Updated display logic to show active countdown (e.g. `· 4:35`) whenever remaining reset time is strictly less than 5 hours, while keeping pre-warm capabilities intact.
+### Key Enhancements in 0.10.0:
+- **Google Drive 5TB Storage Broker Integration**: Connected user 5TB cloud storage as a Tier 2 secondary cloud storage tier (`gdriveStorage.ts`, `docs/reference/google-drive-storage-broker.ko.md`).
+- **Drive Ingestion Service (Option B)**: Auto-scans `IntegratedPower/Inbox/` for mobile/web Gemini notes and documents, auto-converting them into Broker `TaskEnvelope` instances with idempotency and atomic move to `processed/`.
+- **Artifact Cloud Offloader (Option C)**: Background multi-part offloading of large local artifacts (.vsix, WebP/MP4 recordings, logs) to `IntegratedPower/Artifacts/{taskId}/`, protecting local SSD storage while recording permanent cloud links in the `EventLedger`.
+- **Self-Contained Drive MCP Authenticator**: Standalone OAuth 2.0 authenticator in `scripts/setup-gdrive-mcp.js`, solving Windows path normalization bugs (`D:\C:\...`), with full-control scope (`https://www.googleapis.com/auth/drive`).
+- **Unlazy 5-Gate Completion & Live E2E Proof**: Verified 5120.0 GB quota and live artifact creation on Google Drive.
+
+## Earlier Release Checkpoints (0.9.23 ~ 0.9.27)
 
 ## Earlier desktop ↔ IDE integration checkpoint (0.9.21)
 
