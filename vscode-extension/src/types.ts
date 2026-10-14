@@ -21,7 +21,7 @@ export interface ArtifactRef {
   canOpen: boolean;
 }
 
-export type QuotaSource = "official-api" | "cli-json" | "cli-text" | "local-service" | "third-party-tool" | "transcript-estimate" | "manual";
+export type QuotaSource = "official-api" | "provider-api" | "cli-json" | "cli-text" | "local-service" | "third-party-tool" | "transcript-estimate" | "manual";
 export type UsageConfidence = "exact" | "reported-quota" | "estimated" | "unknown";
 
 export interface QuotaPoolStatus {
@@ -33,6 +33,8 @@ export interface QuotaPoolStatus {
   remainingTokens?: number;
   maxTokens?: number;
   resetTime?: string;
+  measuredAt?: string;
+  windowDurationMins?: number;
   source: QuotaSource;
   confidence: UsageConfidence;
 }
@@ -89,17 +91,17 @@ export interface UsageWindowSummary {
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
-  billableTokens: number;
+  billableTokens?: number;
   eventCount: number;
 }
 
 export interface ClaudeDirectUsageStatus {
-  status: "measured" | "no-data";
+  status: "measured" | "partial" | "no-data";
   today: UsageWindowSummary;
   sevenDays: UsageWindowSummary;
   sources: string[];
   lastUsedAt?: string;
-  lastMeasuredAt: string;
+  lastMeasuredAt?: string;
   errors?: string[];
 }
 
@@ -135,32 +137,32 @@ export interface TokenStatus {
   claudeDirectUsage?: ClaudeDirectUsageStatus;
   
   // Legacy fields
-  antigravityTokensLeft: number;
-  antigravityMax: number;
+  antigravityTokensLeft?: number;
+  antigravityMax?: number;
   antigravityPercentage?: number;
   antigravityEstimatedAbsolute?: number;
   antigravityResetTime?: string;
-  antigravityWeeklyTokensLeft: number;
-  antigravityWeeklyMax: number;
+  antigravityWeeklyTokensLeft?: number;
+  antigravityWeeklyMax?: number;
   antigravityWeeklyPercentage?: number;
   antigravityWeeklyResetTime?: string;
-  opusTokensLeft: number;
-  opusMax: number;
+  opusTokensLeft?: number;
+  opusMax?: number;
   opusPercentage?: number;
   opusEstimatedAbsolute?: number;
   opusResetTime?: string;
-  opusWeeklyTokensLeft: number;
-  opusWeeklyMax: number;
+  opusWeeklyTokensLeft?: number;
+  opusWeeklyMax?: number;
   opusWeeklyPercentage?: number;
   opusWeeklyEstimatedAbsolute?: number;
   opusWeeklyResetTime?: string;
-  codexTokensLeft: number;
-  codexMax: number;
+  codexTokensLeft?: number;
+  codexMax?: number;
   codexPercentage?: number;
   codexEstimatedAbsolute?: number;
   codexResetTime?: string;
-  codexWeeklyTokensLeft: number;
-  codexWeeklyMax: number;
+  codexWeeklyTokensLeft?: number;
+  codexWeeklyMax?: number;
   codexWeeklyPercentage?: number;
   codexWeeklyEstimatedAbsolute?: number;
   codexWeeklyResetTime?: string;

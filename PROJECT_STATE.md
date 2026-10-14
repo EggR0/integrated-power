@@ -1,6 +1,17 @@
 # PROJECT_STATE
 
-Updated: 2026-10-13
+Updated: 2026-10-15
+
+## Release Checkpoint (0.9.27)
+
+Integrated Power v0.9.27 passes full headless test suites, compact UI layout constraints (<200px), and broker approval workflow verification.
+
+### Key Enhancements & Bugfixes (0.9.23 ~ 0.9.27):
+- **0.9.23 (Pre-warm 100% Window Activation)**: Unblocked `[⚡ Pre-warm]` button on 100% full capacity; fixed `once -> click` automatic mode reversion upon dispatch.
+- **0.9.24 (Startup Cache & Mutex)**: Added startup disk cache restoration from `token_status.json`; decoupled webview ready/refresh handlers and added token refresh generation mutex.
+- **0.9.25 (Webview Infinite Loading Fix)**: Promoted `optionalNumber` to outer scope in `webview/main.js`, resolving runtime `ReferenceError` on `claudeDirectUsage`; added broker startup grace period and automatic state resync on broker port availability.
+- **0.9.26 (Approval Rejection Route)**: Implemented missing `POST /v1/approvals/:id/reject` HTTP route in `server.ts` and `broker.reject` in `broker.ts`, resolving `404: not_found` on Reject actions.
+- **0.9.27 (Active Countdown Visibility at 100%)**: Updated display logic to show active countdown (e.g. `· 4:35`) whenever remaining reset time is strictly less than 5 hours, while keeping pre-warm capabilities intact.
 
 ## Earlier desktop ↔ IDE integration checkpoint (0.9.21)
 
@@ -314,3 +325,46 @@ user approval; no installer was activated.
   This deployment did not launch or install the app, restart the live broker,
   invoke models or change GPUs. Open VSX visibility requires registry activation
   before that channel can be marked complete.
+
+## 2026-10-13 broker task panel investigation
+
+- User screenshot showed six completed subsystem audit tasks alongside an old
+  "broker is not started" error. Read-only live health now proves schema 2 /
+  broker 0.9.22; the installed IDE extension index also reports 0.9.22. This
+  confirms a later installation outside the deployment work recorded above.
+- The six displayed records were created on 2026-08-15, with IDE origin and
+  local-provider delegation events. They are existing ledger records, not
+  newly generated tasks from this investigation. The scoped workspace API
+  returns 22 tasks: 18 completed, 1 cancelled, 2 failed, 1 awaiting approval.
+  No task/approval was changed and no user record was deleted.
+- Root cause of the contradictory error display: the webview merged broker
+  snapshots into previous state; JSON transport omits undefined `error`, so a
+  successful snapshot retained the prior startup error. The source now clears
+  missing errors explicitly while retaining actual incoming errors.
+- The source UI groups terminal task records into collapsed dated history;
+  expanding it preserves access to the same records. Source regressions verify
+  error recovery through JSON serialization and history expansion across
+  rerenders. This correction is not yet installed or published, and existing
+  0.9.22 release assets were not overwritten.
+
+## 2026-10-13 actual quota truth audit (in progress)
+
+- User requested a full investigation and correction of misleading actual
+  quota data. The designated Luna High implementation owner is updating the
+  existing collector, shared quota, HTTP/MCP and IDE/desktop paths; two read-only
+  reviews supplied reproducible collector and surface findings. Earlier broker
+  error/history UI fixes remain intact; Git workspace task scope is unchanged.
+- Audit contract and defect matrix are recorded in
+  `docs/qa/quota-truth-audit-2026-10-13.ko.md`. Root independently compared installed
+  broker quota with Codex account usage and Antigravity's existing native quota
+  reader. Current remaining percentages matched upstream samples. This does
+  not validate stale/error/reset or display transformations; those have separate
+  failing fixtures. Credentials/account identifiers were not persisted.
+- Important live behavior: Antigravity reports 100% with a future reset that
+  moves with each read. A future timestamp alone is not proof of an already
+  running recharge timer. Anthropic native usage input fields exclude cache,
+  while the normalized local CSV InputTokens includes total input; calculations
+  must follow the source contract and exclude duplicated reasoning accounting.
+- Source repair and RED-to-GREEN regressions are ongoing. No live broker restart,
+  model generation, user state modification, installation or new publication has
+  been performed. Existing immutable 0.9.22 release assets remain untouched.

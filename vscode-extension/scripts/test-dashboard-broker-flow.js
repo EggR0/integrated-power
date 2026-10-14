@@ -36,7 +36,12 @@ const tasks = [{
   contextFiles: [], originProvider: "local.openai-compatible", privacy: "private", status: "running",
   revision: 4, delegationDepth: 0, participants: ["local.openai-compatible"],
   budget: { maxParticipants: 1, allowApiSpend: false }, createdAt: "2026-10-13T00:00:00Z", updatedAt: "2026-10-13T00:00:00Z",
-}];
+}, ...["completed", "cancelled", "failed", "merged"].map((status, index) => ({
+  id: `task-history-${index}`, title: `Past task ${index + 1}`, goal: "Preserved historical record.", workspacePath,
+  contextFiles: [], originProvider: "local.openai-compatible", privacy: "private", status,
+  revision: 4, delegationDepth: 0, participants: ["local.openai-compatible"],
+  budget: { maxParticipants: 1, allowApiSpend: false }, createdAt: "2026-08-15T12:34:00Z", updatedAt: "2026-08-15T12:34:00Z",
+}))];
 const approvals = [
   { id: "approval-approve", taskId: "task-existing", action: "merge", description: "Allow merge", requestedBy: "broker", expectedRevision: 4, createdAt: "2026-10-13T00:00:00Z" },
   { id: "approval-reject", taskId: "task-existing", action: "external-send", description: "Reject external send", requestedBy: "broker", expectedRevision: 4, createdAt: "2026-10-13T00:00:00Z" },
@@ -235,6 +240,21 @@ async function main() {
     assert.strictEqual(initialBrokerState.state.tasks[0].id, "task-existing");
     assert.strictEqual(initialBrokerState.state.approvals.length, 2);
     ui.render(initialBrokerState.state);
+    const findHistory = () => ui.findAll(ui.container, (element) => element.tagName === "DETAILS" && element.className === "broker-history")[0];
+    const initialHistory = findHistory();
+    assert.ok(initialHistory, "terminal broker tasks must be grouped in a history disclosure");
+    assert.strictEqual(initialHistory.open, false, "terminal history is collapsed by default");
+    const historySummary = ui.findAll(initialHistory, (element) => element.tagName === "SUMMARY")[0];
+    assert.ok(historySummary.textContent.includes("History (4)") && historySummary.textContent.includes("8/15"), "collapsed history summary shows count and creation date");
+    const workspaceTaskList = ui.findAll(ui.container, (element) => element.attributes["aria-label"] === "Workspace tasks")[0];
+    assert.strictEqual(workspaceTaskList.children.filter((element) => element.tagName === "ARTICLE" && element.className.includes("broker-card")).length, 1, "active tasks remain visible outside collapsed history");
+    initialHistory.open = true;
+    initialHistory.dispatch("toggle");
+    ui.render(initialBrokerState.state);
+    const reopenedHistory = findHistory();
+    assert.strictEqual(reopenedHistory.open, true, "history expansion survives a full rerender");
+    assert.strictEqual(ui.findAll(reopenedHistory, (element) => element.tagName === "ARTICLE" && element.className.includes("broker-card")).length, 4, "expanded history retains all terminal task cards");
+    assert.ok(ui.findAll(ui.container, (element) => element.tagName === "BUTTON" && element.textContent === "Delegate").length > 0, "active task actions remain available after opening history");
 
     const createForm = ui.findAll(ui.container, (element) => element.tagName === "FORM")[0];
     const createFields = ui.findAll(createForm, (element) => ["INPUT", "TEXTAREA"].includes(element.tagName));

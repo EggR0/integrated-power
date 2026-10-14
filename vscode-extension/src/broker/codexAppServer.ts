@@ -377,7 +377,36 @@ export interface LiveCodexRateLimits {
   codexResetTime?: string;
   codexWeeklyPercentage?: number;
   codexWeeklyResetTime?: string;
+  codexWindowDurationMins?: number;
+  codexWeeklyWindowDurationMins?: number;
+  measuredAt?: string;
   resetCredits?: number;
+}
+
+export function selectCodexRateLimitWindows(result: any): { fiveHour?: any; weekly?: any } {
+  const rateLimits = result?.rateLimits;
+  const byLimitId = result?.rateLimitsByLimitId;
+  const entries = Array.isArray(byLimitId)
+    ? byLimitId.map((item: any) => ({ id: item?.limitId ?? item?.limit_id, item }))
+    : byLimitId && typeof byLimitId === "object"
+      ? Object.entries(byLimitId).map(([id, item]) => ({ id, item }))
+      : [];
+  const codexBucket = entries.find(({ id, item }: any) =>
+    String(id ?? "").toLowerCase() === "codex" || String(item?.limitId ?? item?.limit_id ?? "").toLowerCase() === "codex");
+  const selectedSnapshot = codexBucket?.item;
+  const legacyId = String(rateLimits?.limitId ?? rateLimits?.limit_id ?? "").toLowerCase();
+  const legacyIsOtherBucket = Boolean(legacyId && legacyId !== "codex");
+  const snapshot = selectedSnapshot ?? (!byLimitId && !legacyIsOtherBucket ? rateLimits : undefined);
+  if (!snapshot || typeof snapshot !== "object") return {};
+
+  const primary = snapshot.primary;
+  const secondary = snapshot.secondary;
+  const windows = [primary, secondary].filter((item: any) => item && typeof item === "object");
+  const hasWindowDurations = windows.some((item: any) => typeof item.windowDurationMins === "number");
+  return {
+    fiveHour: hasWindowDurations ? windows.find((item: any) => item.windowDurationMins === 300) : primary,
+    weekly: hasWindowDurations ? windows.find((item: any) => item.windowDurationMins === 10080) : secondary,
+  };
 }
 
 let cachedCodexRateLimits: { fetchedAt: number; data: LiveCodexRateLimits } | undefined;
@@ -456,30 +485,30 @@ export async function fetchLiveCodexRateLimits(force = false): Promise<LiveCodex
           sendRpc("account/rateLimits/read", null);
         } else if (data.id === 2 && data.result) {
           clearTimeout(timer);
-          const rateLimits = data.result.rateLimits;
-          const primary = rateLimits?.primary;
-          const secondary = rateLimits?.secondary;
-
           let codexPercentage: number | undefined;
           let codexResetTime: string | undefined;
           let codexWeeklyPercentage: number | undefined;
           let codexWeeklyResetTime: string | undefined;
 
-          if (primary) {
-            const usedPercent = typeof primary.usedPercent === "number" ? primary.usedPercent : undefined;
-            const resetsAt = typeof primary.resetsAt === "number" ? primary.resetsAt : undefined;
-            const isReset = Boolean(resetsAt && resetsAt * 1000 < Date.now());
-            codexPercentage = usedPercent !== undefined ? (isReset ? 100 : Math.max(0, Math.min(100, 100 - usedPercent))) : undefined;
-            codexResetTime = (!isReset && resetsAt) ? new Date(resetsAt * 1000).toISOString() : undefined;
-          }
-
-          if (secondary) {
-            const usedPercent = typeof secondary.usedPercent === "number" ? secondary.usedPercent : undefined;
-            const resetsAt = typeof secondary.resetsAt === "number" ? secondary.resetsAt : undefined;
-            const isReset = Boolean(resetsAt && resetsAt * 1000 < Date.now());
-            codexWeeklyPercentage = usedPercent !== undefined ? (isReset ? 100 : Math.max(0, Math.min(100, 100 - usedPercent))) : undefined;
-            codexWeeklyResetTime = (!isReset && resetsAt) ? new Date(resetsAt * 1000).toISOString() : undefined;
-          }
+          const { fiveHour: fiveHourLimit, weekly: weeklyLimit } = selectCodexRateLimitWindows(data.result);
+          const readWindow = (limit: any): { percentage?: number; resetTime?: string; duration?: number } => {
+            if (!limit) return {};
+            const usedPercent = typeof limit.usedPercent === "number" && Number.isFinite(limit.usedPercent) && limit.usedPercent >= 0 && limit.usedPercent <= 100
+              ? limit.usedPercent
+              : undefined;
+            const resetsAt = typeof limit.resetsAt === "number" && Number.isFinite(limit.resetsAt) ? limit.resetsAt : undefined;
+            return {
+              percentage: usedPercent === undefined ? undefined : 100 - usedPercent,
+              resetTime: resetsAt !== undefined && resetsAt * 1000 > Date.now() ? new Date(resetsAt * 1000).toISOString() : undefined,
+              duration: typeof limit.windowDurationMins === "number" ? limit.windowDurationMins : undefined,
+            };
+          };
+          const fiveHour = readWindow(fiveHourLimit);
+          const weekly = readWindow(weeklyLimit);
+          codexPercentage = fiveHour.percentage;
+          codexResetTime = fiveHour.resetTime;
+          codexWeeklyPercentage = weekly.percentage;
+          codexWeeklyResetTime = weekly.resetTime;
 
           const resetCredits = typeof data.result.rateLimitResetCredits?.availableCount === "number"
             ? data.result.rateLimitResetCredits.availableCount
@@ -490,6 +519,9 @@ export async function fetchLiveCodexRateLimits(force = false): Promise<LiveCodex
             codexResetTime,
             codexWeeklyPercentage,
             codexWeeklyResetTime,
+            codexWindowDurationMins: fiveHour.duration,
+            codexWeeklyWindowDurationMins: weekly.duration,
+            measuredAt: new Date().toISOString(),
             resetCredits,
           });
         }

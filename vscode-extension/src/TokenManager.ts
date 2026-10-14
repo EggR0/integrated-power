@@ -57,6 +57,7 @@ interface NodePtyModule {
 }
 
 interface QuotaData {
+  measuredAt?: string;
   quotaPools?: QuotaPoolStatus[];
   localComputeStatus?: LocalComputeStatus;
   claudeDirectUsage?: ClaudeDirectUsageStatus;
@@ -77,6 +78,9 @@ interface QuotaData {
   opusWeeklyEstimatedAbsolute?: number;
   codexEstimatedAbsolute?: number;
   codexWeeklyEstimatedAbsolute?: number;
+  codexMeasuredAt?: string;
+  codexWeeklyMeasuredAt?: string;
+  codexSource?: QuotaSource;
   errors: string[];
 }
 
@@ -87,13 +91,14 @@ interface JsonlFileStat {
 
 interface ClaudeUsageEvent {
   timestamp: number;
+  eventId?: string;
   source: string;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
-  billableTokens: number;
+  billableTokens?: number;
 }
 
 interface StatusOptions {
@@ -192,10 +197,12 @@ export class TokenManager {
     this.circuitBreakers.set(providerKey, state);
   }
 
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> {
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallbackValue?: T): Promise<T> {
     let timer: NodeJS.Timeout | undefined;
-    const timeoutPromise = new Promise<T>((resolve) => {
-      timer = setTimeout(() => resolve(fallbackValue), timeoutMs);
+    const timeoutPromise = new Promise<T>((resolve, reject) => {
+      timer = setTimeout(() => fallbackValue === undefined
+        ? reject(new Error(`Quota source timed out after ${timeoutMs}ms.`))
+        : resolve(fallbackValue), timeoutMs);
       if (typeof timer.unref === "function") {
         timer.unref();
       }
@@ -215,18 +222,6 @@ export class TokenManager {
   ): Promise<TokenStatus | undefined> {
     const activity: string[] = ["Token manager initialized."];
     const tokenStatus: TokenStatus = {
-      antigravityTokensLeft: 0,
-      antigravityMax: 0,
-      antigravityWeeklyTokensLeft: 0,
-      antigravityWeeklyMax: 0,
-      opusTokensLeft: 0,
-      opusMax: 0,
-      opusWeeklyTokensLeft: 0,
-      opusWeeklyMax: 0,
-      codexTokensLeft: 0,
-      codexMax: 0,
-      codexWeeklyTokensLeft: 0,
-      codexWeeklyMax: 0,
       codexStatus: "Idle",
       llmStatus: "Active",
       recommendedTaskWeight: "unknown",
@@ -344,8 +339,6 @@ export class TokenManager {
     }
     if (antigravityEstimated !== undefined) {
       tokenStatus.antigravityEstimatedAbsolute = antigravityEstimated;
-      tokenStatus.antigravityTokensLeft = antigravityEstimated;
-      tokenStatus.antigravityMax = this.estimateMaxTokens(antigravityEstimated, antigravityPercentage);
     }
     if (antigravityReset !== undefined) {
       tokenStatus.antigravityResetTime = antigravityReset;
@@ -354,8 +347,6 @@ export class TokenManager {
       tokenStatus.antigravityWeeklyPercentage = antigravityWeeklyPercentage;
     }
     if (antigravityWeeklyEstimated !== undefined) {
-      tokenStatus.antigravityWeeklyTokensLeft = antigravityWeeklyEstimated;
-      tokenStatus.antigravityWeeklyMax = this.estimateMaxTokens(antigravityWeeklyEstimated, antigravityWeeklyPercentage);
     }
     if (antigravityWeeklyReset !== undefined) {
       tokenStatus.antigravityWeeklyResetTime = antigravityWeeklyReset;
@@ -366,8 +357,6 @@ export class TokenManager {
     }
     if (opusEstimated !== undefined) {
       tokenStatus.opusEstimatedAbsolute = opusEstimated;
-      tokenStatus.opusTokensLeft = opusEstimated;
-      tokenStatus.opusMax = this.estimateMaxTokens(opusEstimated, opusPercentage);
     }
     if (opusReset !== undefined) {
       tokenStatus.opusResetTime = opusReset;
@@ -376,8 +365,6 @@ export class TokenManager {
       tokenStatus.opusWeeklyPercentage = opusWeeklyPercentage;
     }
     if (opusWeeklyEstimated !== undefined) {
-      tokenStatus.opusWeeklyTokensLeft = opusWeeklyEstimated;
-      tokenStatus.opusWeeklyMax = this.estimateMaxTokens(opusWeeklyEstimated, opusWeeklyPercentage);
     }
     if (opusWeeklyReset !== undefined) {
       tokenStatus.opusWeeklyResetTime = opusWeeklyReset;
@@ -388,8 +375,6 @@ export class TokenManager {
     }
     if (codexEstimated !== undefined) {
       tokenStatus.codexEstimatedAbsolute = codexEstimated;
-      tokenStatus.codexTokensLeft = codexEstimated;
-      tokenStatus.codexMax = this.estimateMaxTokens(codexEstimated, codexPercentage);
     }
     if (codexReset !== undefined) {
       tokenStatus.codexResetTime = codexReset;
@@ -398,22 +383,12 @@ export class TokenManager {
       tokenStatus.codexWeeklyPercentage = codexWeeklyPercentage;
     }
     if (codexWeeklyEstimated !== undefined) {
-      tokenStatus.codexWeeklyTokensLeft = codexWeeklyEstimated;
-      tokenStatus.codexWeeklyMax = this.estimateMaxTokens(codexWeeklyEstimated, codexWeeklyPercentage);
     }
     if (codexWeeklyReset !== undefined) {
       tokenStatus.codexWeeklyResetTime = codexWeeklyReset;
     }
 
     tokenStatus.recommendedTaskWeight = this.taskWeightFromCodexPercentage(tokenStatus.codexPercentage, tokenStatus.codexWeeklyPercentage);
-  }
-
-  private estimateMaxTokens(estimated: number, percentage: number | undefined): number {
-    if (percentage === undefined || percentage <= 0) {
-      return 0;
-    }
-
-    return Math.round(estimated / (percentage / 100));
   }
 
   private quotaFromStatus(tokenStatus: TokenStatus): QuotaData {
@@ -466,11 +441,6 @@ export class TokenManager {
     }
     if (quotaData.antigravityEstimatedAbsolute !== undefined) {
       tokenStatus.antigravityEstimatedAbsolute = quotaData.antigravityEstimatedAbsolute;
-      tokenStatus.antigravityTokensLeft = quotaData.antigravityEstimatedAbsolute;
-      tokenStatus.antigravityMax = this.estimateMaxTokens(
-        quotaData.antigravityEstimatedAbsolute,
-        tokenStatus.antigravityPercentage,
-      );
     }
     if (quotaData.opusPercentage !== undefined) {
       tokenStatus.opusPercentage = quotaData.opusPercentage;
@@ -486,19 +456,9 @@ export class TokenManager {
     }
     if (quotaData.opusEstimatedAbsolute !== undefined) {
       tokenStatus.opusEstimatedAbsolute = quotaData.opusEstimatedAbsolute;
-      tokenStatus.opusTokensLeft = quotaData.opusEstimatedAbsolute;
-      tokenStatus.opusMax = this.estimateMaxTokens(
-        quotaData.opusEstimatedAbsolute,
-        tokenStatus.opusPercentage,
-      );
     }
     if (quotaData.opusWeeklyEstimatedAbsolute !== undefined) {
       tokenStatus.opusWeeklyEstimatedAbsolute = quotaData.opusWeeklyEstimatedAbsolute;
-      tokenStatus.opusWeeklyTokensLeft = quotaData.opusWeeklyEstimatedAbsolute;
-      tokenStatus.opusWeeklyMax = this.estimateMaxTokens(
-        quotaData.opusWeeklyEstimatedAbsolute,
-        tokenStatus.opusWeeklyPercentage,
-      );
     }
     if (quotaData.codexPercentage !== undefined) {
       tokenStatus.codexPercentage = quotaData.codexPercentage;
@@ -514,19 +474,9 @@ export class TokenManager {
     }
     if (quotaData.codexEstimatedAbsolute !== undefined) {
       tokenStatus.codexEstimatedAbsolute = quotaData.codexEstimatedAbsolute;
-      tokenStatus.codexTokensLeft = quotaData.codexEstimatedAbsolute;
-      tokenStatus.codexMax = this.estimateMaxTokens(
-        quotaData.codexEstimatedAbsolute,
-        tokenStatus.codexPercentage,
-      );
     }
     if (quotaData.codexWeeklyEstimatedAbsolute !== undefined) {
       tokenStatus.codexWeeklyEstimatedAbsolute = quotaData.codexWeeklyEstimatedAbsolute;
-      tokenStatus.codexWeeklyTokensLeft = quotaData.codexWeeklyEstimatedAbsolute;
-      tokenStatus.codexWeeklyMax = this.estimateMaxTokens(
-        quotaData.codexWeeklyEstimatedAbsolute,
-        tokenStatus.codexWeeklyPercentage,
-      );
     }
 
     tokenStatus.recommendedTaskWeight = this.taskWeightFromCodexPercentage(
@@ -643,7 +593,7 @@ export class TokenManager {
     if (!Number.isFinite(time) || time <= Date.now()) {
       return undefined;
     }
-    // Future reset time is a genuine active recharge cycle and must be preserved
+    // Preserve a valid provider-reported deadline without treating it as proof of an active recharge.
     return resetTime;
   }
 
@@ -702,7 +652,7 @@ export class TokenManager {
           return;
         }
         try {
-          const codexQuota = await this.withTimeout(this.fetchCodexQuota(forceRefresh), 5000, {});
+          const codexQuota = await this.withTimeout(this.fetchCodexQuota(forceRefresh), 5000);
           this.recordProviderSuccess("codex");
           data.codexPercentage = codexQuota.codexPercentage;
           data.codexResetTime = codexQuota.codexResetTime;
@@ -710,27 +660,37 @@ export class TokenManager {
           data.codexWeeklyPercentage = codexQuota.codexWeeklyPercentage;
           data.codexWeeklyResetTime = codexQuota.codexWeeklyResetTime;
           data.codexWeeklyEstimatedAbsolute = codexQuota.codexWeeklyEstimatedAbsolute;
-          if (codexQuota.codexPercentage !== undefined || codexQuota.codexResetTime !== undefined || codexQuota.codexEstimatedAbsolute !== undefined) {
+          data.codexMeasuredAt = codexQuota.codexMeasuredAt;
+          data.codexWeeklyMeasuredAt = codexQuota.codexWeeklyMeasuredAt;
+          data.codexSource = codexQuota.codexSource;
+          if (codexQuota.codexPercentage !== undefined) {
             data.quotaPools!.push({
               id: "codex.5h",
               provider: "codex",
               remainingPercentage: codexQuota.codexPercentage,
               remainingTokens: codexQuota.codexEstimatedAbsolute,
               resetTime: codexQuota.codexResetTime,
-              source: "cli-json",
+              measuredAt: codexQuota.codexMeasuredAt,
+              windowDurationMins: 300,
+              source: codexQuota.codexSource ?? "cli-json",
               confidence: "reported-quota"
             });
           }
-          if (codexQuota.codexWeeklyPercentage !== undefined || codexQuota.codexWeeklyResetTime !== undefined || codexQuota.codexWeeklyEstimatedAbsolute !== undefined) {
+          if (codexQuota.codexWeeklyPercentage !== undefined) {
             data.quotaPools!.push({
               id: "codex.weekly",
               provider: "codex",
               remainingPercentage: codexQuota.codexWeeklyPercentage,
               remainingTokens: codexQuota.codexWeeklyEstimatedAbsolute,
               resetTime: codexQuota.codexWeeklyResetTime,
-              source: "cli-json",
+              measuredAt: codexQuota.codexWeeklyMeasuredAt,
+              windowDurationMins: 10080,
+              source: codexQuota.codexSource ?? "cli-json",
               confidence: "reported-quota"
             });
+          }
+          if (codexQuota.codexPercentage === undefined && codexQuota.codexWeeklyPercentage === undefined) {
+            data.errors.push("Codex: quota reader returned no supported 5-hour or weekly window.");
           }
         } catch (error) {
           this.recordProviderFailure("codex");
@@ -741,10 +701,12 @@ export class TokenManager {
       // 2. Antigravity
       (async () => {
         if (this.isCircuitOpen("antigravity") && !forceRefresh) {
+          data.errors.push("Antigravity: quota source is cooling down after repeated failures.");
           return;
         }
         try {
-          const antigravityQuota = await this.withTimeout(this.fetchAntigravityQuota(), 7000, {});
+          const poolsBefore = data.quotaPools!.length;
+          const antigravityQuota = await this.withTimeout(this.fetchAntigravityQuota(), 7000);
           this.recordProviderSuccess("antigravity");
           data.antigravityPercentage = antigravityQuota.antigravityPercentage;
           data.antigravityResetTime = antigravityQuota.antigravityResetTime;
@@ -754,38 +716,47 @@ export class TokenManager {
           data.opusResetTime = antigravityQuota.opusResetTime;
           data.opusWeeklyPercentage = antigravityQuota.opusWeeklyPercentage;
           data.opusWeeklyResetTime = antigravityQuota.opusWeeklyResetTime;
-          data.quotaPools!.push({
+          if (antigravityQuota.antigravityPercentage !== undefined) data.quotaPools!.push({
             id: "antigravity.default",
             provider: "antigravity",
             remainingPercentage: antigravityQuota.antigravityPercentage,
             resetTime: antigravityQuota.antigravityResetTime,
-            source: "cli-text",
+            measuredAt: antigravityQuota.measuredAt,
+            windowDurationMins: 300,
+            source: "provider-api",
             confidence: "reported-quota"
           });
-          data.quotaPools!.push({
+          if (antigravityQuota.antigravityWeeklyPercentage !== undefined) data.quotaPools!.push({
             id: "antigravity.weekly",
             provider: "antigravity",
             remainingPercentage: antigravityQuota.antigravityWeeklyPercentage,
             resetTime: antigravityQuota.antigravityWeeklyResetTime,
-            source: "cli-text",
+            measuredAt: antigravityQuota.measuredAt,
+            windowDurationMins: 10080,
+            source: "provider-api",
             confidence: "reported-quota"
           });
-          data.quotaPools!.push({
+          if (antigravityQuota.opusPercentage !== undefined) data.quotaPools!.push({
             id: "opus.default",
             provider: "anthropic",
             remainingPercentage: antigravityQuota.opusPercentage,
             resetTime: antigravityQuota.opusResetTime,
-            source: "cli-text",
+            measuredAt: antigravityQuota.measuredAt,
+            windowDurationMins: 300,
+            source: "provider-api",
             confidence: "reported-quota"
           });
-          data.quotaPools!.push({
+          if (antigravityQuota.opusWeeklyPercentage !== undefined) data.quotaPools!.push({
             id: "opus.weekly",
             provider: "anthropic",
             remainingPercentage: antigravityQuota.opusWeeklyPercentage,
             resetTime: antigravityQuota.opusWeeklyResetTime,
-            source: "cli-text",
+            measuredAt: antigravityQuota.measuredAt,
+            windowDurationMins: 10080,
+            source: "provider-api",
             confidence: "reported-quota"
           });
+          if (data.quotaPools!.length === poolsBefore) data.errors.push("Antigravity: provider returned no supported Gemini or Claude quota windows.");
         } catch (error) {
           this.recordProviderFailure("antigravity");
           if (error instanceof AgyNotInstalledError) {
@@ -803,20 +774,13 @@ export class TokenManager {
       // 3. Local LLM / GPU
       (async () => {
         if (this.isCircuitOpen("localLlm") && !forceRefresh) {
+          data.errors.push("LocalLLM: telemetry source is cooling down after repeated failures.");
           return;
         }
         try {
           const { localComputeStatus, quotaPool } = await this.withTimeout(
             this.fetchLocalLlmStatus(),
-            4000,
-            {
-              localComputeStatus: {
-                endpointHealth: "offline",
-                programName: "Offline",
-                loadedModels: [],
-                gpus: this.lastGpuMetrics || [],
-              },
-            },
+            10_000,
           );
           this.recordProviderSuccess("localLlm");
           data.localComputeStatus = localComputeStatus;
@@ -832,21 +796,11 @@ export class TokenManager {
       // 4. Claude Direct Telemetry
       (async () => {
         if (this.isCircuitOpen("claude") && !forceRefresh) {
+          data.errors.push("Claude Direct: usage source is cooling down after repeated failures.");
           return;
         }
         try {
-          const usage = await this.withTimeout(
-            this.fetchClaudeDirectUsage(workspaceStateRoot),
-            2000,
-            {
-              status: "no-data",
-              today: this.emptyUsageSummary(),
-              sevenDays: this.emptyUsageSummary(),
-              sources: [],
-              lastMeasuredAt: new Date().toISOString(),
-              errors: [],
-            }
-          );
+          const usage = await this.withTimeout(this.fetchClaudeDirectUsage(workspaceStateRoot), 2000);
           this.recordProviderSuccess("claude");
           data.claudeDirectUsage = usage;
           if (usage.errors?.length) {
@@ -867,11 +821,21 @@ export class TokenManager {
     const events: ClaudeUsageEvent[] = [];
     const errors: string[] = [];
     const sources = new Set<string>();
+    const eventIndexById = new Map<string, number>();
+    const seenFiles = new Set<string>();
 
     const readJsonl = async (filePath: string, source: string, trustClaudePath = false): Promise<void> => {
       try {
-        const content = await this.readFileTail(filePath, CLAUDE_USAGE_MAX_FILE_BYTES);
-        const lines = content.split(/\r?\n/).reverse().slice(0, CLAUDE_USAGE_MAX_LINES_PER_FILE).reverse();
+        const canonicalPath = (await fs.promises.realpath(filePath).catch(() => path.resolve(filePath))).toLowerCase();
+        if (seenFiles.has(canonicalPath)) return;
+        seenFiles.add(canonicalPath);
+        const file = await this.readFileTailDetailed(filePath, CLAUDE_USAGE_MAX_FILE_BYTES);
+        if (file.truncated) errors.push(`${source}: scan was partial because the file exceeded the local byte limit.`);
+        const allLines = file.content.split(/\r?\n/);
+        const lines = allLines.length > CLAUDE_USAGE_MAX_LINES_PER_FILE
+          ? allLines.slice(-CLAUDE_USAGE_MAX_LINES_PER_FILE)
+          : allLines;
+        if (allLines.length > CLAUDE_USAGE_MAX_LINES_PER_FILE) errors.push(`${source}: scan was partial because the file exceeded the local line limit.`);
         lines.forEach((line, index) => {
           const trimmed = line.trim();
           if (!trimmed || !trimmed.includes("{")) {
@@ -883,6 +847,12 @@ export class TokenManager {
             const parsed = JSON.parse(trimmed.slice(jsonStart)) as JsonObject;
             const event = this.claudeUsageEventFromObject(parsed, source, trustClaudePath);
             if (event) {
+              if (event.eventId && eventIndexById.has(event.eventId)) {
+                const priorIndex = eventIndexById.get(event.eventId)!;
+                if (event.timestamp >= events[priorIndex].timestamp) events[priorIndex] = { ...event, source };
+                return;
+              }
+              if (event.eventId) eventIndexById.set(event.eventId, events.length);
               events.push({ ...event, source });
               sources.add(source);
             }
@@ -903,6 +873,7 @@ export class TokenManager {
     }
 
     const claudeFiles = await this.findClaudeUsageFiles();
+    if (claudeFiles.length >= CLAUDE_USAGE_MAX_FILES) errors.push("Claude usage scan was partial because it reached the file-count limit.");
     await Promise.all(
       claudeFiles.map((file) => readJsonl(file.fullPath, this.claudeSourceLabel(file.fullPath), true)),
     );
@@ -916,14 +887,15 @@ export class TokenManager {
     const lastUsedAt = events.length
       ? new Date(Math.max(...events.map((event) => event.timestamp))).toISOString()
       : undefined;
+    const partial = errors.length > 0;
 
     return {
-      status: events.length ? "measured" : "no-data",
+      status: events.length ? (partial ? "partial" : "measured") : "no-data",
       today,
       sevenDays,
       sources: Array.from(sources).sort(),
       lastUsedAt,
-      lastMeasuredAt: new Date().toISOString(),
+      lastMeasuredAt: lastUsedAt,
       errors: errors.slice(0, 6),
     };
   }
@@ -961,7 +933,7 @@ export class TokenManager {
         }
 
         const timestamp = Date.parse(value("Timestamp") || "");
-        if (!Number.isFinite(timestamp)) {
+        if (!Number.isFinite(timestamp) || timestamp > Date.now() + 5 * 60_000) {
           continue;
         }
 
@@ -969,9 +941,7 @@ export class TokenManager {
         const cachedInputTokens = this.safePositiveNumber(value("CachedInputTokens"));
         const outputTokens = this.safePositiveNumber(value("OutputTokens"));
         const reasoningOutputTokens = this.safePositiveNumber(value("ReasoningOutputTokens"));
-        const totalTokens =
-          this.safePositiveNumber(value("TotalTokens")) ||
-          inputTokens + cachedInputTokens + outputTokens + reasoningOutputTokens;
+        const totalTokens = this.safePositiveNumber(value("TotalTokens")) || inputTokens + outputTokens;
 
         if (totalTokens <= 0) {
           continue;
@@ -985,7 +955,7 @@ export class TokenManager {
           outputTokens,
           reasoningOutputTokens,
           totalTokens,
-          billableTokens: this.safePositiveNumber(value("BillableTokens")),
+          billableTokens: this.optionalNonnegativeNumber(value("BillableTokens")),
         });
         sources.add("Integrated Power token_usage.csv");
       }
@@ -1031,30 +1001,31 @@ export class TokenManager {
     const inputTokens = this.safePositiveNumber(
       usage.input_tokens ?? usage.prompt_tokens ?? usage.inputTokens ?? usage.promptTokens,
     );
-    const cachedInputTokens = this.safePositiveNumber(
-      usage.cached_tokens ??
-        usage.cache_read_input_tokens ??
-        usage.cache_creation_input_tokens ??
-        usage.cachedInputTokens,
-    );
+    const hasAnthropicCacheSchema = usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined;
+    const cachedInputTokens = hasAnthropicCacheSchema
+      ? this.safePositiveNumber(usage.cache_read_input_tokens) + this.safePositiveNumber(usage.cache_creation_input_tokens)
+      : this.safePositiveNumber(usage.cached_tokens ?? usage.cachedInputTokens);
     const outputTokens = this.safePositiveNumber(
       usage.output_tokens ?? usage.completion_tokens ?? usage.outputTokens ?? usage.completionTokens,
     );
     const reasoningOutputTokens = this.safePositiveNumber(
       usage.reasoning_tokens ?? usage.reasoning_output_tokens ?? usage.reasoningOutputTokens,
     );
-    const totalTokens =
-      this.safePositiveNumber(usage.total_tokens ?? usage.totalTokens) ||
-      inputTokens + cachedInputTokens + outputTokens + reasoningOutputTokens;
-    const billableTokens = this.safePositiveNumber(usage.billable_tokens ?? usage.billableTokens);
+    const reportedTotal = this.safePositiveNumber(usage.total_tokens ?? usage.totalTokens);
+    const totalTokens = reportedTotal || inputTokens + (hasAnthropicCacheSchema ? cachedInputTokens : 0) + outputTokens;
+    const billableTokens = this.optionalNonnegativeNumber(usage.billable_tokens ?? usage.billableTokens);
 
     if (totalTokens <= 0) {
       return undefined;
     }
 
     const timestamp = this.timestampFromUsageEvent(event);
+    if (timestamp === undefined || timestamp > Date.now() + 5 * 60_000) return undefined;
+    const rawId = [this.objectValue(event.message)?.id, event.request_id, event.requestId, event.id]
+      .find((value) => typeof value === "string" && value.trim());
     return {
       timestamp,
+      eventId: typeof rawId === "string" ? rawId : undefined,
       source,
       inputTokens,
       cachedInputTokens,
@@ -1065,7 +1036,7 @@ export class TokenManager {
     };
   }
 
-  private timestampFromUsageEvent(event: JsonObject): number {
+  private timestampFromUsageEvent(event: JsonObject): number | undefined {
     const candidates = [
       event.timestamp,
       event.created_at,
@@ -1086,7 +1057,7 @@ export class TokenManager {
       }
     }
 
-    return Date.now();
+    return undefined;
   }
 
   private summarizeClaudeUsage(events: ClaudeUsageEvent[]): UsageWindowSummary {
@@ -1097,7 +1068,11 @@ export class TokenManager {
         outputTokens: summary.outputTokens + event.outputTokens,
         reasoningOutputTokens: summary.reasoningOutputTokens + event.reasoningOutputTokens,
         totalTokens: summary.totalTokens + event.totalTokens,
-        billableTokens: summary.billableTokens + event.billableTokens,
+        billableTokens: summary.eventCount === 0
+          ? event.billableTokens
+          : summary.billableTokens !== undefined && event.billableTokens !== undefined
+            ? summary.billableTokens + event.billableTokens
+            : undefined,
         eventCount: summary.eventCount + 1,
       }),
       this.emptyUsageSummary(),
@@ -1111,7 +1086,7 @@ export class TokenManager {
       outputTokens: 0,
       reasoningOutputTokens: 0,
       totalTokens: 0,
-      billableTokens: 0,
+      billableTokens: undefined,
       eventCount: 0,
     };
   }
@@ -1305,47 +1280,78 @@ export class TokenManager {
       gpus: gpuMetrics || this.lastGpuMetrics,
     });
 
-    // 1. Ollama Probe
-    try {
-      const psData = await this.httpGetJson("http://127.0.0.1:11434/api/ps", 800);
-      const models = Array.isArray(psData.models) ? psData.models : [];
-      const loadedModels = models.map((m: any) => String(m?.name || "")).filter(Boolean);
-      const isModelLoaded = loadedModels.length > 0;
-
-      return {
-        localComputeStatus: withGpuMetrics({
-          endpointHealth: isModelLoaded ? "ok" : "idle",
-          programName: isModelLoaded ? `Ollama (${loadedModels[0]})` : "Ollama (Idle)",
-          loadedModels,
-        }),
-        quotaPool: {
-          id: "local.ollama",
-          provider: "local",
-          source: "local-service",
-          confidence: "exact",
-        },
-      };
-    } catch {
-      try {
-        const tagsData = await this.httpGetJson("http://127.0.0.1:11434/api/tags", 600);
-        if (tagsData && (Array.isArray(tagsData.models) || tagsData.models)) {
+    const configuredEndpoint = (process.env.INTEGRATED_POWER_LOCAL_ENDPOINT || process.env.OLLAMA_HOST || "").trim();
+    const defaultEndpoints = configuredEndpoint
+      ? [configuredEndpoint.includes("://") ? configuredEndpoint : `http://${configuredEndpoint}`]
+      : ["http://127.0.0.1:11435", "http://127.0.0.1:11434"];
+    for (const rawBaseUrl of defaultEndpoints) {
+      const baseUrl = rawBaseUrl.replace("0.0.0.0", "127.0.0.1").replace(/\/+$/, "");
+      if (/\/v1$/i.test(baseUrl)) {
+        try {
+          const modelsData = await this.httpGetJson(`${baseUrl}/models`, 800);
+          const models = Array.isArray(modelsData.data) ? modelsData.data : [];
+          const loadedModels = models.map((model: any) => String(model?.id || "")).filter(Boolean);
           return {
             localComputeStatus: withGpuMetrics({
-              endpointHealth: "idle",
-              programName: "Ollama (Idle)",
-              loadedModels: [],
+              endpointHealth: loadedModels.length ? "ok" : "idle",
+              programName: loadedModels.length ? `Local endpoint (${loadedModels[0]})` : "Local endpoint (Idle)",
+              loadedModels,
             }),
-            quotaPool: {
-              id: "local.ollama",
-              provider: "local",
-              source: "local-service",
-              confidence: "exact",
-            },
+            quotaPool: { id: "local.openai-compatible", provider: "local", source: "local-service", confidence: "exact" },
           };
+        } catch {
+          // Fall through to other known local service probes.
         }
-      } catch {
-        // Ollama offline
       }
+      try {
+        const psData = await this.httpGetJson(`${baseUrl}/api/ps`, 800);
+        const models = Array.isArray(psData.models) ? psData.models : [];
+        const loadedModels = models.map((m: any) => String(m?.name || "")).filter(Boolean);
+        const isModelLoaded = loadedModels.length > 0;
+        return {
+          localComputeStatus: withGpuMetrics({
+            endpointHealth: isModelLoaded ? "ok" : "idle",
+            programName: isModelLoaded ? `Ollama (${loadedModels[0]})` : "Ollama (Idle)",
+            loadedModels,
+          }),
+          quotaPool: {
+            id: "local.ollama",
+            provider: "local",
+            source: "local-service",
+            confidence: "exact",
+          },
+        };
+      } catch {
+        if (configuredEndpoint) {
+          try {
+            const modelsData = await this.httpGetJson(`${baseUrl}/v1/models`, 800);
+            const models = Array.isArray(modelsData.data) ? modelsData.data : [];
+            const loadedModels = models.map((model: any) => String(model?.id || "")).filter(Boolean);
+            return {
+              localComputeStatus: withGpuMetrics({
+                endpointHealth: loadedModels.length ? "ok" : "idle",
+                programName: loadedModels.length ? `Local endpoint (${loadedModels[0]})` : "Local endpoint (Idle)",
+                loadedModels,
+              }),
+              quotaPool: { id: "local.openai-compatible", provider: "local", source: "local-service", confidence: "exact" },
+            };
+          } catch {
+            // Configured endpoint did not expose an OpenAI-compatible model list.
+          }
+        }
+        try {
+          const tagsData = await this.httpGetJson(`${baseUrl}/api/tags`, 600);
+          if (tagsData && (Array.isArray(tagsData.models) || tagsData.models)) {
+            return {
+              localComputeStatus: withGpuMetrics({ endpointHealth: "idle", programName: "Ollama (Idle)", loadedModels: [] }),
+              quotaPool: { id: "local.ollama", provider: "local", source: "local-service", confidence: "exact" },
+            };
+          }
+        } catch {
+          // Try the next configured or documented/legacy local endpoint.
+        }
+      }
+      if (configuredEndpoint) break;
     }
 
     // 2. LM Studio Probe
@@ -1487,6 +1493,9 @@ export class TokenManager {
       | "codexWeeklyPercentage"
       | "codexWeeklyResetTime"
       | "codexWeeklyEstimatedAbsolute"
+      | "codexMeasuredAt"
+      | "codexWeeklyMeasuredAt"
+      | "codexSource"
     >
   > {
     // 1. Live zero-token RPC telemetry via Codex app-server account/rateLimits/read
@@ -1500,6 +1509,9 @@ export class TokenManager {
           codexWeeklyPercentage: live.codexWeeklyPercentage,
           codexWeeklyResetTime: live.codexWeeklyResetTime,
           codexWeeklyEstimatedAbsolute: undefined,
+          codexMeasuredAt: live.measuredAt,
+          codexWeeklyMeasuredAt: live.measuredAt,
+          codexSource: "official-api",
         };
       }
     } catch {
@@ -1521,8 +1533,10 @@ export class TokenManager {
 
         try {
           const event = JSON.parse(line) as JsonObject;
-          const quota = this.codexQuotaFromEvent(event, file.mtimeMs);
-          if (quota && (quota.codexPercentage !== undefined || quota.codexWeeklyPercentage !== undefined)) {
+          const quota = this.codexQuotaFromEvent(event);
+          const measuredAt = quota?.codexMeasuredAt ? Date.parse(quota.codexMeasuredAt) : NaN;
+          if (quota && Number.isFinite(measuredAt) && Date.now() - measuredAt <= 5 * 60_000 && measuredAt <= Date.now() + 60_000
+            && (quota.codexPercentage !== undefined || quota.codexWeeklyPercentage !== undefined)) {
             return quota;
           }
         } catch {
@@ -1536,7 +1550,7 @@ export class TokenManager {
 
   private codexQuotaFromEvent(
     event: JsonObject,
-    fileMtimeMs?: number,
+    _fileMtimeMs?: number,
   ):
     | Pick<
         QuotaData,
@@ -1546,10 +1560,16 @@ export class TokenManager {
         | "codexWeeklyPercentage"
         | "codexWeeklyResetTime"
         | "codexWeeklyEstimatedAbsolute"
+        | "codexMeasuredAt"
+        | "codexWeeklyMeasuredAt"
+        | "codexSource"
       >
     | undefined {
     const payload = this.objectValue(event.payload);
     const rateLimits = this.objectValue(payload?.rate_limits);
+    const rawLimitId = rateLimits?.limit_id ?? rateLimits?.limitId;
+    const limitId = typeof rawLimitId === "string" ? rawLimitId : undefined;
+    if (limitId && limitId.toLowerCase() !== "codex") return undefined;
     const primary = this.objectValue(rateLimits?.primary);
     const secondary = this.objectValue(rateLimits?.secondary);
 
@@ -1558,43 +1578,31 @@ export class TokenManager {
     }
 
     const limits = [primary, secondary].filter((limit): limit is JsonObject => Boolean(limit));
-    const fiveHour =
-      limits.find((limit) => {
-        const win = this.numberValue(limit, ["window_minutes"]);
-        return win !== undefined && win <= 1440;
-      }) ?? (this.numberValue(primary, ["window_minutes"]) === undefined ? primary : undefined);
-    const weekly =
-      limits.find((limit) => {
-        const win = this.numberValue(limit, ["window_minutes"]);
-        return win !== undefined && win > 1440;
-      }) ?? (secondary && this.numberValue(secondary, ["window_minutes"]) === undefined ? secondary : undefined);
+    const hasWindowDurations = limits.some((limit) => this.numberValue(limit, ["window_minutes"]) !== undefined);
+    const fiveHour = hasWindowDurations
+      ? limits.find((limit) => this.numberValue(limit, ["window_minutes"]) === 300)
+      : primary;
+    const weekly = hasWindowDurations
+      ? limits.find((limit) => this.numberValue(limit, ["window_minutes"]) === 10080)
+      : secondary;
 
     const fiveHourQuota = this.codexWindowQuota(fiveHour);
     const weeklyQuota = this.codexWindowQuota(weekly);
 
-    let codexWeeklyPercentage = weeklyQuota.percentage;
-    let codexWeeklyResetTime = weeklyQuota.resetTime;
-
-    // Freshness check: if the last session was from a prior day (>12h ago)
-    // and the 5-hour quota has fully refilled to 100%, the stale session's
-    // partial weekly count no longer applies to the new active cycle.
-    const isStaleSession = typeof fileMtimeMs === "number" && (Date.now() - fileMtimeMs) > 12 * 3600 * 1000;
-    if (isStaleSession && fiveHourQuota.percentage === 100) {
-      codexWeeklyPercentage = 100;
-      const targetWeeklyEpoch = Math.max(
-        weeklyQuota.resetTime ? new Date(weeklyQuota.resetTime).getTime() : 0,
-        Date.now() + 7 * 24 * 3600 * 1000
-      );
-      codexWeeklyResetTime = new Date(targetWeeklyEpoch).toISOString();
-    }
+    const eventTimestamp = this.timestampFromUsageEvent(event);
+    if (eventTimestamp === undefined || eventTimestamp < Date.now() - 5 * 60_000 || eventTimestamp > Date.now() + 60_000) return undefined;
+    const measuredAt = new Date(eventTimestamp).toISOString();
 
     return {
       codexPercentage: fiveHourQuota.percentage,
       codexResetTime: fiveHourQuota.resetTime,
       codexEstimatedAbsolute: fiveHourQuota.estimatedAbsolute,
-      codexWeeklyPercentage,
-      codexWeeklyResetTime,
+      codexWeeklyPercentage: weeklyQuota.percentage,
+      codexWeeklyResetTime: weeklyQuota.resetTime,
       codexWeeklyEstimatedAbsolute: weeklyQuota.estimatedAbsolute,
+      codexMeasuredAt: fiveHour ? measuredAt : undefined,
+      codexWeeklyMeasuredAt: weekly ? measuredAt : undefined,
+      codexSource: "cli-json",
     };
   }
 
@@ -1609,14 +1617,12 @@ export class TokenManager {
 
     const usedPercent = this.numberValue(limit, ["used_percent"]);
     const resetsAt = this.numberValue(limit, ["resets_at"]);
-    const isReset = resetsAt !== undefined && resetsAt * 1000 < Date.now();
-
-    const percentage =
-      usedPercent !== undefined
-        ? isReset
-          ? 100
-          : Math.max(0, Math.min(100, 100 - usedPercent))
-        : undefined;
+    // Session token_count events are passive observations. Once their reported
+    // window has expired they cannot establish the next window's quota.
+    if (resetsAt !== undefined && resetsAt * 1000 <= Date.now()) return {};
+    const percentage = usedPercent !== undefined && usedPercent >= 0 && usedPercent <= 100
+      ? 100 - usedPercent
+      : undefined;
 
     const remaining = this.numberValue(limit, [
       "remaining_tokens",
@@ -1629,7 +1635,7 @@ export class TokenManager {
 
     return {
       percentage,
-      resetTime: (!isReset && resetsAt !== undefined) ? new Date(resetsAt * 1000).toISOString() : undefined,
+      resetTime: (resetsAt !== undefined && resetsAt * 1000 > Date.now()) ? new Date(resetsAt * 1000).toISOString() : undefined,
       estimatedAbsolute: remaining ?? (max !== undefined && used !== undefined ? Math.max(0, max - used) : undefined),
     };
   }
@@ -1692,13 +1698,17 @@ export class TokenManager {
   }
 
   private async readFileTail(filePath: string, maxBytes: number): Promise<string> {
+    return (await this.readFileTailDetailed(filePath, maxBytes)).content;
+  }
+
+  private async readFileTailDetailed(filePath: string, maxBytes: number): Promise<{ content: string; truncated: boolean }> {
     const handle = await fs.promises.open(filePath, "r");
     try {
       const stat = await handle.stat();
       const length = Math.min(stat.size, maxBytes);
       const buffer = Buffer.alloc(length);
       await handle.read(buffer, 0, length, Math.max(0, stat.size - length));
-      return buffer.toString("utf8");
+      return { content: buffer.toString("utf8"), truncated: stat.size > maxBytes };
     } finally {
       await handle.close();
     }
@@ -1715,6 +1725,7 @@ export class TokenManager {
       | "opusResetTime"
       | "opusWeeklyPercentage"
       | "opusWeeklyResetTime"
+      | "measuredAt"
     >
   > {
     let antigravityPercentage: number | undefined;
@@ -1725,9 +1736,12 @@ export class TokenManager {
     let opusResetTime: string | undefined;
     let opusWeeklyPercentage: number | undefined;
     let opusWeeklyResetTime: string | undefined;
+    let measuredAt: string | undefined;
+    const bucketCandidates: Array<{ provider: "gemini" | "claude"; window: "5h" | "weekly"; percentage?: number; resetTime?: string }> = [];
 
     try {
       const result = await this.agyQuotaClient.fetchQuota();
+      measuredAt = new Date(result.fetchedAt).toISOString();
 
       if (Array.isArray(result.quota?.groups)) {
         for (const group of result.quota.groups) {
@@ -1735,26 +1749,16 @@ export class TokenManager {
           if (label.includes("Gemini")) {
             for (const bucket of group.buckets || []) {
               const window = bucket.window;
-              const percentage = typeof bucket.remainingFraction === "number" ? bucket.remainingFraction * 100 : undefined;
-              if (window === "5h") {
-                antigravityPercentage = percentage;
-                antigravityResetTime = bucket.resetTime;
-              } else if (window === "weekly" || window === "7d") {
-                antigravityWeeklyPercentage = percentage;
-                antigravityWeeklyResetTime = bucket.resetTime;
-              }
+              const percentage = typeof bucket.remainingFraction === "number" && bucket.remainingFraction >= 0 && bucket.remainingFraction <= 1 ? bucket.remainingFraction * 100 : undefined;
+              if (window === "5h") bucketCandidates.push({ provider: "gemini", window, percentage, resetTime: bucket.resetTime });
+              else if (window === "weekly" || window === "7d") bucketCandidates.push({ provider: "gemini", window: "weekly", percentage, resetTime: bucket.resetTime });
             }
           } else if (label.includes("Claude") || label.includes("Opus")) {
             for (const bucket of group.buckets || []) {
               const window = bucket.window;
-              const percentage = typeof bucket.remainingFraction === "number" ? bucket.remainingFraction * 100 : undefined;
-              if (window === "5h") {
-                opusPercentage = percentage;
-                opusResetTime = bucket.resetTime;
-              } else if (window === "weekly" || window === "7d") {
-                opusWeeklyPercentage = percentage;
-                opusWeeklyResetTime = bucket.resetTime;
-              }
+              const percentage = typeof bucket.remainingFraction === "number" && bucket.remainingFraction >= 0 && bucket.remainingFraction <= 1 ? bucket.remainingFraction * 100 : undefined;
+              if (window === "5h") bucketCandidates.push({ provider: "claude", window, percentage, resetTime: bucket.resetTime });
+              else if (window === "weekly" || window === "7d") bucketCandidates.push({ provider: "claude", window: "weekly", percentage, resetTime: bucket.resetTime });
             }
           }
         }
@@ -1766,6 +1770,27 @@ export class TokenManager {
       throw new Error(`Failed to fetch agy quota natively: ${this.errorMessage(error)}`);
     }
 
+    const oneUnambiguousValue = (provider: "gemini" | "claude", window: "5h" | "weekly") => {
+      const candidates = bucketCandidates.filter((candidate) => candidate.provider === provider && candidate.window === window);
+      if (!candidates.length || candidates.some((candidate) => candidate.percentage === undefined)) return undefined;
+      const first = candidates[0];
+      return candidates.every((candidate) => candidate.percentage === first.percentage && candidate.resetTime === first.resetTime)
+        ? first
+        : undefined;
+    };
+    const gemini5h = oneUnambiguousValue("gemini", "5h");
+    const geminiWeekly = oneUnambiguousValue("gemini", "weekly");
+    const claude5h = oneUnambiguousValue("claude", "5h");
+    const claudeWeekly = oneUnambiguousValue("claude", "weekly");
+    antigravityPercentage = gemini5h?.percentage;
+    antigravityResetTime = gemini5h?.resetTime;
+    antigravityWeeklyPercentage = geminiWeekly?.percentage;
+    antigravityWeeklyResetTime = geminiWeekly?.resetTime;
+    opusPercentage = claude5h?.percentage;
+    opusResetTime = claude5h?.resetTime;
+    opusWeeklyPercentage = claudeWeekly?.percentage;
+    opusWeeklyResetTime = claudeWeekly?.resetTime;
+
     return {
       antigravityPercentage,
       antigravityResetTime,
@@ -1775,6 +1800,7 @@ export class TokenManager {
       opusResetTime,
       opusWeeklyPercentage,
       opusWeeklyResetTime,
+      measuredAt,
     };
   }
   private execFileText(file: string, args: string[], options: ExecTextOptions = {}): Promise<string> {
@@ -1809,11 +1835,11 @@ export class TokenManager {
 
   private percentageValue(data: JsonObject, keys: string[]): number | undefined {
     const value = this.numberValue(data, keys);
-    if (value === undefined) {
+    if (value === undefined || value < 0 || value > 100) {
       return undefined;
     }
 
-    return Math.min(Math.max(value, 0), 100);
+    return value;
   }
 
   private numberValue(data: JsonObject, keys: string[]): number | undefined {
@@ -1863,8 +1889,17 @@ export class TokenManager {
   }
 
   private safePositiveNumber(value: unknown): number {
-    const number = typeof value === "string" && value.trim() ? Number(value) : Number(value);
+    if (typeof value !== "number" && typeof value !== "string") return 0;
+    if (typeof value === "string" && !value.trim()) return 0;
+    const number = Number(value);
     return Number.isFinite(number) && number > 0 ? number : 0;
+  }
+
+  private optionalNonnegativeNumber(value: unknown): number | undefined {
+    if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : undefined;
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : undefined;
   }
 
   private parseCsvLine(line: string): string[] {

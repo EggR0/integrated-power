@@ -8,68 +8,74 @@ let refreshRenderTimer;
 let lastRenderedHtml = "";
 
 window.addEventListener("message", (event) => {
-  const message = event.data;
+  try {
+    const message = event.data;
 
-  if (!message || typeof message !== "object") {
-    return;
-  }
+    if (!message || typeof message !== "object") {
+      return;
+    }
 
-  if (message.type === "state") {
-    captureDomSectionStates();
-    const incomingSectionStates = message.state?.sectionStates;
-    const mergedSectionStates = {
-      ...normalizeSectionStates(dashboardState.sectionStates),
-      ...(incomingSectionStates && typeof incomingSectionStates === "object" ? incomingSectionStates : {}),
-    };
-    dashboardState = normalizeState({
-      ...(message.state || {}),
-      sectionStates: mergedSectionStates,
-    });
-    persistState();
-    render();
-    return;
-  }
+    if (message.type === "state") {
+      captureDomSectionStates();
+      const incomingSectionStates = message.state?.sectionStates;
+      const mergedSectionStates = {
+        ...normalizeSectionStates(dashboardState.sectionStates),
+        ...(incomingSectionStates && typeof incomingSectionStates === "object" ? incomingSectionStates : {}),
+      };
+      dashboardState = normalizeState({
+        ...(message.state || {}),
+        sectionStates: mergedSectionStates,
+      });
+      persistState();
+      render();
+      return;
+    }
 
-  if (message.type === "loading") {
-    const nextIsLoading = Boolean(message.isLoading ?? dashboardState.isLoading);
-    const nextIsTokenLoading = Boolean(message.isTokenLoading ?? dashboardState.isTokenLoading);
-    dashboardState = {
-      ...dashboardState,
-      isLoading: nextIsLoading,
-      isTokenLoading: nextIsTokenLoading,
-      refreshStartedAt: nextIsLoading || nextIsTokenLoading ? dashboardState.refreshStartedAt || new Date().toISOString() : undefined,
-    };
-    render();
-    return;
-  }
+    if (message.type === "loading") {
+      const nextIsLoading = Boolean(message.isLoading ?? dashboardState.isLoading);
+      const nextIsTokenLoading = Boolean(message.isTokenLoading ?? dashboardState.isTokenLoading);
+      dashboardState = {
+        ...dashboardState,
+        isLoading: nextIsLoading,
+        isTokenLoading: nextIsTokenLoading,
+        refreshStartedAt: nextIsLoading || nextIsTokenLoading ? dashboardState.refreshStartedAt || new Date().toISOString() : undefined,
+      };
+      render();
+      return;
+    }
 
-  if (message.type === "brokerState") {
-    brokerControlState = {
-      ...brokerControlState,
-      ...(message.state && typeof message.state === "object" ? message.state : {}),
-      loading: false,
-      busy: false,
-    };
-    render();
-    return;
-  }
+    if (message.type === "brokerState") {
+      const incomingState = message.state && typeof message.state === "object" ? message.state : {};
+      brokerControlState = {
+        ...brokerControlState,
+        ...incomingState,
+        error: typeof incomingState.error === "string" && incomingState.error ? incomingState.error : undefined,
+        loading: false,
+        busy: false,
+      };
+      render();
+      return;
+    }
 
-  if (message.type === "brokerLoading") {
-    brokerControlState = { ...brokerControlState, loading: true, busy: Boolean(message.busy) };
-    render();
-    return;
-  }
+    if (message.type === "brokerLoading") {
+      brokerControlState = { ...brokerControlState, error: undefined, loading: true, busy: Boolean(message.busy) };
+      render();
+      return;
+    }
 
-  if (message.type === "error") {
-    dashboardState = {
-      ...dashboardState,
-      systemErrors: [String(message.message || "Unknown error"), ...dashboardState.systemErrors].slice(0, 50),
-      isLoading: false,
-      isTokenLoading: false,
-      refreshStartedAt: undefined,
-    };
-    persistState();
-    render();
+    if (message.type === "error") {
+      dashboardState = {
+        ...dashboardState,
+        systemErrors: [String(message.message || "Unknown error"), ...dashboardState.systemErrors].slice(0, 50),
+        isLoading: false,
+        isTokenLoading: false,
+        refreshStartedAt: undefined,
+      };
+      persistState();
+      render();
+    }
+  } catch (err) {
+    console.error("[Integrated Power Webview] Message error:", err);
   }
 });
 
@@ -225,15 +231,17 @@ function normalizeArtifact(artifact) {
   };
 }
 
+function optionalNumber(value) {
+  if (value === null || typeof value === "boolean" || (typeof value === "string" && !value.trim())) return undefined;
+  if (typeof value !== "number" && typeof value !== "string") return undefined;
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
 function normalizeTokenStatus(status) {
   if (!status || typeof status !== "object") {
     return undefined;
   }
-
-  const optionalNumber = (value) => {
-    const number = Number(value);
-    return Number.isFinite(number) && number >= 0 ? number : undefined;
-  };
 
   return {
     ...status,
@@ -275,12 +283,12 @@ function normalizeClaudeDirectUsage(value) {
   }
 
   return {
-    status: value.status === "measured" ? "measured" : "no-data",
+    status: value.status === "measured" || value.status === "partial" ? value.status : "no-data",
     today: normalizeUsageSummary(value.today),
     sevenDays: normalizeUsageSummary(value.sevenDays),
     sources: stringArray(value.sources),
     lastUsedAt: stringValue(value.lastUsedAt),
-    lastMeasuredAt: stringValue(value.lastMeasuredAt) || new Date().toISOString(),
+    lastMeasuredAt: stringValue(value.lastMeasuredAt),
     errors: stringArray(value.errors),
   };
 }
@@ -293,7 +301,7 @@ function normalizeUsageSummary(value) {
     outputTokens: toFiniteNumber(safeValue.outputTokens),
     reasoningOutputTokens: toFiniteNumber(safeValue.reasoningOutputTokens),
     totalTokens: toFiniteNumber(safeValue.totalTokens),
-    billableTokens: toFiniteNumber(safeValue.billableTokens),
+    billableTokens: optionalNumber(safeValue.billableTokens),
     eventCount: toFiniteNumber(safeValue.eventCount),
   };
 }
@@ -571,12 +579,12 @@ function renderTokenStatus(tokenStatus) {
 function renderClaudeTokenSection(status, isOpen) {
   const claude5Hours = buildTokenMetric("5Hours", status, "claude", "Claude 5Hours", "claudeWeekly");
   const claudeWeekly = buildTokenMetric("Weekly", status, "claudeWeekly", "Claude Weekly");
-  const hasQuota = claude5Hours.percentage > 0 || claudeWeekly.percentage > 0 || status.claudePercentage !== undefined;
+  const hasQuota = !claude5Hours.unavailable || !claudeWeekly.unavailable;
 
   const claudeUsage = status.claudeDirectUsage || status.directUsage || {};
   const todayTotal = claudeUsage.today?.totalTokens ?? claudeUsage.todayTokens ?? 0;
   const sevenDaysTotal = claudeUsage.sevenDays?.totalTokens ?? claudeUsage.sevenDaysTokens ?? 0;
-  const hasDirectUsage = (claudeUsage.status === "measured" && claudeUsage.sevenDays?.eventCount > 0) || todayTotal > 0 || sevenDaysTotal > 0;
+  const hasDirectUsage = (claudeUsage.today?.eventCount ?? 0) > 0 || (claudeUsage.sevenDays?.eventCount ?? 0) > 0;
 
   let metrics;
   if (hasQuota) {
@@ -593,7 +601,7 @@ function renderClaudeTokenSection(status, isOpen) {
     ];
   }
 
-  const isConnected = hasQuota || hasDirectUsage;
+  const statusLabel = hasQuota ? ["Quota", "Quota", "Q"] : hasDirectUsage ? ["Records", "Records", "Logs"] : ["No records", "No records", "—"];
 
   return `
     <details class="token-section" data-section="claude" ${isOpen ? "open" : ""}>
@@ -603,10 +611,10 @@ function renderClaudeTokenSection(status, isOpen) {
           <span class="text-medium">Claude</span>
           <span class="text-short">Claude</span>
         </span>
-        <span class="status-pill ${isConnected ? "status-ok" : "status-neutral"}">
-          <span class="text-full">${isConnected ? "Connected" : "Idle"}</span>
-          <span class="text-medium">${isConnected ? "Connected" : "Idle"}</span>
-          <span class="text-short">${isConnected ? "Conn" : "Idle"}</span>
+        <span class="status-pill ${hasQuota ? "status-ok" : "status-neutral"}" title="${hasQuota ? "Provider quota was reported by its source." : hasDirectUsage ? "Local usage records were observed; this does not confirm provider account connectivity." : "No local usage records were found."}">
+          <span class="text-full">${statusLabel[0]}</span>
+          <span class="text-medium">${statusLabel[1]}</span>
+          <span class="text-short">${statusLabel[2]}</span>
         </span>
       </summary>
       <div class="capacity-groups">
@@ -617,19 +625,17 @@ function renderClaudeTokenSection(status, isOpen) {
 }
 
 function buildClaudeMetric(label, summary, totalTokens) {
-  const tokens = Number(totalTokens || summary?.totalTokens || 0);
+  const tokens = Number(totalTokens ?? summary?.totalTokens ?? 0);
   const events = Number(summary?.eventCount || 0);
   const hasData = tokens > 0 || events > 0;
-  
-  const percentage = hasData ? clamp(100 - (tokens / 500000) * 100, 0, 100) : 0;
-  const subtextFull = hasData ? `${formatTokenCount(tokens)} used` : "Waiting for quota data";
+
+  const subtextFull = hasData ? `${formatTokenCount(tokens)} observed usage` : "No usage event recorded";
   const subtextMedium = hasData ? `${formatTokenCount(tokens)}` : "Waiting";
   const subtextShort = hasData ? `${formatTokenCount(tokens)}` : "Waiting";
   const refreshFull = hasData ? `· ${formatNumber(events)} events` : "";
   const refreshMedium = hasData ? `· ${formatNumber(events)} ev` : "";
   const refreshShort = hasData ? `· ${formatNumber(events)} ev` : "";
-  const tone = hasData ? capacityTone(percentage) : "healthy";
-  const tooltip = `[Local Measured] Claude ${label}: ${subtextFull}${refreshFull}.`;
+  const tooltip = `[Local usage records; not account quota] Claude ${label}: ${subtextFull}${refreshFull}.`;
 
   const labelFull = label;
   const labelMedium = label;
@@ -650,9 +656,10 @@ function buildClaudeMetric(label, summary, totalTokens) {
     refreshFull,
     refreshMedium,
     refreshShort,
-    percentage: hasData ? percentage : 0,
+    percentage: undefined,
     unavailable: !hasData,
-    tone: hasData ? tone : "healthy",
+    isUsageOnly: true,
+    tone: "healthy",
     tooltip,
   };
 }
@@ -844,7 +851,7 @@ function renderPrewarmInlineControl(target, label) {
   const currentMode = normalizePrewarmMode(modes[target] || (target === "antigravity" ? dashboardState.prewarmMode : "click"));
 
   return `
-    <div class="prewarm-inline-control" role="radiogroup" aria-label="${escapeAttr(label)} Pre-warm Mode" title="${escapeAttr(`${label} 5시간 프리웜 설정: 100% 충전 시 5시간 충전 타이머를 선행 시작합니다.`)}">
+    <div class="prewarm-inline-control" role="radiogroup" aria-label="${escapeAttr(label)} Pre-warm Mode" title="${escapeAttr(`${label} 5시간 프리웜 설정: 해당 창이 Ready일 때 요청합니다. 실제 타이머 시작은 제공자에서 별도로 확인해야 합니다.`)}">
       <span class="prewarm-icon" aria-hidden="true" title="${escapeAttr(`${label} Pre-warm`)}">⚡</span>
       <div class="prewarm-mode-options">
         <button type="button" class="prewarm-mode-btn ${currentMode === "click" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="click" title="${escapeAttr(`${label} Click: 수동 실행만 허용`)}">
@@ -983,6 +990,11 @@ function renderCapacityMetric(metric, groupTitle = "") {
     : "";
   const segments = metric.label === "Weekly" ? 7 : 5;
   const ticks = IPQuota.buildGaugeTickGradient(segments);
+  const quotaGauge = metric.isUsageOnly ? "" : `
+    <div class="progress-track" aria-label="${escapeHtml(metric.ariaLabel)} quota${metric.unavailable ? " unavailable" : ""}">
+      <div class="progress-fill" data-progress="${escapeAttr(typeof metric.percentage === "number" ? metric.percentage.toFixed(1) : "")}"${typeof metric.percentage === "number" ? ` style="width:${metric.percentage}%"` : " style=\"width:0%\""}></div>
+      <div class="progress-ticks" data-segments="${segments}" aria-hidden="true" style="background-image:${escapeAttr(ticks)}"></div>
+    </div>`;
 
   return `
     <div class="capacity-metric-row token-metric ${metric.tone} ${metric.unavailable ? "unavailable" : ""}" title="${escapeAttr(metric.tooltip || "")}">
@@ -1004,10 +1016,7 @@ function renderCapacityMetric(metric, groupTitle = "") {
           <span class="text-short">${escapeHtml(metric.refreshShort || metric.refreshText || "")}</span>
         </span>
       </div>
-      <div class="progress-track" aria-label="${escapeHtml(metric.ariaLabel)} usage">
-        <div class="progress-fill" data-progress="${escapeAttr(metric.percentage.toFixed(1))}"></div>
-        <div class="progress-ticks" data-segments="${segments}" aria-hidden="true" style="background-image:${escapeAttr(ticks)}"></div>
-      </div>
+      ${quotaGauge}
     </div>
   `;
 }

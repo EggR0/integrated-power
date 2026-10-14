@@ -18,8 +18,10 @@ export interface GpuStatus {
 export interface QuotaPoolInfo {
   id: string;
   provider: string;
-  remainingPercentage: number;
+  remainingPercentage?: number;
   resetTime?: string;
+  measuredAt?: string;
+  windowDurationMins?: number;
   source?: string;
   confidence?: string;
 }
@@ -74,10 +76,10 @@ export interface LiveTokenStatus {
   };
   directUsage?: {
     todayTokens: number;
-    todayPaidTokens: number;
+    todayPaidTokens?: number;
     todayThinkingTokens: number;
     sevenDaysTokens: number;
-    sevenDaysPaidTokens: number;
+    sevenDaysPaidTokens?: number;
     eventCount: number;
     status?: string;
     sources?: string[];
@@ -134,14 +136,18 @@ function findTokenStatusJsonPath(): string | undefined {
 }
 
 function numberOrUndefined(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function quotaPercentageOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100 ? value : undefined;
 }
 
 function stringOrUndefined(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function mapTokenManagerStatus(status: TokenStatus, completedAt: string): LiveTokenStatus {
+function mapTokenManagerStatus(status: TokenStatus): LiveTokenStatus {
   const gpus: GpuStatus[] = (status.localComputeStatus?.gpus ?? []).map((gpu) => ({
     id: gpu.id,
     name: gpu.name,
@@ -156,8 +162,10 @@ function mapTokenManagerStatus(status: TokenStatus, completedAt: string): LiveTo
   const quotaPools = status.quotaPools?.map((pool) => ({
     id: pool.id,
     provider: pool.provider,
-    remainingPercentage: pool.remainingPercentage ?? 0,
+    remainingPercentage: quotaPercentageOrUndefined(pool.remainingPercentage),
     resetTime: pool.resetTime,
+    measuredAt: pool.measuredAt,
+    windowDurationMins: pool.windowDurationMins,
     source: pool.source,
     confidence: pool.confidence,
   }));
@@ -193,11 +201,11 @@ function mapTokenManagerStatus(status: TokenStatus, completedAt: string): LiveTo
     codexWeeklyEstimatedAbsolute: status.codexWeeklyEstimatedAbsolute,
     codexStatus: status.codexStatus,
     taskRouting: status.recommendedTaskWeight === "restricted" || status.recommendedTaskWeight === "degraded" || (status.codexPercentage !== undefined && status.codexPercentage < 20) || (status.antigravityPercentage !== undefined && status.antigravityPercentage < 20) ? "degraded" : "normal",
-    lastSync: completedAt,
+    lastSync: latestMeasurementTimestamp(quotaPools, usage?.lastMeasuredAt),
     errors: status.errors,
     quotaPools,
     localComputeStatus: {
-      status: local?.endpointHealth === "ok" ? "online" : "offline",
+      status: local?.endpointHealth === "ok" || local?.endpointHealth === "idle" ? "online" : "offline",
       modelName: local?.loadedModels?.[0] ?? "qwen3.8:27b",
       vramUsedMb: gpus.reduce((total, gpu) => total + gpu.vramUsedMb, 0),
       vramTotalMb: gpus.reduce((total, gpu) => total + gpu.vramTotalMb, 0),
@@ -228,7 +236,25 @@ function cachedStatusIsFresh(value: unknown, nowMs: number, maxAgeMs: number): b
   const lastSync = (value as { lastSync?: unknown }).lastSync;
   if (typeof lastSync !== "string") return false;
   const measuredAt = Date.parse(lastSync);
-  return Number.isFinite(measuredAt) && measuredAt <= nowMs + 60_000 && nowMs - measuredAt <= maxAgeMs;
+  if (!Number.isFinite(measuredAt) || measuredAt > nowMs + 60_000 || nowMs - measuredAt > maxAgeMs) return false;
+  const allPools = (value as { quotaPools?: unknown }).quotaPools;
+  if (!Array.isArray(allPools)) return false;
+  const pools = allPools.filter((pool) => pool && typeof pool === "object" && (pool as { provider?: unknown }).provider !== "local");
+  if (pools.length === 0) return false;
+  return pools.every((pool) => {
+    if (!pool || typeof pool !== "object") return false;
+    const poolMeasuredAt = Date.parse(String((pool as { measuredAt?: unknown }).measuredAt ?? ""));
+    const percentage = quotaPercentageOrUndefined((pool as { remainingPercentage?: unknown }).remainingPercentage);
+    return percentage !== undefined && Number.isFinite(poolMeasuredAt) && poolMeasuredAt <= nowMs + 60_000 && nowMs - poolMeasuredAt <= maxAgeMs;
+  });
+}
+
+function latestMeasurementTimestamp(pools: QuotaPoolInfo[] | undefined, directUsageAt?: string): string {
+  const values = [
+    ...(pools ?? []).map((pool) => Date.parse(pool.measuredAt ?? "")),
+    Date.parse(directUsageAt ?? ""),
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  return values.length ? new Date(Math.max(...values)).toISOString() : "";
 }
 
 export async function scanLiveTokenStatus(options: TokenStatusScannerOptions = {}): Promise<LiveTokenStatus> {
@@ -262,8 +288,7 @@ export async function scanLiveTokenStatus(options: TokenStatusScannerOptions = {
     }
   }
   const status = await manager.getStatus(undefined, { refreshQuota: true, forceRefresh: options.force === true });
-  const completedAt = now().toISOString();
-  if (status) return mapTokenManagerStatus(status, completedAt);
+  if (status) return mapTokenManagerStatus(status);
   return {
     taskRouting: "normal",
     lastSync: "",
@@ -292,6 +317,7 @@ function brokerAssetRoot(): string {
 
 function mapCachedTokenStatus(data: any): LiveTokenStatus {
   const pools = Array.isArray(data.quotaPools) ? data.quotaPools : [];
+  const hasPoolSnapshot = Array.isArray(data.quotaPools);
   const first = (id: string, provider: string, weekly = false): any => pools.find((pool: any) =>
     pool?.id === id || (pool?.provider === provider && Boolean(pool?.id?.includes("weekly")) === weekly));
   const antigravity = first("antigravity.default", "antigravity");
@@ -304,27 +330,27 @@ function mapCachedTokenStatus(data: any): LiveTokenStatus {
   const gpus: GpuStatus[] = Array.isArray(local?.gpus) ? local.gpus : [];
   const usage = data.claudeDirectUsage;
   return {
-    antigravityPercentage: antigravity?.remainingPercentage ?? data.antigravityPercentage,
-    antigravityResetTime: antigravity?.resetTime ?? data.antigravityResetTime,
-    antigravityWeeklyPercentage: antigravityWeekly?.remainingPercentage ?? data.antigravityWeeklyPercentage,
-    antigravityWeeklyResetTime: antigravityWeekly?.resetTime ?? data.antigravityWeeklyResetTime,
-    antigravityTokensLeft: numberOrUndefined(data.antigravityTokensLeft), antigravityMax: numberOrUndefined(data.antigravityMax),
-    antigravityWeeklyTokensLeft: numberOrUndefined(data.antigravityWeeklyTokensLeft), antigravityWeeklyMax: numberOrUndefined(data.antigravityWeeklyMax),
+    antigravityPercentage: antigravity ? quotaPercentageOrUndefined(antigravity.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.antigravityPercentage),
+    antigravityResetTime: antigravity ? antigravity.resetTime : hasPoolSnapshot ? undefined : data.antigravityResetTime,
+    antigravityWeeklyPercentage: antigravityWeekly ? quotaPercentageOrUndefined(antigravityWeekly.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.antigravityWeeklyPercentage),
+    antigravityWeeklyResetTime: antigravityWeekly ? antigravityWeekly.resetTime : hasPoolSnapshot ? undefined : data.antigravityWeeklyResetTime,
+    antigravityTokensLeft: antigravity || !hasPoolSnapshot ? numberOrUndefined(data.antigravityTokensLeft) : undefined, antigravityMax: antigravity || !hasPoolSnapshot ? numberOrUndefined(data.antigravityMax) : undefined,
+    antigravityWeeklyTokensLeft: antigravityWeekly || !hasPoolSnapshot ? numberOrUndefined(data.antigravityWeeklyTokensLeft) : undefined, antigravityWeeklyMax: antigravityWeekly || !hasPoolSnapshot ? numberOrUndefined(data.antigravityWeeklyMax) : undefined,
     antigravityEstimatedAbsolute: numberOrUndefined(data.antigravityEstimatedAbsolute),
-    opusPercentage: opus?.remainingPercentage ?? data.opusPercentage, opusResetTime: opus?.resetTime ?? data.opusResetTime,
-    opusWeeklyPercentage: opusWeekly?.remainingPercentage ?? data.opusWeeklyPercentage, opusWeeklyResetTime: opusWeekly?.resetTime ?? data.opusWeeklyResetTime,
-    opusTokensLeft: numberOrUndefined(data.opusTokensLeft), opusMax: numberOrUndefined(data.opusMax), opusWeeklyTokensLeft: numberOrUndefined(data.opusWeeklyTokensLeft), opusWeeklyMax: numberOrUndefined(data.opusWeeklyMax),
+    opusPercentage: opus ? quotaPercentageOrUndefined(opus.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.opusPercentage), opusResetTime: opus ? opus.resetTime : hasPoolSnapshot ? undefined : data.opusResetTime,
+    opusWeeklyPercentage: opusWeekly ? quotaPercentageOrUndefined(opusWeekly.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.opusWeeklyPercentage), opusWeeklyResetTime: opusWeekly ? opusWeekly.resetTime : hasPoolSnapshot ? undefined : data.opusWeeklyResetTime,
+    opusTokensLeft: opus || !hasPoolSnapshot ? numberOrUndefined(data.opusTokensLeft) : undefined, opusMax: opus || !hasPoolSnapshot ? numberOrUndefined(data.opusMax) : undefined, opusWeeklyTokensLeft: opusWeekly || !hasPoolSnapshot ? numberOrUndefined(data.opusWeeklyTokensLeft) : undefined, opusWeeklyMax: opusWeekly || !hasPoolSnapshot ? numberOrUndefined(data.opusWeeklyMax) : undefined,
     opusEstimatedAbsolute: numberOrUndefined(data.opusEstimatedAbsolute), opusWeeklyEstimatedAbsolute: numberOrUndefined(data.opusWeeklyEstimatedAbsolute),
-    codexPercentage: codex?.remainingPercentage ?? data.codexPercentage, codexResetTime: codex?.resetTime ?? data.codexResetTime,
-    codexWeeklyPercentage: codexWeekly?.remainingPercentage ?? data.codexWeeklyPercentage, codexWeeklyResetTime: codexWeekly?.resetTime ?? data.codexWeeklyResetTime,
-    codexTokensLeft: numberOrUndefined(data.codexTokensLeft), codexMax: numberOrUndefined(data.codexMax), codexWeeklyTokensLeft: numberOrUndefined(data.codexWeeklyTokensLeft), codexWeeklyMax: numberOrUndefined(data.codexWeeklyMax),
+    codexPercentage: codex ? quotaPercentageOrUndefined(codex.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.codexPercentage), codexResetTime: codex ? codex.resetTime : hasPoolSnapshot ? undefined : data.codexResetTime,
+    codexWeeklyPercentage: codexWeekly ? quotaPercentageOrUndefined(codexWeekly.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.codexWeeklyPercentage), codexWeeklyResetTime: codexWeekly ? codexWeekly.resetTime : hasPoolSnapshot ? undefined : data.codexWeeklyResetTime,
+    codexTokensLeft: codex || !hasPoolSnapshot ? numberOrUndefined(data.codexTokensLeft) : undefined, codexMax: codex || !hasPoolSnapshot ? numberOrUndefined(data.codexMax) : undefined, codexWeeklyTokensLeft: codexWeekly || !hasPoolSnapshot ? numberOrUndefined(data.codexWeeklyTokensLeft) : undefined, codexWeeklyMax: codexWeekly || !hasPoolSnapshot ? numberOrUndefined(data.codexWeeklyMax) : undefined,
     codexEstimatedAbsolute: numberOrUndefined(data.codexEstimatedAbsolute), codexWeeklyEstimatedAbsolute: numberOrUndefined(data.codexWeeklyEstimatedAbsolute), codexStatus: stringOrUndefined(data.codexStatus),
     taskRouting: data.recommendedTaskWeight === "restricted" ? "critical" : data.recommendedTaskWeight === "degraded" ? "degraded" : "normal",
     lastSync: data.lastSync,
     errors: Array.isArray(data.errors) ? data.errors.filter((item: unknown): item is string => typeof item === "string") : undefined,
     quotaPools: pools,
     localComputeStatus: {
-      status: local?.endpointHealth === "ok" ? "online" : "offline",
+      status: local?.endpointHealth === "ok" || local?.endpointHealth === "idle" ? "online" : "offline",
       modelName: local?.loadedModels?.[0] || "qwen3.8:27b",
       vramUsedMb: gpus.reduce((sum: number, gpu: GpuStatus) => sum + (gpu.vramUsedMb || 0), 0),
       vramTotalMb: gpus.reduce((sum: number, gpu: GpuStatus) => sum + (gpu.vramTotalMb || 0), 0),
@@ -332,9 +358,9 @@ function mapCachedTokenStatus(data: any): LiveTokenStatus {
       loadedModels: Array.isArray(local?.loadedModels) ? local.loadedModels : [], programName: local?.programName,
     },
     directUsage: usage ? {
-      todayTokens: usage.today?.totalTokens ?? 0, todayPaidTokens: usage.today?.billableTokens ?? 0,
+      todayTokens: usage.today?.totalTokens ?? 0, todayPaidTokens: numberOrUndefined(usage.today?.billableTokens),
       todayThinkingTokens: usage.today?.reasoningOutputTokens ?? 0, sevenDaysTokens: usage.sevenDays?.totalTokens ?? 0,
-      sevenDaysPaidTokens: usage.sevenDays?.billableTokens ?? 0, eventCount: usage.today?.eventCount ?? 0,
+      sevenDaysPaidTokens: numberOrUndefined(usage.sevenDays?.billableTokens), eventCount: usage.today?.eventCount ?? 0,
       status: usage.status, sources: usage.sources, lastUsedAt: usage.lastUsedAt, lastMeasuredAt: usage.lastMeasuredAt, errors: usage.errors,
     } : undefined,
     activity: Array.isArray(data.activity) ? data.activity : undefined,

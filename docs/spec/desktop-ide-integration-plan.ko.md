@@ -38,7 +38,9 @@ canonical state를 통해 실제 작업, 실행 기록, 로컬 LLM 지표를 공
   때만 캐시를 사용한다. 누락/오래된 상태는 기존 `TokenManager`의 동일한 검증된
   provider 수집 흐름을 headless host로 실행한다. 이 headless collector는 VS Code UI를
   열지 않으며 새로운 자격 증명 수집이나 모델 호출을 하지 않는다. 결과 `lastSync`는
-  수집 완료 시각이며 개별 provider 측정 시각은 보존한다. `force=1`은 IDE 갱신 훅을
+  확인된 원본 측정 시각 중 가장 최근 시각이며, 측정 근거가 없으면 빈 값이다.
+  각 쿼터 풀의 `measuredAt`을 별도로 보존하고 창별 신선도를 확인한다. 수집 완료가
+  오래된 원본 또는 수집 실패를 최신 쿼터로 바꾸지 않는다. `force=1`은 IDE 갱신 훅을
   먼저 요청하고 실패/오래된 파일이면 headless 수집을 실행한다.
 - `GET /v1/tasks?workspaceId=<id>` 및 `/v1/approvals?workspaceId=<id>`는 같은
   broker ledger를 workspace 단위로 좁힌다. `GET /v1/tasks/<id>?workspaceId=<id>`는

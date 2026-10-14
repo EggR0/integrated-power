@@ -74,6 +74,51 @@ test("weekly caps 5h (codex K=4.0: 20% weekly -> 80% ceiling)", () => {
   assert.strictEqual(r.isWeeklyExhausted, false);
 });
 
+test("reported 5h quota stays the displayed value while weekly cap is policy-only", () => {
+  const metric = shared.buildTokenMetric("5Hours", {
+    codexPercentage: 100,
+    codexWeeklyPercentage: 20,
+  }, "codex", "ChatGPT 5-hour", "codexWeekly");
+  assert.strictEqual(metric.mainText, "100.00%", "display uses provider-reported 5h quota");
+  assert.strictEqual(metric.percentage, 100, "the visual percentage remains the measured value");
+  assert.strictEqual(metric.effectivePercentage, 80, "K-cap is exposed separately as a policy value");
+  assert.strictEqual(metric.isWeeklyCapped, true, "the weekly safety policy remains active");
+  assert.match(metric.tooltip, /Reported.*100.*policy.*80/i, "tooltip distinguishes the source value from the policy cap");
+});
+
+test("missing quota stays unknown and estimated absolute counts stay labeled", () => {
+  const missing = shared.buildTokenMetric("5Hours", {}, "codex", "ChatGPT 5-hour");
+  assert.strictEqual(missing.unavailable, true);
+  assert.strictEqual(missing.percentage, undefined, "unknown quota is not coerced to zero");
+  assert.strictEqual(missing.mainText, "Unavailable");
+  assert.strictEqual(shared.absoluteTokenText(undefined, undefined, 10_000), "Estimated 10.0K tokens");
+  assert.strictEqual(shared.absoluteTokenText(0, undefined, undefined), "0 tokens", "a measured zero is distinct from an absent absolute count");
+  assert.strictEqual(shared.absoluteTokenText(undefined, undefined, undefined), undefined, "missing absolute data stays missing");
+  assert.strictEqual(shared.buildTokenMetric("5Hours", { codexPercentage: 120 }, "codex").percentage, undefined, "invalid provider percentage is not clamped into a measurement");
+  assert.strictEqual(shared.buildTokenMetric("5Hours", { codexTokensLeft: 120, codexMax: 100 }, "codex").percentage, undefined, "inconsistent absolute counts do not produce a quota percentage");
+});
+
+test("external quota parsing distinguishes token counts from percentages and rejects invalid values", () => {
+  const pair = shared.parseExternalPayload("x", { remaining: 1000, limit: 10000 });
+  assert.strictEqual(pair.windows[0].percentage, 10, "generic remaining paired with a limit is an absolute count");
+  for (const value of [-1, 120]) {
+    const result = shared.parseExternalPayload("x", { remainingPercentage: value });
+    assert.strictEqual(result.windows[0].unavailable, true, `${value} is not a valid measured percentage`);
+    assert.strictEqual(result.windows[0].percentage, undefined, "invalid percentage is not clamped into a plausible measurement");
+  }
+  for (const value of [null, "", "   ", false]) {
+    const result = shared.parseExternalPayload("x", { remainingPercentage: value });
+    assert.strictEqual(result.ok, false, "empty and non-numeric data must not parse as zero");
+  }
+  assert.strictEqual(shared.parseExternalPayload("x", { remaining: 1000 }).ok, false, "unpaired remaining is an ambiguous token count, not a percentage");
+  assert.strictEqual(shared.parseExternalPayload("x", { total_tokens: 10000, remaining_tokens: 1000 }).ok, false, "usage total is not a quota limit");
+  const outOfRangePair = shared.parseExternalPayload("x", { limit: 100, remaining: 120 });
+  assert.strictEqual(outOfRangePair.ok, false, "absolute values outside their limit do not become a measured window");
+  const conflict = shared.parseExternalPayload("x", { windows: [{ remainingPercentage: 50, limit: 100, remaining_tokens: 10 }] });
+  assert.strictEqual(conflict.windows[0].unavailable, true, "contradictory measured percentage and token pair are surfaced as inconsistent");
+  assert.strictEqual(conflict.windows[0].percentage, undefined);
+});
+
 test("no cap when weekly ceiling is above 5h", () => {
   const r = shared.calculateEffective5HourQuota(40, 100, "antigravity");
   assert.strictEqual(r.effectivePct, 40);
@@ -224,7 +269,7 @@ test("formatTokenCount / formatResetTime / formatNumber identical", () => {
 // ---------------------------------------------------------------------------
 console.log("quota-core: P3 metric parity (buildTokenMetric / capacitySummaryEntry / calculateCapacitySummary)");
 
-test("buildTokenMetric identical over 500 random windows (A4 availability + A7 tooltip)", () => {
+test("buildTokenMetric keeps measured/policy semantics over generated windows", () => {
   // Fixed clock so the refresh countdown (Date.now inside) is identical
   // between the golden (vm) and the shared bundle on the same tick.
   const base = Date.now();
@@ -247,13 +292,15 @@ test("buildTokenMetric identical over 500 random windows (A4 availability + A7 t
     const label = labels[Math.floor(Math.random() * labels.length)];
     const paired = label === "5Hours" ? `${prefix}Weekly` : undefined;
     const aria = `Aria ${prefix} ${label}`;
-    const a = original.buildTokenMetric(label, status, prefix, aria, paired);
     const b = shared.buildTokenMetric(label, status, prefix, aria, paired);
-    // JSON compare: the bundle runs in a vm realm, so cross-realm plain
-    // objects fail deepStrictEqual on prototype (same reason the
-    // formatRefreshCountdown test compares by value). Key order is fixed by
-    // the source, so stringify equality is a full-field comparison.
-    assert.strictEqual(JSON.stringify(b), JSON.stringify(a), `mismatch at prefix=${prefix} label=${label}`);
+    assert.strictEqual(b.percentage === undefined, b.unavailable, `unknown state mismatch at prefix=${prefix} label=${label}`);
+    if (typeof status[`${prefix}Percentage`] === "number") {
+      assert.strictEqual(b.percentage, Math.max(0, Math.min(100, status[`${prefix}Percentage`])));
+    }
+    if (label === "5Hours" && paired && typeof status[`${paired}Percentage`] === "number" && typeof status[`${prefix}Percentage`] === "number") {
+      assert.notStrictEqual(b.effectivePercentage, undefined);
+      assert.strictEqual(b.percentage, Math.max(0, Math.min(100, status[`${prefix}Percentage`])), "policy synchronization must never overwrite provider-reported percentage");
+    }
   }
 });
 
@@ -261,12 +308,13 @@ test("buildTokenMetric: exhausted/capped tooltips + weekly reset swap (A7 branch
   const base = Date.now();
   const t5 = new Date(base + 2 * 3600e3).toISOString();
   const tW = new Date(base + 40 * 3600e3).toISOString();
-  // weekly=0 → exhausted: 0.00%, tooltip explains the lock, reset follows weekly
+  // weekly=0 → policy exhausted while preserving reported 5h quota, reset follows weekly
   const exhausted = shared.buildTokenMetric("5Hours", {
     codexPercentage: 90, codexTokensLeft: 0, codexMax: 0, codexResetTime: t5,
     codexWeeklyPercentage: 0, codexWeeklyTokensLeft: 0, codexWeeklyMax: 0, codexWeeklyResetTime: tW,
   }, "codex", "ChatGPT 5Hours", "codexWeekly");
-  assert.strictEqual(exhausted.percentage, 0);
+  assert.strictEqual(exhausted.percentage, 90);
+  assert.strictEqual(exhausted.effectivePercentage, 0);
   assert.strictEqual(exhausted.isWeeklyExhausted, true);
   assert.ok(exhausted.tooltip.includes("exhausted"));
   assert.ok(exhausted.refreshFull.includes("40h") || exhausted.refreshFull.includes("39h")); // swapped to weekly reset
@@ -276,7 +324,8 @@ test("buildTokenMetric: exhausted/capped tooltips + weekly reset swap (A7 branch
     codexPercentage: 100, codexTokensLeft: 0, codexMax: 0, codexResetTime: t5,
     codexWeeklyPercentage: 20, codexWeeklyTokensLeft: 0, codexWeeklyMax: 0, codexWeeklyResetTime: tW,
   }, "codex", "ChatGPT 5Hours", "codexWeekly");
-  assert.strictEqual(capped.percentage, 80);
+  assert.strictEqual(capped.percentage, 100);
+  assert.strictEqual(capped.effectivePercentage, 80);
   assert.strictEqual(capped.isWeeklyCapped, true);
   assert.ok(capped.tooltip.includes("Weekly capped"));
 
@@ -355,9 +404,9 @@ test("calculateCapacitySummary excludes unauthenticated / offline services from 
 test("absoluteTokenText: left/max, estimated fallback, left-only, none (A4)", () => {
   assert.strictEqual(shared.absoluteTokenText(500, 1000, undefined), "500 tokens / 1.00K tokens");
   assert.strictEqual(shared.absoluteTokenText(1234567, 2000000, undefined), "1.23M tokens / 2.00M tokens");
-  assert.strictEqual(shared.absoluteTokenText(0, 0, 1234567), "1.23M tokens");
+  assert.strictEqual(shared.absoluteTokenText(0, 0, 1234567), "Estimated 1.23M tokens");
   assert.strictEqual(shared.absoluteTokenText(42, 0, undefined), "42 tokens");
-  assert.strictEqual(shared.absoluteTokenText(0, 0, undefined), undefined);
+  assert.strictEqual(shared.absoluteTokenText(0, 0, undefined), "0 tokens");
   assert.strictEqual(shared.absoluteTokenText(null, 0, NaN), undefined);
 });
 
@@ -451,6 +500,8 @@ test("parseExternalPayload: error paths never throw", () => {
   assert.strictEqual(shared.parseExternalPayload("x", "text").ok, false);
   assert.strictEqual(shared.parseExternalPayload("x", {}).ok, false);
   assert.strictEqual(shared.parseExternalPayload("x", { foo: "bar" }).ok, false);
+  assert.strictEqual(shared.parseExternalPayload("x", { error: "Unauthorized", remainingPercentage: 100 }).ok, false, "provider error envelopes cannot be treated as quota success");
+  assert.strictEqual(shared.parseExternalPayload("x", { errors: [{ message: "Unauthorized", remainingPercentage: 100 }] }).ok, false, "nested provider error objects cannot be scanned as quota windows");
   const partial = shared.parseExternalPayload("x", [{ label: "no-data" }, { remainingPercentage: 50 }]);
   assert.strictEqual(partial.ok, true);
   assert.strictEqual(partial.windows[0].unavailable, true);
@@ -483,9 +534,10 @@ test("parseExternalPayload: absolute token pairs derive a percentage", () => {
   assert.strictEqual(r.windows[0].unavailable, false);
   assert.ok(Math.abs(r.windows[0].percentage - 25) < 0.01, "500k limit, 125k remaining → 25%");
   assert.ok(Math.abs(r.windows[1].percentage - 70) < 0.01, "limit 100, used 30 → 70% remaining");
-  // Explicit percentage still wins over the token-pair fallback.
+  // A disagreement between two measured quota sources is ambiguous.
   const both = shared.parseExternalPayload("B", { windows: [{ label: "x", remainingPercentage: 50, limit_tokens: 100, remaining_tokens: 10 }] });
-  assert.strictEqual(both.windows[0].percentage, 50, "explicit remainingPercentage beats token pair");
+  assert.strictEqual(both.windows[0].unavailable, true, "inconsistent absolute pair and percentage are not silently resolved");
+  assert.strictEqual(both.windows[0].percentage, undefined);
 });
 
 test("parseModelList: OpenAI data[].id and Ollama models[].name", () => {
@@ -653,7 +705,7 @@ test("detectRefilledQuotaWindows detects transitions from <100% to >=100%", () =
   assert.strictEqual(third.updatedNotifiedSet.has("antigravity-gemini-5h"), false);
 });
 
-test("dormant vs active rolling countdown for 100% quota", () => {
+test("future reset alone does not prove an active countdown for full quota", () => {
   const base = Date.now();
   const resetIn = (hours) => new Date(base + hours * 3600e3).toISOString();
 
@@ -666,7 +718,8 @@ test("dormant vs active rolling countdown for 100% quota", () => {
   assert.strictEqual(readyNoTimer.canPrewarm, true);
   assert.strictEqual(readyNoTimer.isPrewarmed, false);
   assert.strictEqual(readyNoTimer.refreshFull, "· Ready");
-  assert.ok(readyNoTimer.tooltip.includes("Ready · Timer starts on first request"));
+  assert.ok(readyNoTimer.tooltip.includes("Ready for policy-gated pre-warm"));
+  assert.ok(!readyNoTimer.tooltip.includes("Timer starts on first request"));
 
   // Expired past reset time is treated as dormant Ready (phantom past timestamp eliminated)
   const pastReset = new Date(base - 3600e3).toISOString();
@@ -679,8 +732,7 @@ test("dormant vs active rolling countdown for 100% quota", () => {
   assert.strictEqual(readyPastTimer.canPrewarm, true);
   assert.strictEqual(readyPastTimer.refreshFull, "· Ready");
 
-  // When 100% full BUT has an active future reset time (e.g. pre-warmed or rolling cycle running),
-  // countdown MUST be displayed, isReady is false, and canPrewarm is false (active recharge cycle)
+  // If reset time is active and strictly less than 5h, countdown is displayed even at 100%
   const active100Pct5h = shared.buildTokenMetric("5Hours", {
     antigravityPercentage: 100,
     antigravityResetTime: resetIn(3),
@@ -688,11 +740,24 @@ test("dormant vs active rolling countdown for 100% quota", () => {
     antigravityWeeklyResetTime: resetIn(48),
   }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
 
-  assert.strictEqual(active100Pct5h.isReady, false);
-  assert.strictEqual(active100Pct5h.canPrewarm, false);
+  assert.strictEqual(active100Pct5h.isReady, true);
+  assert.strictEqual(active100Pct5h.canPrewarm, true);
   assert.strictEqual(active100Pct5h.isPrewarmed, false);
-  assert.ok(active100Pct5h.refreshFull.includes("2h 59m") || active100Pct5h.refreshFull.includes("3h 0m") || active100Pct5h.refreshFull.includes("3h"));
+  assert.match(active100Pct5h.refreshFull, /^· Refreshes in (?:2h 59m|3h 0m)$/);
+  assert.match(active100Pct5h.refreshShort, /^· (?:2:59|3:00)$/);
   assert.ok(active100Pct5h.tooltip.includes("Healthy: over 35%"));
+
+  // If reset time is 5h or more, dormant Ready is displayed
+  const full5h = shared.buildTokenMetric("5Hours", {
+    antigravityPercentage: 100,
+    antigravityResetTime: resetIn(5),
+    antigravityWeeklyPercentage: 100,
+    antigravityWeeklyResetTime: resetIn(48),
+  }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+  assert.strictEqual(full5h.isReady, true);
+  assert.strictEqual(full5h.canPrewarm, true);
+  assert.strictEqual(full5h.refreshFull, "· Ready");
+  assert.strictEqual(full5h.refreshShort, "· Ready");
 
   // Once tokens are consumed (< 99.95%), rolling countdown activates normally
   const active5h = shared.buildTokenMetric("5Hours", {

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import * as cp from 'child_process';
+import { createHash } from 'crypto';
 
 const API_BASE = 'https://daily-cloudcode-pa.googleapis.com/v1internal';
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -34,7 +35,7 @@ export class AgyNotAuthenticatedError extends Error {
 }
 
 export class AgyQuotaClient {
-  private static inMemoryCachedToken?: QuotaToken;
+  private static inMemoryCachedToken?: { token: QuotaToken; credentialKey: string };
   private extensionPath: string;
 
   constructor(extensionPath: string = __dirname) {
@@ -180,22 +181,25 @@ export class AgyQuotaClient {
   }
 
   public async fetchQuota(cachedToken?: any): Promise<QuotaResult> {
+    void cachedToken;
     const agyPath = this.findAgy();
-    let token = this.tokenIsValid(cachedToken)
-      ? cachedToken
-      : this.tokenIsValid(AgyQuotaClient.inMemoryCachedToken)
-      ? AgyQuotaClient.inMemoryCachedToken
-      : undefined;
-
-    if (!token) {
-      const credential = await this.readCredential();
-      if (this.tokenIsValid(credential.token)) {
-        token = credential.token;
-      } else {
-        token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
-      }
-      AgyQuotaClient.inMemoryCachedToken = token;
+    // Read the current credential identity on every quota fetch. Access-token
+    // reuse is safe only when it belongs to this same credential; the digest is
+    // internal and is never exposed in logs or telemetry.
+    const credential = await this.readCredential();
+    const identityMaterial = String(credential.token.refresh_token || credential.token.access_token || '');
+    if (!identityMaterial) throw new AgyNotAuthenticatedError('The agy credential has no account token. Sign in to agy again.');
+    const credentialKey = createHash('sha256').update(identityMaterial).digest('hex');
+    let token: QuotaToken | undefined;
+    if (!token && AgyQuotaClient.inMemoryCachedToken?.credentialKey === credentialKey && this.tokenIsValid(AgyQuotaClient.inMemoryCachedToken.token)) {
+      token = AgyQuotaClient.inMemoryCachedToken.token;
     }
+    if (!token) {
+      if (this.tokenIsValid(credential.token)) token = credential.token;
+      else token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
+    }
+    if (!token) throw new AgyNotAuthenticatedError('The agy credential could not provide a valid account token. Sign in to agy again.');
+    AgyQuotaClient.inMemoryCachedToken = { token, credentialKey };
 
     const version = await this.agyVersion(agyPath);
     const userAgent = `antigravity/cli/${version} windows/amd64`;

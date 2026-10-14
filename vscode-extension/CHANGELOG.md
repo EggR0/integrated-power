@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.9.27] - 2026-10-14
+
+### Fixed & Enhanced
+
+- **5-Hour Quota Active Countdown Display at Full Capacity (`shared/quota/metric.ts`, `webview/quota-core.js`)**:
+  - Resolved issue where 100% full 5-hour quota windows unconditionally displayed `· Ready` instead of showing active reset countdown times (such as `4h 35m` or `· 4:35`).
+  - Updated display logic so that if an active reset time is strictly less than 5 hours (`diffMs < 5h`), the live countdown time is displayed while preserving `canPrewarm = true` and `isReady = true` for pre-warm automation.
+  - Full dormant `· Ready` is now displayed only when the reset timestamp is missing, expired, or represents a full 5-hour resting state.
+
+## [0.9.26] - 2026-10-14
+
+### Fixed & Enhanced
+
+- **Broker Approval Reject Route Implementation (`broker/server.ts`, `broker/broker.ts`)**:
+  - Implemented missing `POST /v1/approvals/:id/reject` HTTP route in the broker server (`server.ts`), resolving the `404: not_found` error when clicking the "Reject" button on approvals (such as `budget-overage` or `external-send`).
+  - Added `reject` method to `IntegratedPowerBroker` (`broker.ts`) with user decision auditing, atomic task cancellation, and approval queue removal.
+  - Added `task.rejected` event replay handling in the broker ledger state recovery loop.
+  - Added end-to-end regression test for approval rejection in `test-dashboard-approval-revision.js`.
+
+## [0.9.25] - 2026-10-14
+
+### Fixed & Enhanced
+
+- **Webview Message ReferenceError & Broker Startup Synchronization (`webview/main.js`, `DashboardController.ts`, `DashboardProvider.ts`, `extension.ts`)**:
+  - Fixed critical `ReferenceError: optionalNumber is not defined` inside `normalizeUsageSummary` in `webview/main.js` which caused the webview's `state` message listener to crash upon receiving `claudeDirectUsage`, leaving the UI permanently frozen in a `05:17 PM` skeleton state.
+  - Promoted `optionalNumber` helper to outer scope and wrapped the entire webview message listener with try/catch to ensure resilient state handling.
+  - Handled broker startup grace period in `DashboardController.refreshBrokerControls()`: suppressed premature red `Integrated Power broker is not started` error when the background broker server is still starting up.
+  - Linked `brokerController.start()` completion in `extension.ts` to automatically refresh broker controls, quota settings, and dashboard state once the broker port becomes available.
+
+## [0.9.24] - 2026-10-14
+
+### Fixed & Enhanced
+
+- **Webview Infinite Loading & Refresh Hang Resolution (`DashboardController.ts`, `DashboardProvider.ts`, `webview/main.js`)**:
+  - Fixed `DashboardController.mergeTokenStatus` discarding previous token metrics when newly polled partial status had undefined percentages, preventing token status from resetting to empty skeleton state during refresh.
+  - Added startup disk cache restoration from `token_status.json` so valid quota capacity and broker tasks display immediately upon webview mount without skeleton flicker.
+  - Eliminated deadlock/hang in webview `ready` and `refresh` message handlers by decoupling serial await chains into independent asynchronous pipelines and publishing initial `brokerState` immediately on mount.
+  - Added `isTokenRefreshing` mutex and protected against `tokenRefreshGeneration` race conditions where active quota fetches were discarded by rapid background polling ticks.
+
+## [0.9.23] - 2026-10-14
+
+### Fixed & Enhanced
+
+- **Pre-warm 100% Ready Window Activation & Button Fix (`shared/quota/metric.ts`, `DashboardController.ts`, `webview/quota-core.js`)**:
+  - Eliminated the erroneous `resetTime > Date.now()` and `hasActiveFutureCountdown` blocker that falsely treated fully refilled 100% quota windows as actively recharging, restoring the `[⚡ Pre-warm]` button to active status when capacity is full.
+  - Resolved `once` pre-warm mode failing to trigger and remaining stuck without reverting to `click`: auto-prewarm evaluation cleanly dispatches on 100% Ready windows and automatically reverts target mode to `click` upon dispatch.
+  - Added timestamp fallback guards (`updatedAt` / `lastSync`) in `getPrewarmEligibility` and broker prewarm request execution, preventing false rejection when individual quota pool measurement timestamps are coalescing.
+  - Preserved `quotaPools` collection through `DashboardController.mergeTokenStatus` to protect telemetry metadata.
+
 ## [0.9.22] - 2026-10-13
 
 ### Added & Enhanced

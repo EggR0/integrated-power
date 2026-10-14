@@ -6,6 +6,9 @@ import * as http from "http";
 import { IntegratedPowerBroker } from "./broker";
 import { CreateTaskInput, DelegateTaskInput } from "./protocol";
 import { integratedPowerProtocolBoundary } from "./protocols";
+import { scanLiveTokenStatus } from "./tokenScanner";
+
+type TokenStatusReader = () => Promise<unknown>;
 
 interface McpRequest {
   jsonrpc?: string;
@@ -16,12 +19,12 @@ interface McpRequest {
 
 /** Official MCP SDK stdio bridge. The old request switch remains only as a
  * compatibility helper for the loopback HTTP edge and tests. */
-export async function startMcpStdioServer(broker: IntegratedPowerBroker): Promise<void> {
-  const server = createOfficialMcpServer(broker);
+export async function startMcpStdioServer(broker: IntegratedPowerBroker, tokenStatusReader: TokenStatusReader = scanLiveTokenStatus): Promise<void> {
+  const server = createOfficialMcpServer(broker, tokenStatusReader);
   await server.connect(new StdioServerTransport());
 }
 
-export function createOfficialMcpServer(broker: IntegratedPowerBroker): McpServer {
+export function createOfficialMcpServer(broker: IntegratedPowerBroker, tokenStatusReader: TokenStatusReader = scanLiveTokenStatus): McpServer {
   const server = new McpServer({ name: "integrated-power", version: "0.8.0" });
   for (const tool of integratedPowerProtocolBoundary.mcp.tools) {
     server.registerTool(tool.name, {
@@ -29,7 +32,7 @@ export function createOfficialMcpServer(broker: IntegratedPowerBroker): McpServe
       inputSchema: z.record(z.string(), z.unknown()),
       annotations: { readOnlyHint: tool.name.includes("get_status") || tool.name.includes("list_") || tool.name.includes("choose_route") },
     }, async (args: Record<string, unknown>) => {
-      const result = await callTool(broker, tool.name, args as Record<string, any>);
+      const result = await callTool(broker, tool.name, args as Record<string, any>, tokenStatusReader);
       return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result as Record<string, unknown> };
     });
   }
@@ -41,14 +44,15 @@ export async function processOfficialMcpHttpRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   payload: unknown,
+  tokenStatusReader: TokenStatusReader = scanLiveTokenStatus,
 ): Promise<void> {
-  const server = createOfficialMcpServer(broker);
+  const server = createOfficialMcpServer(broker, tokenStatusReader);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);
   await transport.handleRequest(request, response, payload);
 }
 
-export async function processMcpRequest(broker: IntegratedPowerBroker, request: McpRequest): Promise<Record<string, any> | undefined> {
+export async function processMcpRequest(broker: IntegratedPowerBroker, request: McpRequest, tokenStatusReader: TokenStatusReader = scanLiveTokenStatus): Promise<Record<string, any> | undefined> {
   if (request.method?.startsWith("notifications/")) return undefined;
   if (request.id === undefined) return undefined;
   let result: unknown;
@@ -67,7 +71,7 @@ export async function processMcpRequest(broker: IntegratedPowerBroker, request: 
       result = { tools: integratedPowerProtocolBoundary.mcp.tools.map((tool) => ({ ...tool, annotations: { readOnlyHint: tool.name.includes("get_status") } })) };
       break;
     case "tools/call":
-      result = await callTool(broker, request.params?.name, request.params?.arguments ?? {});
+      result = await callTool(broker, request.params?.name, request.params?.arguments ?? {}, tokenStatusReader);
       break;
     default:
       return { jsonrpc: "2.0", id: request.id, error: { code: -32601, message: `Unsupported MCP method: ${request.method ?? ""}` } };
@@ -78,7 +82,7 @@ export async function processMcpRequest(broker: IntegratedPowerBroker, request: 
   return { jsonrpc: "2.0", id: request.id, result: response };
 }
 
-async function callTool(broker: IntegratedPowerBroker, name: string, args: Record<string, any>): Promise<unknown> {
+async function callTool(broker: IntegratedPowerBroker, name: string, args: Record<string, any>, tokenStatusReader: TokenStatusReader): Promise<unknown> {
   const currentTask = args.taskId ? broker.getTask(String(args.taskId)) : undefined;
   const currentRevision = currentTask?.revision;
   const targetRevision = optionalRevision(args.expectedRevision) ?? currentRevision ?? 1;
@@ -124,9 +128,9 @@ async function callTool(broker: IntegratedPowerBroker, name: string, args: Recor
       return { event: await broker.recordEvidence({ taskId: String(args.taskId), kind, label, passed, details, expectedRevision: targetRevision, idempotencyKey: args.idempotencyKey }) };
     }
     case "integrated_power_quick_delegate":
-      return await broker.quickDelegate(args as any);
+      return await broker.quickDelegate(args as any, tokenStatusReader);
     case "integrated_power_get_token_status":
-      return await broker.getTokenStatus();
+      return await tokenStatusReader();
     case "integrated_power_synthesize":
       return { event: await broker.synthesize({ taskId: String(args.taskId), provider: args.provider ?? "google.antigravity.ide", content: String(args.content ?? ""), dissent: Array.isArray(args.dissent) ? args.dissent.map(String) : [], confidence: Number(args.confidence ?? 1), evidenceIds: Array.isArray(args.evidenceIds) ? args.evidenceIds.map(String) : [], expectedRevision: targetRevision, idempotencyKey: args.idempotencyKey }) };
     default:

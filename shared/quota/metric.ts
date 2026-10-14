@@ -23,7 +23,6 @@ import {
   type CapacityTone,
   capacityTone,
   clamp,
-  toFiniteNumber,
 } from "./capacity";
 import { calculateEffective5HourQuota } from "./capacity";
 import { formatRefreshCountdown, formatTokenCount } from "./format";
@@ -66,7 +65,9 @@ export interface TokenMetric {
   refreshMedium: string;
   refreshShort: string;
   /** Effective (K-synced) remaining percentage, 0–100. */
-  percentage: number;
+  percentage?: number;
+  /** Policy-only 5h ceiling after weekly synchronization; never presented as measured quota. */
+  effectivePercentage?: number;
   /** No absolute data and no percentage: render "Unavailable". */
   unavailable: boolean;
   tone: CapacityTone;
@@ -98,26 +99,26 @@ export interface CapacitySummary {
  * A4 absolute-token text for one window.
  *   - `max > 0`            -> "left / max" (the explicit window budget)
  *   - else `estimated`     -> the EstimatedAbsolute fallback (a single number)
- *   - else `left > 0`      -> the remaining count alone
+ *   - else `left >= 0`     -> the measured remaining count alone
  *   - otherwise            -> undefined (no absolute data: do not show a fake
  *                              "0 tokens"; the caller shows "Unavailable"/"Waiting")
  * Returns undefined exactly when `buildTokenMetric` reports no absolute data
- * (max>0 || estimated || left>0 is false).
+ * (max>0 || estimated || left is absent).
  */
 export function absoluteTokenText(
   left: unknown,
   max: unknown,
   estimated: unknown,
 ): string | undefined {
-  const safeLeft = toFiniteNumber(left);
-  const safeMax = toFiniteNumber(max);
-  if (safeMax > 0) {
+  const safeLeft = typeof left === "number" && Number.isFinite(left) && left >= 0 ? left : undefined;
+  const safeMax = typeof max === "number" && Number.isFinite(max) && max >= 0 ? max : undefined;
+  if (safeLeft !== undefined && safeMax !== undefined && safeMax > 0) {
     return `${formatTokenCount(safeLeft)} / ${formatTokenCount(safeMax)}`;
   }
   if (typeof estimated === "number" && Number.isFinite(estimated)) {
-    return formatTokenCount(estimated);
+    return `Estimated ${formatTokenCount(estimated)}`;
   }
-  if (safeLeft > 0) {
+  if (safeLeft !== undefined) {
     return formatTokenCount(safeLeft);
   }
   return undefined;
@@ -140,37 +141,44 @@ export function buildTokenMetric(
   ariaLabel?: string,
   pairedWeeklyPrefix?: string,
 ): TokenMetric {
-  const left = toFiniteNumber(status[`${prefix}TokensLeft`]);
-  const max = toFiniteNumber(status[`${prefix}Max`]);
+  const rawLeft = status[`${prefix}TokensLeft`];
+  const rawMax = status[`${prefix}Max`];
+  const left = typeof rawLeft === "number" && Number.isFinite(rawLeft) && rawLeft >= 0 ? rawLeft : undefined;
+  const max = typeof rawMax === "number" && Number.isFinite(rawMax) && rawMax >= 0 ? rawMax : undefined;
   const exactPercentage = status[`${prefix}Percentage`];
   const estimated = status[`${prefix}EstimatedAbsolute`];
   const rawResetTime = status[`${prefix}ResetTime`] as string | undefined;
 
   let percentage;
-  if (typeof exactPercentage === "number" && Number.isFinite(exactPercentage)) {
-    percentage = clamp(exactPercentage, 0, 100);
-  } else if (max > 0) {
-    percentage = clamp((left / max) * 100, 0, 100);
+  if (typeof exactPercentage === "number") {
+    if (Number.isFinite(exactPercentage) && exactPercentage >= 0 && exactPercentage <= 100) percentage = exactPercentage;
+  } else if (exactPercentage === undefined && left !== undefined && max !== undefined && max > 0 && left <= max) {
+    percentage = (left / max) * 100;
   }
 
-  const hasAbsolute = typeof estimated === "number" || max > 0 || left > 0;
-  let normalizedPercentage = percentage ?? 0;
+  const hasAbsolute = (typeof estimated === "number" && Number.isFinite(estimated)) || left !== undefined;
+  let effectivePercentage = percentage;
   let isWeeklyExhausted = false;
   let isWeeklyCapped = false;
   let capReason = "";
 
-  // Dual-Window Quota Synchronization: 5Hours constrained by Weekly
+  // Dual-Window policy: keep reported values intact and expose only the
+  // routing ceiling separately.
   if (label === "5Hours" && pairedWeeklyPrefix && percentage !== undefined) {
     const weeklyExact = status[`${pairedWeeklyPrefix}Percentage`];
-    const weeklyLeft = toFiniteNumber(status[`${pairedWeeklyPrefix}TokensLeft`]);
-    const weeklyMax = toFiniteNumber(status[`${pairedWeeklyPrefix}Max`]);
-    let weeklyPct = typeof weeklyExact === "number" && Number.isFinite(weeklyExact)
-      ? clamp(weeklyExact, 0, 100)
-      : weeklyMax > 0 ? clamp((weeklyLeft / weeklyMax) * 100, 0, 100) : undefined;
+    const rawWeeklyLeft = status[`${pairedWeeklyPrefix}TokensLeft`];
+    const rawWeeklyMax = status[`${pairedWeeklyPrefix}Max`];
+    const weeklyLeft = typeof rawWeeklyLeft === "number" && Number.isFinite(rawWeeklyLeft) && rawWeeklyLeft >= 0 ? rawWeeklyLeft : undefined;
+    const weeklyMax = typeof rawWeeklyMax === "number" && Number.isFinite(rawWeeklyMax) && rawWeeklyMax >= 0 ? rawWeeklyMax : undefined;
+    let weeklyPct = typeof weeklyExact === "number"
+      ? Number.isFinite(weeklyExact) && weeklyExact >= 0 && weeklyExact <= 100 ? weeklyExact : undefined
+      : weeklyExact === undefined && weeklyLeft !== undefined && weeklyMax !== undefined && weeklyMax > 0 && weeklyLeft <= weeklyMax
+        ? (weeklyLeft / weeklyMax) * 100
+        : undefined;
 
-    if (weeklyPct !== undefined) {
-      const sync = calculateEffective5HourQuota(normalizedPercentage, weeklyPct, prefix);
-      normalizedPercentage = sync.effectivePct;
+    if (weeklyPct !== undefined && effectivePercentage !== undefined) {
+      const sync = calculateEffective5HourQuota(effectivePercentage, weeklyPct, prefix);
+      effectivePercentage = sync.effectivePct;
       isWeeklyExhausted = sync.isWeeklyExhausted;
       isWeeklyCapped = sync.isWeeklyCapped;
       if (isWeeklyExhausted) {
@@ -181,16 +189,15 @@ export function buildTokenMetric(
     }
   }
 
-  const displayPercentage = isWeeklyExhausted ? 0.0 : normalizedPercentage;
-  const mainText = (hasAbsolute || percentage !== undefined) ? `${displayPercentage.toFixed(2)}%` : "Unavailable";
+  const mainText = percentage !== undefined ? `${percentage.toFixed(2)}%` : "Unavailable";
 
   let subtextFull = "Waiting for quota data";
   let subtextMedium = "Waiting";
   let subtextShort = "Waiting";
-  if (hasAbsolute || percentage !== undefined) {
-    subtextFull = `${normalizedPercentage.toFixed(2)}% remaining`;
-    subtextMedium = `${normalizedPercentage.toFixed(2)}%`;
-    subtextShort = `${normalizedPercentage.toFixed(1)}%`;
+  if (percentage !== undefined) {
+    subtextFull = `${percentage.toFixed(2)}% remaining`;
+    subtextMedium = `${percentage.toFixed(2)}%`;
+    subtextShort = `${percentage.toFixed(1)}%`;
   }
 
   let effectiveResetTime = rawResetTime;
@@ -201,16 +208,22 @@ export function buildTokenMetric(
     }
   }
 
-  const is5HourAt100 = label === "5Hours" && (hasAbsolute || percentage !== undefined) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+  const weeklyExactForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}Percentage`] : undefined;
+  const weeklyLeftForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}TokensLeft`] : undefined;
+  const weeklyMaxForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}Max`] : undefined;
+  const weeklyKnownForPrewarm = !pairedWeeklyPrefix
+    || (typeof weeklyExactForPrewarm === "number" && Number.isFinite(weeklyExactForPrewarm) && weeklyExactForPrewarm >= 0 && weeklyExactForPrewarm <= 100)
+    || (weeklyExactForPrewarm === undefined && typeof weeklyLeftForPrewarm === "number" && typeof weeklyMaxForPrewarm === "number" && weeklyMaxForPrewarm > 0 && weeklyLeftForPrewarm >= 0 && weeklyLeftForPrewarm <= weeklyMaxForPrewarm);
+  const is5HourAt100 = label === "5Hours" && percentage !== undefined && percentage >= 99.95 && !isWeeklyExhausted;
+  const is5HourReady = is5HourAt100 && weeklyKnownForPrewarm;
+  const resetDate = effectiveResetTime ? new Date(effectiveResetTime) : undefined;
+  const resetEpoch = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : undefined;
+  const diffMs = resetEpoch !== undefined ? resetEpoch - Date.now() : undefined;
   const countdown = formatRefreshCountdown(effectiveResetTime);
-  const hasActiveFutureCountdown = Boolean(
-    countdown &&
-    effectiveResetTime &&
-    new Date(effectiveResetTime).getTime() > Date.now()
-  );
-
-  // A 5-hour window is Ready ONLY when 100% full AND no rolling recharge timer is currently running ahead of time.
-  const is5HourReady = is5HourAt100 && !hasActiveFutureCountdown;
+  // When remaining time is active and strictly less than 5 hours (e.g. 4h 35m),
+  // display the running countdown even if quota reports 100%, so users see
+  // when their window actually resets.
+  const is5HourActiveCountdown = label === "5Hours" && diffMs !== undefined && diffMs > 0 && diffMs < 5 * 3600 * 1000;
   const isPrewarmed = false;
   let refreshFull = "";
   let refreshMedium = "";
@@ -218,7 +231,7 @@ export function buildTokenMetric(
   let canPrewarm = false;
   let isReady = false;
 
-  if (is5HourReady) {
+  if (is5HourReady && !is5HourActiveCountdown) {
     refreshFull = "· Ready";
     refreshMedium = "· Ready";
     refreshShort = "· Ready";
@@ -228,15 +241,27 @@ export function buildTokenMetric(
     refreshFull = countdown.full;
     refreshMedium = countdown.medium || countdown.short;
     refreshShort = countdown.short;
+    if (is5HourReady) {
+      canPrewarm = true;
+      isReady = true;
+    }
+  } else if (is5HourReady) {
+    refreshFull = "· Ready";
+    refreshMedium = "· Ready";
+    refreshShort = "· Ready";
+    canPrewarm = true;
+    isReady = true;
   }
 
-  let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+  let tooltip = percentage === undefined
+    ? `${ariaLabel || label}: quota percentage unavailable${hasAbsolute ? "; absolute token count is estimated or incomplete" : ""}.`
+    : `${ariaLabel || label}: Reported ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   if (isWeeklyExhausted) {
-    tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` · ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
+    tooltip = `${ariaLabel || label}: Reported ${subtextFull}; weekly quota is exhausted. Pre-warm and routing policy are blocked until fresh weekly quota data allows them.`;
   } else if (isWeeklyCapped) {
-    tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
+    tooltip = `${ariaLabel || label}: Reported ${subtextFull}; policy ceiling ${effectivePercentage?.toFixed(1)}% (${capReason}).`;
   } else if (is5HourReady) {
-    tooltip = `${ariaLabel || label}: ${subtextFull} (Ready · Timer starts on first request). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+    tooltip = `${ariaLabel || label}: Reported ${subtextFull} (Ready for policy-gated pre-warm). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   }
 
   const labelFull = label;
@@ -258,9 +283,10 @@ export function buildTokenMetric(
     refreshFull,
     refreshMedium,
     refreshShort,
-    percentage: normalizedPercentage,
-    unavailable: percentage === undefined && !hasAbsolute,
-    tone: capacityTone(normalizedPercentage),
+    percentage,
+    effectivePercentage,
+    unavailable: percentage === undefined,
+    tone: percentage === undefined ? "healthy" : capacityTone(percentage),
     tooltip,
     isWeeklyExhausted,
     isWeeklyCapped,
@@ -283,13 +309,13 @@ export function capacitySummaryEntry(
   max: unknown,
 ): CapacitySummaryEntry | undefined {
   let percentage;
-  if (typeof exactPercentage === "number" && Number.isFinite(exactPercentage)) {
-    percentage = clamp(exactPercentage, 0, 100);
-  } else {
-    const safeLeft = toFiniteNumber(left);
-    const safeMax = toFiniteNumber(max);
-    if (safeMax > 0) {
-      percentage = clamp((safeLeft / safeMax) * 100, 0, 100);
+  if (typeof exactPercentage === "number") {
+    if (Number.isFinite(exactPercentage) && exactPercentage >= 0 && exactPercentage <= 100) percentage = exactPercentage;
+  } else if (exactPercentage === undefined) {
+    const safeLeft = typeof left === "number" && Number.isFinite(left) && left >= 0 ? left : undefined;
+    const safeMax = typeof max === "number" && Number.isFinite(max) && max >= 0 ? max : undefined;
+    if (safeLeft !== undefined && safeMax !== undefined && safeMax > 0) {
+      if (safeLeft <= safeMax) percentage = (safeLeft / safeMax) * 100;
     }
   }
 

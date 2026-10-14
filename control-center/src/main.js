@@ -89,6 +89,7 @@ const state = {
   mainProvider: "google.antigravity.ide",
   brokerOnline: false,
   lastSyncAt: null,
+  tokenStatusError: "",
   activeTab: "tokens", // DEFAULT ACTIVE TAB
   // External (user-registered) providers: { id, name, baseUrl, quotaUrl?, apiKey?, defaultModel?, discoverModels, pollMs, enabled }[]
   externalProviders: [],
@@ -444,7 +445,7 @@ function renderTokens() {
   // One label for "no value reported" — a no-data window is NOT zero and is
   // not the same as an error; keep the wording consistent across labels,
   // bars, and reset stamps.
-  const noDataText = "쿼터 대기 중";
+  const noDataText = state.tokenStatusError ? "쿼터 갱신 실패" : "쿼터 대기 중";
 
   for (const [id, m] of Object.entries(windows)) {
     const label = $(`label-${id}`);
@@ -480,7 +481,7 @@ function renderTokens() {
     }
     const bar = $(`bar-${id}`);
     if (bar) {
-      bar.style.width = `${Math.max(0, Math.min(100, m.percentage))}%`;
+      bar.style.width = `${Math.max(0, Math.min(100, m.percentage ?? 0))}%`;
       // Unified tone thresholds (<=15 critical, 15-35 caution) via the shared
       // capacityTone — replaces the old hard-coded <20% warning.
       bar.classList.toggle("warning", m.tone === "warning");
@@ -575,7 +576,7 @@ function renderTokens() {
   }
 
   const todayTok = du?.todayTokens ?? du?.today?.totalTokens ?? 0;
-  const todayBillable = du?.todayPaidTokens ?? du?.today?.outputTokens ?? 0;
+  const todayBillable = du?.todayPaidTokens ?? du?.today?.billableTokens;
   const sevenDayTok = du?.sevenDaysTokens ?? du?.sevenDays?.totalTokens ?? 0;
   const sevenDayEvents = du?.eventCount ?? du?.sevenDays?.eventCount ?? 0;
 
@@ -587,7 +588,7 @@ function renderTokens() {
       node("span", "tokens", "unit-label")
     );
   }
-  if ($("claude-today-billable")) $("claude-today-billable").textContent = todayBillable.toLocaleString();
+  if ($("claude-today-billable")) $("claude-today-billable").textContent = todayBillable === undefined ? "Unavailable" : todayBillable.toLocaleString();
   if ($("claude-7d-tokens")) {
     const el = $("claude-7d-tokens");
     el.replaceChildren();
@@ -1104,7 +1105,8 @@ async function refresh({ force = false } = {}) {
   try {
     state.brokerHealth = await api("/health");
     setConnection("online", `브로커 정상 (${BROKER_PORT})`);
-    state.lastSyncAt = new Date();
+    // This timestamp is updated from tokenStatus.lastSync after a measured
+    // quota response; broker health alone does not refresh quota data.
     if ($("status")) $("status").textContent = `브로커 정상 가동 중 (127.0.0.1:${BROKER_PORT})`;
 
     // P5: a manual "refresh now" passes ?force=1 so the broker triggers an
@@ -1136,6 +1138,9 @@ async function refresh({ force = false } = {}) {
     if (tokenRes && tokenRes.tokenStatus) {
       state.previousTokenStatus = state.tokenStatus;
       state.tokenStatus = tokenRes.tokenStatus;
+      state.tokenStatusError = "";
+      const measuredAt = Date.parse(tokenRes.tokenStatus.lastSync || "");
+      state.lastSyncAt = Number.isFinite(measuredAt) && measuredAt > 0 ? new Date(measuredAt) : null;
       if (state.brokerHealth?.capabilities?.includes("quota.notifications.claim")) {
         try {
           const claim = await api("/v1/notifications/quota-refill", { method: "POST", body: JSON.stringify({}) });
@@ -1155,6 +1160,11 @@ async function refresh({ force = false } = {}) {
       } else {
         checkTokenFullNotification(state.previousTokenStatus, state.tokenStatus);
       }
+    } else {
+      state.previousTokenStatus = state.tokenStatus;
+      state.tokenStatus = null;
+      state.tokenStatusError = tokenRes?.error?.message || "쿼터 측정 소스가 응답하지 않았습니다.";
+      state.lastSyncAt = null;
     }
 
     renderTokens();
@@ -1166,6 +1176,10 @@ async function refresh({ force = false } = {}) {
     renderLocalLlmMetrics(metricsRes);
     if (state.activeTab === "logs") void refreshLogs();
   } catch (error) {
+    state.previousTokenStatus = state.tokenStatus;
+    state.tokenStatus = null;
+    state.tokenStatusError = error.message || "브로커에서 쿼터 측정을 읽지 못했습니다.";
+    state.lastSyncAt = null;
     setConnection("offline", `브로커 오프라인 (${BROKER_PORT})`);
     if ($("status")) $("status").textContent =
       `브로커 연결 대기 중 (127.0.0.1:${BROKER_PORT}) — 브로커가 기동하면 자동 복구됩니다`;

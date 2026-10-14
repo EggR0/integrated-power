@@ -21,7 +21,7 @@
 export interface ExternalWindowMetric {
   label: string;
   /** Remaining percentage 0..100. */
-  percentage: number;
+  percentage?: number;
   /** Shared capacity tone for pill/tag coloring. */
   tone: string;
   /** True when the window exists but no remaining value was found. */
@@ -74,7 +74,6 @@ const REMAINING_KEYS = [
   "percentRemaining",
   "percent_remaining",
   "percentUsedIsComplement",
-  "remaining",
   "pctRemaining",
   "pct_remaining",
 ] as const;
@@ -89,7 +88,7 @@ const USED_KEYS = [
 ] as const;
 
 // Absolute-token pairs (a percentage is derived from them).
-const LIMIT_KEYS = ["limit", "limitTokens", "limit_tokens", "max", "maxTokens", "max_tokens", "total", "totalTokens", "total_tokens"] as const;
+const LIMIT_KEYS = ["limit", "limitTokens", "limit_tokens", "max", "maxTokens", "max_tokens"] as const;
 const REMAINING_ABS_KEYS = ["remainingTokens", "remaining_tokens", "tokensRemaining", "tokens_remaining", "left", "leftTokens", "left_tokens", "availableTokens", "available_tokens"] as const;
 const USED_ABS_KEYS = ["usedTokens", "used_tokens", "tokensUsed", "tokens_used", "used", "consumed", "consumedTokens", "consumed_tokens"] as const;
 
@@ -99,15 +98,17 @@ const USED_ABS_KEYS = ["usedTokens", "used_tokens", "tokensUsed", "tokens_used",
  * Explicit percentage fields always win — this is the fallback path.
  */
 function tokenPairRemaining(raw: Record<string, unknown>): number | undefined {
-  const limit = toFiniteNumber(raw[LIMIT_KEYS[0]] ?? raw["limitTokens"] ?? raw["limit_tokens"] ?? raw["max"] ?? raw["maxTokens"] ?? raw["max_tokens"] ?? raw["total"] ?? raw["totalTokens"] ?? raw["total_tokens"]);
+  const limit = toFiniteNumber(raw[LIMIT_KEYS[0]] ?? raw["limitTokens"] ?? raw["limit_tokens"] ?? raw["max"] ?? raw["maxTokens"] ?? raw["max_tokens"]);
   if (limit === undefined || limit <= 0) return undefined;
   for (const key of REMAINING_ABS_KEYS) {
     const value = toFiniteNumber(raw[key]);
-    if (value !== undefined) return Math.min(100, Math.max(0, (value / limit) * 100));
+    if (value !== undefined) return value >= 0 && value <= limit ? (value / limit) * 100 : undefined;
   }
+  const genericRemaining = toFiniteNumber(raw.remaining);
+  if (genericRemaining !== undefined) return genericRemaining >= 0 && genericRemaining <= limit ? (genericRemaining / limit) * 100 : undefined;
   for (const key of USED_ABS_KEYS) {
     const value = toFiniteNumber(raw[key]);
-    if (value !== undefined) return Math.min(100, Math.max(0, ((limit - value) / limit) * 100));
+    if (value !== undefined) return value >= 0 && value <= limit ? ((limit - value) / limit) * 100 : undefined;
   }
   return undefined;
 }
@@ -124,6 +125,21 @@ function toFiniteNumber(value: unknown): number | undefined {
 }
 
 function extractRemaining(raw: Record<string, unknown>): number | undefined {
+  const paired = tokenPairRemaining(raw);
+  const hasAbsoluteInputs = [...LIMIT_KEYS, ...REMAINING_ABS_KEYS, ...USED_ABS_KEYS, "remaining"]
+    .some((key) => raw[key] !== undefined && raw[key] !== null);
+  const explicit = [...REMAINING_KEYS, ...USED_KEYS].map((key) => ({
+    key,
+    value: toFiniteNumber(raw[key]),
+  })).find((entry) => entry.value !== undefined);
+  if (hasAbsoluteInputs && paired === undefined && explicit?.value !== undefined) return undefined;
+  if (paired !== undefined && explicit?.value !== undefined) {
+    const reported = USED_KEYS.includes(explicit.key as typeof USED_KEYS[number])
+      ? 100 - explicit.value
+      : explicit.value;
+    if (reported < 0 || reported > 100 || Math.abs(reported - paired) > 0.01) return undefined;
+  }
+  if (paired !== undefined) return paired;
   for (const key of REMAINING_KEYS) {
     const value = toFiniteNumber(raw[key]);
     if (value !== undefined) return value;
@@ -143,16 +159,29 @@ function labelOf(raw: Record<string, unknown>, index: number): string {
   return "Window " + (index + 1);
 }
 
+function isErrorEnvelope(raw: Record<string, unknown>): boolean {
+  const error = raw.error;
+  if (error !== undefined && error !== null && error !== false && error !== "") return true;
+  const status = raw.status ?? raw.statusCode;
+  if (typeof status === "number" && status >= 400) return true;
+  if (raw.success === false || (Array.isArray(raw.errors) && raw.errors.length > 0)) return true;
+  return typeof raw.message === "string" && raw.label === undefined && raw.name === undefined;
+}
+
 function windowFrom(raw: unknown, index: number, toneOf: (pct: number) => string): ExternalWindowMetric | null {
   if (raw === null || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
+  if (isErrorEnvelope(obj)) return null;
   const remaining = extractRemaining(obj);
   const label = labelOf(obj, index);
   const note = typeof obj["note"] === "string" ? obj["note"] : typeof obj["description"] === "string" ? obj["description"] : undefined;
   if (remaining === undefined) {
-    return { label: label, percentage: 0, tone: "critical", unavailable: true, note: note || "remaining field not found" };
+    return { label: label, tone: "healthy", unavailable: true, note: note || "remaining field not found or outside the 0..100 range" };
   }
-  const percentage = Math.min(100, Math.max(0, remaining));
+  if (remaining < 0 || remaining > 100) {
+    return { label, tone: "healthy", unavailable: true, note: note || "remaining percentage outside the 0..100 range" };
+  }
+  const percentage = remaining;
   return { label: label, percentage: percentage, tone: toneOf(percentage), unavailable: false, note: note };
 }
 
@@ -180,6 +209,9 @@ export function parseExternalPayload(name: string, raw: unknown, toneOf: (pct: n
     entries = raw;
   } else {
     const obj = raw as Record<string, unknown>;
+    if (isErrorEnvelope(obj)) {
+      return { ok: false, name: name, windows: [], error: "provider returned an error response" };
+    }
     const windows = obj["windows"];
     if (Array.isArray(windows) && windows.length > 0) {
       entries = windows;
@@ -188,7 +220,7 @@ export function parseExternalPayload(name: string, raw: unknown, toneOf: (pct: n
     } else {
       const candidates: unknown[] = [];
       for (const value of Object.values(obj)) {
-        if (value && typeof value === "object" && extractRemaining(value as Record<string, unknown>) !== undefined) {
+        if (value && typeof value === "object" && !isErrorEnvelope(value as Record<string, unknown>) && extractRemaining(value as Record<string, unknown>) !== undefined) {
           candidates.push(value);
         }
       }

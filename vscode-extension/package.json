@@ -3,7 +3,7 @@
   "publisher": "EggR0",
   "displayName": "Integrated Power",
   "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
-  "version": "0.9.22",
+  "version": "0.9.27",
   "author": {
     "name": "EggR0"
   },
@@ -301,7 +301,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run compile && node ./scripts/build-extension.js",
+    "vscode:prepublish": "npm run compile && node ./scripts/build-extension.js",
     "compile": "tsc -p ./ && node ./scripts/build-broker-package.js && node ./scripts/write-broker-manifest.js",
     "watch": "tsc -watch -p ./",
     "test": "pnpm run test:reuse && node ./scripts/test-quota-core.js && node ./scripts/test-token-manager-headless.js && pnpm run compile && node ./scripts/test-compact-ui.js && node ./scripts/test-dashboard-broker-flow.js && node ./scripts/test-dashboard-approval-revision.js && node ./scripts/test-prewarm.js && node ./scripts/test-runtime-background-token.js && node ./scripts/test-visual-graph-safety-guard.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && pnpm run test:powershell",

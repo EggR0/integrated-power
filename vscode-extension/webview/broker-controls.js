@@ -8,6 +8,8 @@
     originProvider: "local.openai-compatible",
     delegates: Object.create(null),
   };
+  let historyOpen = false;
+  const terminalTaskStatuses = new Set(["completed", "cancelled", "canceled", "failed", "merged"]);
 
   function element(tagName, className, text) {
     const node = document.createElement(tagName);
@@ -124,6 +126,37 @@
     return details;
   }
 
+  function taskCreatedDate(value) {
+    if (typeof value !== "string") return undefined;
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:T|$)/);
+    if (!match) return undefined;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return undefined;
+    return { full: `${match[1]}-${match[2]}-${match[3]}`, short: `${month}/${day}` };
+  }
+
+  function renderTaskCard(task, send, writeDisabled) {
+    const card = element("article", "broker-card");
+    const name = typeof task.title === "string" && task.title ? task.title : task.id;
+    card.appendChild(element("h3", "broker-card-title", name || "Untitled task"));
+    const date = taskCreatedDate(task.createdAt);
+    card.appendChild(element("p", "broker-task-state", `${task.status || "unknown"} · r${Number(task.revision) || 0}${date ? ` · ${date.full}` : ""}`));
+    const goal = typeof task.goal === "string" ? task.goal : "";
+    if (goal) card.appendChild(element("p", "broker-task-goal", goal));
+    const actions = element("div", "broker-actions");
+    if (task.status === "created" || task.status === "running" || task.status === "awaiting_approval") {
+      actions.appendChild(button("Cancel", () => send({
+        type: "cancelBrokerTask", taskId: task.id, expectedRevision: task.revision,
+      }), writeDisabled));
+    }
+    if (task.status === "created" || task.status === "running") actions.appendChild(delegateForm(task, send, writeDisabled));
+    card.appendChild(actions);
+    return card;
+  }
+
   function render(container, state, send) {
     const section = element("section", "broker-panel");
     const heading = element("div", "broker-heading");
@@ -139,25 +172,32 @@
     section.appendChild(createTaskForm(send, writeDisabled));
 
     const tasks = Array.isArray(state.tasks) ? state.tasks : [];
+    const activeTasks = tasks.filter((task) => !terminalTaskStatuses.has(String(task.status || "").toLowerCase()));
+    const historyTasks = tasks.filter((task) => terminalTaskStatuses.has(String(task.status || "").toLowerCase()));
     const taskList = element("div", "broker-list");
     taskList.setAttribute("aria-label", "Workspace tasks");
     if (!tasks.length && !state.loading) taskList.appendChild(element("p", "broker-muted", "No tasks in this workspace."));
-    for (const task of tasks) {
-      const card = element("article", "broker-card");
-      const name = typeof task.title === "string" && task.title ? task.title : task.id;
-      card.appendChild(element("h3", "broker-card-title", name || "Untitled task"));
-      card.appendChild(element("p", "broker-task-state", `${task.status || "unknown"} · r${Number(task.revision) || 0}`));
-      const goal = typeof task.goal === "string" ? task.goal : "";
-      if (goal) card.appendChild(element("p", "broker-task-goal", goal));
-      const actions = element("div", "broker-actions");
-      if (task.status === "created" || task.status === "running" || task.status === "awaiting_approval") {
-        actions.appendChild(button("Cancel", () => send({
-          type: "cancelBrokerTask", taskId: task.id, expectedRevision: task.revision,
-        }), writeDisabled));
-      }
-      if (task.status === "created" || task.status === "running") actions.appendChild(delegateForm(task, send, writeDisabled));
-      card.appendChild(actions);
-      taskList.appendChild(card);
+    for (const task of activeTasks) taskList.appendChild(renderTaskCard(task, send, writeDisabled));
+    if (historyTasks.length) {
+      const history = element("details", "broker-history");
+      history.open = historyOpen;
+      history.addEventListener("toggle", () => { historyOpen = history.open; });
+      const latestDate = historyTasks.map((task) => taskCreatedDate(task.createdAt)).filter(Boolean)
+        .map((date) => date.full).sort().at(-1);
+      const shortDate = latestDate ? taskCreatedDate(latestDate)?.short : undefined;
+      const fullLabel = `History (${historyTasks.length})${latestDate ? ` · ${latestDate}` : ""}`;
+      const mediumLabel = `History (${historyTasks.length})${shortDate ? ` · ${shortDate}` : ""}`;
+      const historySummary = element("summary", "broker-summary");
+      historySummary.setAttribute("aria-label", fullLabel);
+      historySummary.title = fullLabel;
+      historySummary.appendChild(element("span", "text-full", fullLabel));
+      historySummary.appendChild(element("span", "text-medium", mediumLabel));
+      historySummary.appendChild(element("span", "text-short", `History (${historyTasks.length})`));
+      history.appendChild(historySummary);
+      const historyList = element("div", "broker-list");
+      for (const task of historyTasks) historyList.appendChild(renderTaskCard(task, send, writeDisabled));
+      history.appendChild(historyList);
+      taskList.appendChild(history);
     }
     section.appendChild(taskList);
 

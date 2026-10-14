@@ -8,6 +8,7 @@ const { execFileSync } = require("child_process");
 const { parseRunJsonl, parseLocalLlmMetricsCsv } = require("../../shared/telemetry/runState");
 const { BrokerClient } = require("../out/broker/client");
 const { scanLiveTokenStatus } = require("../out/broker/tokenScanner");
+const { selectCodexRateLimitWindows } = require("../out/broker/codexAppServer");
 const { findExecutableOnPath } = require("../out/broker/executable");
 const {
   EncryptedEventLedger,
@@ -34,6 +35,28 @@ const {
 } = require("../out/broker");
 
 async function main() {
+  {
+    const selected = selectCodexRateLimitWindows({
+      rateLimits: { limitId: "codex_other", primary: { usedPercent: 80 }, secondary: { usedPercent: 60 } },
+      rateLimitsByLimitId: {
+        codex: { limitId: "codex", primary: { windowDurationMins: 300, usedPercent: 42 }, secondary: { windowDurationMins: 10080, usedPercent: 12 } },
+        other: { limitId: "other", primary: { windowDurationMins: 300, usedPercent: 5 }, secondary: { windowDurationMins: 10080, usedPercent: 6 } },
+      },
+    });
+    assert.strictEqual(selected.fiveHour.usedPercent, 42, "the nested codex snapshot supplies its own five-hour duration bucket");
+    assert.strictEqual(selected.weekly.usedPercent, 12, "the nested codex snapshot supplies its own weekly duration bucket");
+    const legacy = selectCodexRateLimitWindows({ rateLimits: { primary: { usedPercent: 3 }, secondary: { usedPercent: 80 } } });
+    assert.strictEqual(legacy.fiveHour.usedPercent, 3, "legacy unlabeled response retains documented primary fallback");
+    assert.strictEqual(legacy.weekly.usedPercent, 80);
+    const unknown = selectCodexRateLimitWindows({ rateLimitsByLimitId: { monthly: { limitId: "monthly", primary: { windowDurationMins: 43200, usedPercent: 1 } } } });
+    assert.strictEqual(unknown.fiveHour, undefined, "unknown windows are not mislabeled as five-hour quota");
+    assert.strictEqual(unknown.weekly, undefined, "unknown windows are not mislabeled as weekly quota");
+    const noCodex = selectCodexRateLimitWindows({
+      rateLimits: { limitId: "other", primary: { usedPercent: 2 }, secondary: { usedPercent: 3 } },
+      rateLimitsByLimitId: { other: { limitId: "other", primary: { usedPercent: 2 }, secondary: { usedPercent: 3 } } },
+    });
+    assert.deepStrictEqual(noCodex, {}, "a non-codex limit bucket cannot be relabeled as Codex quota");
+  }
   {
     const measuredAt = "2026-10-13T04:00:00.000Z";
     const tokenManager = {
@@ -73,7 +96,25 @@ async function main() {
       });
       assert.strictEqual(staleCollectionCalls, 1, "stale file triggers the shared collector exactly once");
       assert.strictEqual(staleResult.codexPercentage, 33);
-      assert.strictEqual(staleResult.lastSync, measuredAt);
+      assert.strictEqual(staleResult.lastSync, "", "collection completion is not a quota measurement timestamp");
+
+      const partialPath = path.join(staleRoot, "partial-token-status.json");
+      fs.writeFileSync(partialPath, JSON.stringify({
+        lastSync: measuredAt,
+        opusWeeklyPercentage: 40,
+        opusWeeklyTokensLeft: 400,
+        opusWeeklyMax: 1000,
+        quotaPools: [{ id: "antigravity.default", provider: "antigravity", remainingPercentage: 100, measuredAt }],
+      }));
+      const partialResult = await scanLiveTokenStatus({ tokenStatusPath: partialPath, now: () => new Date(measuredAt) });
+      assert.strictEqual(partialResult.antigravityPercentage, 100);
+      assert.strictEqual(partialResult.opusWeeklyPercentage, undefined, "a fresh partial provider sample cannot republish a stale weekly flat-field fallback");
+      assert.strictEqual(partialResult.opusWeeklyTokensLeft, undefined, "stale absolute counts are removed with their missing quota window");
+
+      const idleResult = await scanLiveTokenStatus({ tokenStatusPath: null, now: () => new Date(measuredAt), tokenManager: {
+        async getStatus() { return { localComputeStatus: { endpointHealth: "idle", loadedModels: [], gpus: [] }, errors: [] }; },
+      } });
+      assert.strictEqual(idleResult.localComputeStatus.status, "online", "a responsive idle local endpoint is connected, not offline");
     } finally {
       fs.rmSync(staleRoot, { recursive: true, force: true });
     }
@@ -513,6 +554,14 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
     assert.ok(mcpTools.result.tools.length >= 10);
     assert.ok(mcpTools.result.tools.some((tool) => tool.name === "integrated_power_cancel"));
     assert.ok(mcpTools.result.tools.some((tool) => tool.name === "integrated_power_merge"));
+    const canonicalQuotaFixture = { codexPercentage: 0, codexWeeklyPercentage: 61, source: "synthetic-canonical-reader" };
+    let mcpQuotaReads = 0;
+    const mcpQuota = await processMcpRequest(broker, {
+      jsonrpc: "2.0", id: 13, method: "tools/call",
+      params: { name: "integrated_power_get_token_status", arguments: {} },
+    }, async () => { mcpQuotaReads++; return canonicalQuotaFixture; });
+    assert.deepStrictEqual(mcpQuota.result.structuredContent, canonicalQuotaFixture, "MCP quota tool returns the same injected canonical reader snapshot as HTTP");
+    assert.strictEqual(mcpQuotaReads, 1, "MCP quota tool reads one canonical snapshot and does not invoke capability discovery");
     const keyPath = path.join(temp, "secure", "events.key");
     const keyring = new Map();
     const testKeyStore = {
@@ -593,16 +642,36 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
     let persistedTaskId;
     let dispatchCount = 0;
     let allowDispatch = true;
+    let staleQuotaPoolId = "";
     const fakeQuota = {
       antigravityPercentage: 100, antigravityWeeklyPercentage: 80, antigravityResetTime: "2026-10-12T00:00:00.000Z",
       opusPercentage: 100, opusWeeklyPercentage: 80, opusResetTime: "2026-10-12T00:00:00.000Z",
       codexPercentage: 100, codexWeeklyPercentage: 80, codexResetTime: "2026-10-12T00:00:00.000Z",
       lastSync: new Date().toISOString(),
+      quotaPools: [
+        { id: "antigravity.default", provider: "antigravity", remainingPercentage: 100, windowDurationMins: 300, measuredAt: "" },
+        { id: "antigravity.weekly", provider: "antigravity", remainingPercentage: 80, windowDurationMins: 10080, measuredAt: "" },
+        { id: "opus.default", provider: "anthropic", remainingPercentage: 100, windowDurationMins: 300, measuredAt: "" },
+        { id: "opus.weekly", provider: "anthropic", remainingPercentage: 80, windowDurationMins: 10080, measuredAt: "" },
+        { id: "codex.5h", provider: "codex", remainingPercentage: 100, windowDurationMins: 300, measuredAt: "" },
+        { id: "codex.weekly", provider: "codex", remainingPercentage: 80, windowDurationMins: 10080, measuredAt: "" },
+      ],
+    };
+    const readFakeQuota = async () => {
+      const measuredAt = new Date().toISOString();
+      return {
+        ...fakeQuota,
+        lastSync: measuredAt,
+        quotaPools: fakeQuota.quotaPools.map((pool) => ({
+          ...pool,
+          measuredAt: pool.id === staleQuotaPoolId ? new Date(Date.now() - 10 * 60_000).toISOString() : measuredAt,
+        })),
+      };
     };
     const httpServer = await startBrokerServer(broker, 0, {
       stateRoot: telemetryRoot,
       autoSchedule: false,
-      tokenStatusReader: async () => fakeQuota,
+      tokenStatusReader: readFakeQuota,
       prewarmDispatcher: async () => { dispatchCount++; return { spawned: allowDispatch }; },
     });
     try {
@@ -637,6 +706,14 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
       assert.deepStrictEqual(prewarmResults.map((item) => item.status).sort(), ["dispatched", "duplicate"]);
       assert.strictEqual(prewarmResults.every((item) => item.timerConfirmed === false), true);
       assert.strictEqual(dispatchCount, 1, "two clients in one quota window cause one prewarm dispatch");
+      staleQuotaPoolId = "codex.5h";
+      const mixedFreshness = await fetch(`http://127.0.0.1:${httpServer.port}/v1/tokens/prewarm`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "codex", manual: true, idempotencyKey: "codex-mixed-freshness" }),
+      }).then((response) => response.json());
+      assert.strictEqual(mixedFreshness.status, "skipped", "fresh Antigravity data cannot authorize a Codex prewarm with a stale Codex 5-hour pool");
+      assert.strictEqual(dispatchCount, 1);
+      staleQuotaPoolId = "";
       const afterOnce = await fetch(quotaSettingsUrl).then((response) => response.json());
       assert.strictEqual(afterOnce.settings.prewarmModes.antigravity, "click", "successful Once dispatch resets the shared mode");
       assert.strictEqual(afterOnce.revision, 2);
@@ -772,7 +849,7 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
       let scheduledDispatches = 0;
       const schedulerServer = await startBrokerServer(scheduledBroker, 0, {
         stateRoot: schedulerRoot,
-        tokenStatusReader: async () => fakeQuota,
+        tokenStatusReader: readFakeQuota,
         prewarmDispatcher: async () => { scheduledDispatches++; return { spawned: true }; },
       });
       try {
@@ -821,8 +898,8 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
       lastSync: new Date().toISOString(),
       errors: ["telemetry hiccup"],
       quotaPools: [
-        { id: "codex.5h", provider: "codex", remainingPercentage: 100, resetTime: "2026-09-01T14:41:19.000Z", source: "cli-json", confidence: "reported-quota" },
-        { id: "antigravity.default", provider: "antigravity", remainingPercentage: 91.3, resetTime: "2026-09-02T06:09:28Z", source: "cli-text", confidence: "reported-quota" },
+        { id: "codex.5h", provider: "codex", remainingPercentage: 100, resetTime: "2026-09-01T14:41:19.000Z", measuredAt: new Date().toISOString(), windowDurationMins: 300, source: "cli-json", confidence: "reported-quota" },
+        { id: "antigravity.default", provider: "antigravity", remainingPercentage: 91.3, resetTime: "2026-09-02T06:09:28Z", measuredAt: new Date().toISOString(), windowDurationMins: 300, source: "provider-api", confidence: "reported-quota" },
       ],
       localComputeStatus: {
         endpointHealth: "ok",
@@ -906,7 +983,7 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
         // quota pools keep source/confidence
         assert.ok(Array.isArray(ts.quotaPools));
         const agyPool = ts.quotaPools.find((p) => p.id === "antigravity.default");
-        assert.strictEqual(agyPool.source, "cli-text");
+        assert.strictEqual(agyPool.source, "provider-api");
         assert.strictEqual(agyPool.confidence, "reported-quota");
         // endpoint health / loaded models / program name
         assert.strictEqual(ts.localComputeStatus.endpointHealth, "ok");

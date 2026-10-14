@@ -1,7 +1,7 @@
 // Pre-warm Window Activation & Antigravity IDE Stop Integration Unit Tests
 // Verifies:
 //   1. Pre-warm ping emits minimal tokens with instant cancellation.
-//   2. 5-hour window transitions from Ready into active 5h rolling countdown.
+//   2. Dispatch acknowledgements never fabricate quota or timer measurements.
 //   3. Antigravity IDE stop selectors correctly match the Agent Panel cancel elements.
 //
 // Run: node scripts/test-prewarm.js
@@ -78,7 +78,8 @@ assert.strictEqual(shared.mergeQuotaSettings({ prewarmMode: "once" }).prewarmMod
 const baseTime = Date.now();
 const resetIn = (h) => new Date(baseTime + h * 3600e3).toISOString();
 
-// A window is Ready ONLY when dormant (no active future reset timer)
+// A window is Ready when quota data is full and weekly policy data is known;
+// a future reset timestamp alone is not proof of active generation.
 const dormantMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 100,
   antigravityWeeklyPercentage: 100,
@@ -90,7 +91,7 @@ assert.strictEqual(dormantMetric.canPrewarm, true);
 assert.strictEqual(dormantMetric.isPrewarmed, false);
 assert.strictEqual(shared.canTriggerPrewarm(dormantMetric), true);
 
-// When 100% full BUT resetTime is active in the future, it is prewarmed / active rolling recharge (NOT ready)
+// A full provider quota with an active countdown less than 5h displays the countdown but remains Ready for prewarm.
 const fullMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 100,
   antigravityResetTime: resetIn(3),
@@ -98,11 +99,11 @@ const fullMetric = shared.buildTokenMetric("5Hours", {
   antigravityWeeklyResetTime: resetIn(48),
 }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
 
-assert.strictEqual(fullMetric.isReady, false);
-assert.strictEqual(fullMetric.canPrewarm, false);
+assert.strictEqual(fullMetric.isReady, true);
+assert.strictEqual(fullMetric.canPrewarm, true);
 assert.strictEqual(fullMetric.isPrewarmed, false);
-assert.strictEqual(shared.canTriggerPrewarm(fullMetric), false);
-assert.ok(fullMetric.refreshFull.includes("2h 59m") || fullMetric.refreshFull.includes("3h 0m") || fullMetric.refreshFull.includes("3h"));
+assert.match(fullMetric.refreshFull, /^· Refreshes in (?:2h 59m|3h 0m)$/);
+assert.match(fullMetric.refreshShort, /^· (?:2:59|3:00)$/);
 
 const activeMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 95,
@@ -117,21 +118,19 @@ const exhaustedMetric = shared.buildTokenMetric("5Hours", {
 }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
 assert.strictEqual(shared.canTriggerPrewarm(exhaustedMetric), false);
 
-// 5. Pre-warm state transition
+// 5. Pre-warm acknowledgement does not mutate provider-measured quota state
 const initialStatus = {
   antigravityPercentage: 100,
   antigravityWeeklyPercentage: 100,
   antigravityWeeklyResetTime: resetIn(48),
 };
 const prewarmedStatus = shared.applyPrewarmTransition(initialStatus, "antigravity", baseTime);
-assert.ok(prewarmedStatus.antigravityPercentage >= 99.9, "must retain >= 99.9% quota");
-assert.ok(prewarmedStatus.antigravityResetTime, "resetTime must be populated");
+assert.strictEqual(prewarmedStatus.antigravityPercentage, 100, "dispatch cannot fabricate a measured percentage");
+assert.strictEqual(prewarmedStatus.antigravityResetTime, undefined, "dispatch cannot fabricate a provider reset time");
 
 const postMetric = shared.buildTokenMetric("5Hours", prewarmedStatus, "antigravity", "Gemini 5Hours", "antigravityWeekly");
-assert.strictEqual(postMetric.isReady, false, "post-prewarm window must no longer be ready");
-assert.strictEqual(postMetric.canPrewarm, false, "post-prewarm window cannot be prewarmed again");
-assert.ok(postMetric.refreshFull.includes("Refreshes in"), "post-prewarm countdown must show active refresh");
-assert.ok(postMetric.refreshFull.includes("4h 59m") || postMetric.refreshFull.includes("5h"), "post-prewarm countdown must show ~5h refresh");
+assert.strictEqual(postMetric.isReady, true, "without a provider measurement the window remains in its last known measured state");
+assert.strictEqual(postMetric.canPrewarm, true, "dispatch alone does not prove the provider started a timer");
 
 // 6. Pre-warm async execution with instant abort
 async function runAsyncTests() {
@@ -149,8 +148,10 @@ async function runAsyncTests() {
   });
 
   assert.strictEqual(result.ok, true);
-  assert.strictEqual(result.tokensConsumed, 1);
-  assert.ok(result.retainedPercentage >= 99.9);
+  assert.strictEqual(result.tokensConsumed, undefined, "ACK does not prove token consumption");
+  assert.strictEqual(result.retainedPercentage, undefined, "ACK does not prove retained quota");
+  assert.strictEqual(result.timerStartedAt, undefined, "ACK does not prove the provider started a timer");
+  assert.match(result.message, /dispatched|accepted/i);
   assert.strictEqual(dispatchedPrompt, "integrated power");
   // 7. AGY Lowest Model Resolution for Gemini and Claude
   const { getLowestAgyModel } = require("../out/broker/agyModelResolver");
@@ -166,7 +167,7 @@ async function runAsyncTests() {
 
   console.log("  ok - stop selectors parity verified");
   console.log("  ok - minimal token ping and instant cancellation verified");
-  console.log("  ok - 5-hour window transition verified (>99% quota retained)");
+  console.log("  ok - pre-warm request cancellation preserves measured quota and does not invent a reset or retained percentage");
   console.log("  ok - separate AGY lowest-tier model resolution (Gemini 3.6 Flash Low & Claude Sonnet 5.5 Low) verified");
   console.log("\npre-warm trigger test passed");
 }

@@ -204,6 +204,13 @@ try {
       const brokerState = {
         workspaceName: dashboardState.workspaceName, loading: false, busy: false, tasks: [
           { id: "task-1", title: "A deliberately long broker task title that must wrap", goal: "A long synthetic task goal that must not push actions beyond the panel edge.", status: "running", revision: 4 },
+          ...Array.from({ length: 21 }, (_, index) => {
+            const status = ["completed", "cancelled", "failed", "merged"][index % 4];
+            return {
+            id: `history-${index}`, title: `Historical task ${index + 1}`, goal: "Synthetic historical record.", status, revision: 4,
+            ...(index === 19 ? {} : { createdAt: index === 20 ? "not-a-date" : "2026-08-15T12:34:00.000Z" }),
+            };
+          }),
         ], approvals: [
           { id: "approval-1", taskId: "task-1", action: "external-send", description: "Confirm this long approval description without breaking the compact dashboard panel.", expectedRevision: 4 },
         ], artifacts: dashboardState.artifacts,
@@ -219,8 +226,19 @@ html,body,#app{width:199px;max-width:199px;min-width:0;margin:0;box-sizing:borde
 <script src="${coreUrl}"></script><script>window.IPQuota=window.IPQuota||IPQuota;</script>
 <script src="${controlsUrl}"></script><script src="${mainUrl}"></script>
 <script>
-window.dispatchEvent(new MessageEvent("message",{data:{type:"state",state:${JSON.stringify(dashboardState)}}}));
-window.dispatchEvent(new MessageEvent("message",{data:{type:"brokerState",state:${JSON.stringify(brokerState)}}}));
+const sendBrokerMessage=message=>window.dispatchEvent(new MessageEvent("message",{data:JSON.parse(JSON.stringify(message))}));
+sendBrokerMessage({type:"state",state:${JSON.stringify(dashboardState)}});
+sendBrokerMessage({type:"brokerState",state:${JSON.stringify(brokerState)}});
+sendBrokerMessage({type:"brokerState",state:{...${JSON.stringify(brokerState)},error:"Integrated Power broker is not started."}});
+const brokerErrorInitiallyVisible=document.querySelector("#app .broker-error")?.textContent==="Integrated Power broker is not started.";
+const successWireMessage=JSON.parse(JSON.stringify({type:"brokerState",state:{...${JSON.stringify(brokerState)},error:undefined}}));
+const successWireOmittedError=!Object.prototype.hasOwnProperty.call(successWireMessage.state,"error");
+sendBrokerMessage(successWireMessage);
+const staleErrorClearedAfterSuccess=!document.querySelector("#app .broker-error");
+sendBrokerMessage({type:"brokerState",state:{...${JSON.stringify(brokerState)},error:"Latest broker action failed."}});
+const incomingBrokerErrorPreserved=document.querySelector("#app .broker-error")?.textContent==="Latest broker action failed.";
+sendBrokerMessage({type:"brokerLoading",busy:true});
+const staleErrorClearedOnLoading=!document.querySelector("#app .broker-error");
 const results=[];
 for(const width of [199,160,120]){
   for(const node of [document.documentElement,document.body,document.getElementById("app")])node.style.width=width+"px";
@@ -232,7 +250,14 @@ for(const width of [199,160,120]){
   const controlBounds=controls.filter(e=>{const r=e.getBoundingClientRect();return r.left< -1||r.right>width+1;}).map(e=>({label:(e.innerText||e.getAttribute("aria-label")||e.value||"").slice(0,40),left:Math.round(e.getBoundingClientRect().left),right:Math.round(e.getBoundingClientRect().right)}));
   const clippedControls=controls.flatMap(e=>{const r=e.getBoundingClientRect();for(let p=e.parentElement;p&&p!==document.body;p=p.parentElement){const overflow=getComputedStyle(p).overflowX;if((overflow==="hidden"||overflow==="clip")&&(r.left<p.getBoundingClientRect().left-1||r.right>p.getBoundingClientRect().right+1))return [{label:(e.innerText||e.getAttribute("aria-label")||e.value||"").slice(0,40),ancestor:String(p.className||p.tagName)}]}return []});
   const prewarm=[...document.querySelectorAll("#app button[data-prewarm]")].map(e=>({target:e.dataset.prewarm,disabled:e.disabled,title:e.title}));
-  results.push({width,bodyClient:document.body.clientWidth,bodyScroll:document.body.scrollWidth,appClient:document.getElementById("app").clientWidth,appScroll:document.getElementById("app").scrollWidth,controls:controls.length,controlBounds,clippedControls,outOfBounds:outOfBounds.slice(0,20),overflowingButtons,multilineButtons,prewarm,sections:[...document.querySelectorAll("#app h1,#app h2,#app h3")].map(e=>e.innerText).slice(0,20)});
+  const history=document.querySelector("#app details.broker-history");
+  const historySummary=history?.querySelector("summary");
+  const historyStages=Object.fromEntries(["full","medium","short"].map(stage=>{const node=historySummary?.querySelector(".text-"+stage);return [stage,{visible:Boolean(node&&getComputedStyle(node).display!=="none"),text:node?.textContent||""}]}));
+  const historyRange=historySummary&&document.createRange();
+  if(historyRange)historyRange.selectNodeContents(historySummary);
+  const historyLines=historyRange?[...new Set([...historyRange.getClientRects()].map(rect=>Math.round(rect.top)))].length:0;
+  const historicalStates=[...(history?.querySelectorAll(".broker-task-state")||[])].map(e=>e.textContent);
+  results.push({width,bodyClient:document.body.clientWidth,bodyScroll:document.body.scrollWidth,appClient:document.getElementById("app").clientWidth,appScroll:document.getElementById("app").scrollWidth,controls:controls.length,controlBounds,clippedControls,outOfBounds:outOfBounds.slice(0,20),overflowingButtons,multilineButtons,prewarm,historySummary:historySummary?.innerText||"",historyStages,historyAriaLabel:historySummary?.getAttribute("aria-label")||"",historyTitle:historySummary?.title||"",historySummaryOpen:history?.open??null,historySummaryOverflow:historySummary?historySummary.scrollWidth>historySummary.clientWidth:false,historySummaryWidth:historySummary?.clientWidth??0,historySummaryScrollWidth:historySummary?.scrollWidth??0,historySummaryLines:historyLines,historyCardCount:history?.querySelectorAll("article.broker-card").length??0,historyDatedTaskCount:historicalStates.filter(text=>text.includes("2026-08-15")).length,historyInventedDate:historicalStates.some(text=>text.includes("Invalid Date")),sections:[...document.querySelectorAll("#app h1,#app h2,#app h3")].map(e=>e.innerText).slice(0,20)});
 }
 const disabledButtons=[...document.querySelectorAll("#app button[data-prewarm]")];
 disabledButtons.forEach(e=>e.click());
@@ -249,7 +274,14 @@ const unavailableGauge=document.querySelector("#app .token-metric.unavailable .p
 const unavailable={segments:Number(unavailableGauge?.querySelector(".progress-ticks")?.dataset.segments),trackClientWidth:unavailableGauge?.clientWidth,tickWidth:unavailableGauge?.querySelector(".progress-ticks")?.getBoundingClientRect().width};
 for(const node of [document.documentElement,document.body,document.getElementById("app")])node.style.width="900px";
 window.dispatchEvent(new MessageEvent("message",{data:{type:"state",state:${JSON.stringify(dashboardState)}}}));
-document.title=JSON.stringify({results,disabledDispatches,dispatchedTargets,partialGauge,readyGauge,unavailable});
+const readHistoryLabel=()=>{const summary=document.querySelector("#app details.broker-history summary");return {full:summary?.querySelector(".text-full")?.textContent||"",medium:summary?.querySelector(".text-medium")?.textContent||"",short:summary?.querySelector(".text-short")?.textContent||"",visible:Object.fromEntries(["full","medium","short"].map(stage=>{const node=summary?.querySelector(".text-"+stage);return [stage,Boolean(node&&getComputedStyle(node).display!=="none")]})),ariaLabel:summary?.getAttribute("aria-label")||""}};
+const historyPanel=document.querySelector("#app .broker-panel");
+historyPanel.style.maxWidth="none";
+historyPanel.style.width="900px";
+const fullHistoryLabel=readHistoryLabel();
+historyPanel.style.width="260px";
+const mediumHistoryLabel=readHistoryLabel();
+document.title=JSON.stringify({results,disabledDispatches,dispatchedTargets,partialGauge,readyGauge,unavailable,fullHistoryLabel,mediumHistoryLabel,brokerStateProof:{brokerErrorInitiallyVisible,successWireOmittedError,staleErrorClearedAfterSuccess,incomingBrokerErrorPreserved,staleErrorClearedOnLoading}});
 </script></body></html>`;
       fs.writeFileSync(fixturePath, fixture, "utf8");
       const launcher = [
@@ -264,7 +296,7 @@ document.title=JSON.stringify({results,disabledDispatches,dispatchedTargets,part
       const dom = execFileSync(chromeCandidates[0], launcher, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 20000, maxBuffer: 4 * 1024 * 1024 });
       const title = dom.match(/<title>(.*?)<\/title>/s)?.[1];
       assert(title, "Chromium did not return compact layout measurements.");
-      const { results: measurements, disabledDispatches, dispatchedTargets, partialGauge, readyGauge, unavailable } = JSON.parse(title);
+      const { results: measurements, disabledDispatches, dispatchedTargets, partialGauge, readyGauge, unavailable, brokerStateProof, fullHistoryLabel, mediumHistoryLabel } = JSON.parse(title);
       for (const measured of measurements) {
         const width = measured.width;
         for (const target of ["body", "app"]) {
@@ -279,19 +311,37 @@ document.title=JSON.stringify({results,disabledDispatches,dispatchedTargets,part
         assert(measured.sections.some((title) => title.includes("Broker tasks")), `Broker controls did not render at ${width}px.`);
         assert(JSON.stringify(measured.prewarm.map((button) => button.target).sort()) === JSON.stringify(["antigravity", "codex", "opus"]), `all three model actions must render at ${width}px`);
         assert(measured.prewarm.every((button) => button.disabled && button.title.length > 0), `non-Ready model actions must be disabled with a reason at ${width}px`);
+        assert(measured.historySummary.includes("History (21)"), `collapsed terminal history must show its count at ${width}px: ${JSON.stringify(measured)}`);
+        assert(measured.historyStages.short.visible && !measured.historyStages.medium.visible && !measured.historyStages.full.visible, `short history label must be the only visible stage at ${width}px: ${JSON.stringify(measured.historyStages)}`);
+        assert(measured.historyStages.short.text === "History (21)", `short history label must preserve the two-digit count at ${width}px`);
+        assert(measured.historyAriaLabel === "History (21) · 2026-08-15" && measured.historyTitle === measured.historyAriaLabel, `the accessible label and tooltip must retain the full creation date at ${width}px`);
+        assert(measured.historySummaryOpen === false, `terminal history must start collapsed at ${width}px`);
+        assert(measured.historyCardCount === 21, `terminal history must retain every old task at ${width}px`);
+        assert(measured.historySummaryOverflow === false, `history summary must fit without horizontal clipping at ${width}px: ${JSON.stringify(measured)}`);
+        assert(measured.historySummaryLines <= 1, `history summary must stay on one line at ${width}px`);
+        assert(measured.historyDatedTaskCount === 19, `only valid createdAt dates may be shown for history at ${width}px: ${JSON.stringify(measured)}`);
+        assert(measured.historyInventedDate === false, `missing or invalid createdAt values must not create fake dates at ${width}px`);
       }
+      assert(brokerStateProof.brokerErrorInitiallyVisible, "the broker transport fixture must first display the received error");
+      assert(brokerStateProof.successWireOmittedError, "JSON serialization must drop the undefined error field from a success snapshot");
+      assert(brokerStateProof.staleErrorClearedAfterSuccess, "a successful broker snapshot without an error must clear the prior broker error");
+      assert(brokerStateProof.incomingBrokerErrorPreserved, "a new broker action error must remain visible");
+      assert(brokerStateProof.staleErrorClearedOnLoading, "a new broker loading snapshot must clear stale broker errors");
+      assert(fullHistoryLabel.full === "History (21) · 2026-08-15" && fullHistoryLabel.visible.full && !fullHistoryLabel.visible.medium && !fullHistoryLabel.visible.short, `wide panels must use the full label: ${JSON.stringify(fullHistoryLabel)}`);
+      assert(mediumHistoryLabel.medium === "History (21) · 8/15" && mediumHistoryLabel.visible.medium && !mediumHistoryLabel.visible.full && !mediumHistoryLabel.visible.short, `medium panels must use the medium label: ${JSON.stringify(mediumHistoryLabel)}`);
+      assert(fullHistoryLabel.short === "History (21)" && mediumHistoryLabel.short === "History (21)", "short label must retain the count while dates remain available in accessible text");
       assert(disabledDispatches === 0, "disabled prewarm actions must not dispatch to the IDE bridge");
       assert(JSON.stringify(dispatchedTargets) === JSON.stringify(["antigravity", "codex", "opus"]), "enabled model actions must dispatch each canonical target through the IDE bridge");
       assert(partialGauge.length >= 6, `all provider windows must render an actual gauge overlay: ${JSON.stringify(partialGauge)}`);
       for (const [index, item] of partialGauge.entries()) {
-        const expectedSegments = item.label.endsWith("Weekly usage") ? 7 : 5;
-        assert(item.segments === expectedSegments, `gauge ${index} must keep its ${expectedSegments} segments`);
+        const expectedSegments = item.label.includes("Weekly") ? 7 : 5;
+        assert(item.segments === expectedSegments, `gauge ${index} must keep its ${expectedSegments} segments: ${JSON.stringify(item)}`);
         assert(Math.abs(item.trackClientWidth - item.tickWidth) < 1, `gauge ${index} ticks must cover the full track independently of fill: ${JSON.stringify(item)}`);
         assert(item.fillWidth < item.trackWidth, `partial gauge ${index} must prove ticks do not follow the fill width: ${JSON.stringify(item)}`);
         assert(item.background.includes("linear-gradient") && (item.background.match(/rgba\(255, 255, 255, 0\.55\)/g) || []).length === (expectedSegments - 1) * 2, `gauge ${index} computed divider positions must match the shared ${expectedSegments}-segment gradient`);
       }
       const canonicalReadyGauge = readyGauge.filter((item) => ["Gemini", "Claude", "ChatGPT"].includes(item.group));
-      assert(canonicalReadyGauge.length === 6 && canonicalReadyGauge.every((item) => item.segments === (item.label.endsWith("Weekly usage") ? 7 : 5) && Math.abs(item.trackClientWidth - item.tickWidth) < 1), `all six Ready provider gauges must retain the full 5/7 segment overlay: ${JSON.stringify(canonicalReadyGauge)}`);
+      assert(canonicalReadyGauge.length === 6 && canonicalReadyGauge.every((item) => item.segments === (item.label.includes("Weekly") ? 7 : 5) && Math.abs(item.trackClientWidth - item.tickWidth) < 1), `all six Ready provider gauges must retain the full 5/7 segment overlay: ${JSON.stringify(canonicalReadyGauge)}`);
       assert(unavailable.segments === 5, "an unavailable 5h window must retain its gauge ticks");
       assert(Math.abs(unavailable.trackClientWidth - unavailable.tickWidth) < 1, `unavailable gauge ticks must cover the full track: ${JSON.stringify(unavailable)}`);
       console.log("compact UI Chromium layout passed at 199px, 160px, and 120px");

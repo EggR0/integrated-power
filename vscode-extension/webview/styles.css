@@ -94,6 +94,8 @@ body {
 .broker-card-title { font-size: 12px; }
 .broker-task-goal { font-size: 11px; white-space: pre-wrap; }
 .broker-summary { cursor: pointer; overflow-wrap: anywhere; }
+.broker-history { min-width: 0; }
+.broker-history > .broker-summary { max-width: 100%; font-size: 10px; white-space: nowrap; overflow-wrap: normal; }
 .broker-form { display: grid; gap: 6px; margin-top: 7px; }
 .broker-field { display: grid; gap: 3px; }
 .broker-field-label { font-size: 11px; overflow-wrap: anywhere; }
@@ -108,6 +110,7 @@ body {
   .broker-panel { padding: 5px; }
   .broker-heading { align-items: flex-start; }
   .broker-action { padding: 4px 5px; font-size: 10px; }
+  .broker-history > .broker-summary { font-size: 9px; }
 }
 
 .task-content {

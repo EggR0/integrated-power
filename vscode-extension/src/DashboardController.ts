@@ -61,6 +61,7 @@ export class DashboardController implements vscode.Disposable {
   private applyingQuotaSettings = false;
   private quotaSettingsRefresh?: Promise<void>;
   private quotaSettingsRetryAt = 0;
+  private isTokenRefreshing = false;
   private state: DashboardState = this.emptyState();
 
   constructor(
@@ -70,6 +71,11 @@ export class DashboardController implements vscode.Disposable {
   ) {
     this.paths = new WorkspacePaths(context);
     this.disposables.push(this.output);
+    const cachedTokenStatus = this.loadCachedTokenStatus();
+    if (cachedTokenStatus) {
+      this.state.tokenStatus = cachedTokenStatus;
+      this.state.isTokenLoading = false;
+    }
     this.currentPrewarmModes = this.loadPrewarmModesFromConfig();
     this.currentPrewarmMode = this.currentPrewarmModes.antigravity;
     this.state.prewarmMode = this.currentPrewarmMode;
@@ -143,13 +149,14 @@ export class DashboardController implements vscode.Disposable {
       case "ready":
         this.seedVisibleState(message.state);
         this.postState();
-        await this.refreshQuotaSettings(true);
-        await this.refreshBrokerControls();
-        await this.refresh();
+        this.postBrokerState();
+        void this.refreshQuotaSettings(true);
+        void this.refreshBrokerControls();
+        void this.refresh();
         return;
       case "refresh":
-        await this.refresh(true);
-        await this.refreshBrokerControls();
+        void this.refresh(true);
+        void this.refreshBrokerControls();
         return;
       case "refreshBroker":
         await this.refreshBrokerControls();
@@ -206,7 +213,16 @@ export class DashboardController implements vscode.Disposable {
     return { workspacePath: folder.uri.fsPath };
   }
 
-  private async refreshBrokerControls(): Promise<void> {
+  public async refreshBrokerControls(): Promise<void> {
+    if (this.brokerController && typeof this.brokerController.getPort === "function") {
+      const port = this.brokerController.getPort();
+      if (!port) {
+        this.brokerState.loading = true;
+        this.brokerState.error = undefined;
+        this.postMessage({ type: "brokerLoading" });
+        return;
+      }
+    }
     this.brokerState.loading = true;
     this.brokerState.error = undefined;
     this.postMessage({ type: "brokerLoading" });
@@ -237,6 +253,10 @@ export class DashboardController implements vscode.Disposable {
       this.brokerState.loading = false;
       this.postMessage({ type: "brokerState", state: { ...this.brokerState } });
     }
+  }
+
+  public postBrokerState(): void {
+    this.postMessage({ type: "brokerState", state: { ...this.brokerState } });
   }
 
   private async runBrokerAction(action: () => Promise<void>): Promise<void> {
@@ -455,7 +475,7 @@ export class DashboardController implements vscode.Disposable {
       await this.applyQuotaSettings(result.revision, result.settings);
     } catch (error) {
       // A legacy broker has no shared-settings capability; keep the validated IDE settings path.
-      const health = this.brokerController?.getAttachedHealth() ?? await this.brokerController?.getClient().health().catch(() => undefined);
+      const health = this.brokerController?.getAttachedHealth?.() ?? await this.brokerController?.getClient().health().catch(() => undefined);
       this.sharedQuotaSettingsCapabilityKnown = Boolean(health);
       this.sharedQuotaSettingsSupported = Boolean(health?.capabilities?.includes("quota.settings.read"));
       this.sharedQuotaSettingsReady = false;
@@ -575,7 +595,7 @@ export class DashboardController implements vscode.Disposable {
 
     const interval = this.getPollIntervalMs();
     this.tokenPollingTimer = setInterval(async () => {
-      if (this.isRefreshing) {
+      if (this.isRefreshing || this.isTokenRefreshing) {
         return;
       }
       void this.refreshQuotaSettings();
@@ -656,8 +676,12 @@ export class DashboardController implements vscode.Disposable {
 
     let resolvedTokenStatus = this.mergeTokenStatus(this.state.tokenStatus, tokenStatus);
 
-    // On first load, show the skeleton only when there is truly no prior or newly fetched quota data.
-    if (resolvedTokenStatus && !this.hasUsableTokenStatus(resolvedTokenStatus)) {
+    if (!resolvedTokenStatus || !this.hasUsableTokenStatus(resolvedTokenStatus)) {
+      resolvedTokenStatus = this.loadCachedTokenStatus();
+    }
+
+    const hasUsable = this.hasUsableTokenStatus(resolvedTokenStatus);
+    if (!hasUsable) {
       resolvedTokenStatus = undefined;
     }
 
@@ -684,7 +708,7 @@ export class DashboardController implements vscode.Disposable {
       queueContent,
       metricsCsv,
       isLoading: false,
-      isTokenLoading: true,
+      isTokenLoading: !hasUsable,
       isStale: false,
       refreshStartedAt: this.state.refreshStartedAt,
       updatedAt: new Date().toISOString(),
@@ -695,35 +719,34 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async refreshTokenStatus(generation: number, force: boolean = false): Promise<void> {
+    if (this.isTokenRefreshing && !force) return;
+    this.isTokenRefreshing = true;
     try {
       const tokenStatus = await this.tokenManager.getStatus(this.paths.tokenReportUri(), {
         refreshQuota: true,
         forceRefresh: force,
       });
-      if (generation !== this.tokenRefreshGeneration) {
-        return;
-      }
 
       const previousTokenStatus = this.state.tokenStatus;
       const safeTokenStatus: TokenStatus | undefined = this.mergeTokenStatus(previousTokenStatus, tokenStatus);
 
-      void this.checkFullTokenNotification(previousTokenStatus, safeTokenStatus);
-      this.persistTokenStatusCache(safeTokenStatus);
+      if (safeTokenStatus) {
+        void this.checkFullTokenNotification(previousTokenStatus, safeTokenStatus);
+        this.persistTokenStatusCache(safeTokenStatus);
+      }
 
       this.state = {
         ...this.state,
-        tokenStatus: safeTokenStatus,
+        tokenStatus: safeTokenStatus ?? this.state.tokenStatus,
         isTokenLoading: false,
         refreshStartedAt: undefined,
         updatedAt: new Date().toISOString(),
       };
       this.postState();
-      void this.checkAutoPrewarm(safeTokenStatus);
-    } catch (error) {
-      if (generation !== this.tokenRefreshGeneration) {
-        return;
+      if (safeTokenStatus) {
+        void this.checkAutoPrewarm(safeTokenStatus);
       }
-
+    } catch (error) {
       const message = this.errorMessage(error);
       this.output.appendLine(`[token refresh failed] ${message}`);
       this.state = {
@@ -735,6 +758,8 @@ export class DashboardController implements vscode.Disposable {
       };
       this.postState();
       this.postError(message);
+    } finally {
+      this.isTokenRefreshing = false;
     }
   }
 
@@ -834,6 +859,23 @@ export class DashboardController implements vscode.Disposable {
     return resetTime;
   }
 
+  private loadCachedTokenStatus(): TokenStatus | undefined {
+    try {
+      const stateRoot = resolveIntegratedPowerStateRoot();
+      const cachePath = path.join(stateRoot, "token_status.json");
+      if (fs.existsSync(cachePath)) {
+        const raw = fs.readFileSync(cachePath, "utf8");
+        const parsed = JSON.parse(raw);
+        if (this.hasUsableTokenStatus(parsed)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore cache read errors
+    }
+    return undefined;
+  }
+
   private mergeTokenStatus(
     previous: TokenStatus | undefined,
     current: TokenStatus | undefined,
@@ -844,32 +886,44 @@ export class DashboardController implements vscode.Disposable {
     const antigravityPct = current.antigravityPercentage ?? previous.antigravityPercentage;
     const antigravityReset = current.antigravityPercentage !== undefined
       ? this.sanitizeResetTime(current.antigravityResetTime, antigravityPct, true)
-      : this.sanitizeResetTime(current.antigravityResetTime ?? previous.antigravityResetTime, antigravityPct, true);
+      : (previous.antigravityPercentage !== undefined
+        ? this.sanitizeResetTime(previous.antigravityResetTime, antigravityPct, true)
+        : undefined);
 
     const antigravityWeeklyPct = current.antigravityWeeklyPercentage ?? previous.antigravityWeeklyPercentage;
     const antigravityWeeklyReset = current.antigravityWeeklyPercentage !== undefined
       ? this.sanitizeResetTime(current.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
-      : this.sanitizeResetTime(current.antigravityWeeklyResetTime ?? previous.antigravityWeeklyResetTime, antigravityWeeklyPct, false);
+      : (previous.antigravityWeeklyPercentage !== undefined
+        ? this.sanitizeResetTime(previous.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
+        : undefined);
 
     const opusPct = current.opusPercentage ?? previous.opusPercentage;
     const opusReset = current.opusPercentage !== undefined
       ? this.sanitizeResetTime(current.opusResetTime, opusPct, true)
-      : this.sanitizeResetTime(current.opusResetTime ?? previous.opusResetTime, opusPct, true);
+      : (previous.opusPercentage !== undefined
+        ? this.sanitizeResetTime(previous.opusResetTime, opusPct, true)
+        : undefined);
 
     const opusWeeklyPct = current.opusWeeklyPercentage ?? previous.opusWeeklyPercentage;
     const opusWeeklyReset = current.opusWeeklyPercentage !== undefined
       ? this.sanitizeResetTime(current.opusWeeklyResetTime, opusWeeklyPct, false)
-      : this.sanitizeResetTime(current.opusWeeklyResetTime ?? previous.opusWeeklyResetTime, opusWeeklyPct, false);
+      : (previous.opusWeeklyPercentage !== undefined
+        ? this.sanitizeResetTime(previous.opusWeeklyResetTime, opusWeeklyPct, false)
+        : undefined);
 
     const codexPct = current.codexPercentage ?? previous.codexPercentage;
     const codexReset = current.codexPercentage !== undefined
       ? this.sanitizeResetTime(current.codexResetTime, codexPct, true)
-      : this.sanitizeResetTime(current.codexResetTime ?? previous.codexResetTime, codexPct, true);
+      : (previous.codexPercentage !== undefined
+        ? this.sanitizeResetTime(previous.codexResetTime, codexPct, true)
+        : undefined);
 
     const codexWeeklyPct = current.codexWeeklyPercentage ?? previous.codexWeeklyPercentage;
     const codexWeeklyReset = current.codexWeeklyPercentage !== undefined
       ? this.sanitizeResetTime(current.codexWeeklyResetTime, codexWeeklyPct, false)
-      : this.sanitizeResetTime(current.codexWeeklyResetTime ?? previous.codexWeeklyResetTime, codexWeeklyPct, false);
+      : (previous.codexWeeklyPercentage !== undefined
+        ? this.sanitizeResetTime(previous.codexWeeklyResetTime, codexWeeklyPct, false)
+        : undefined);
 
     return {
       ...previous,
@@ -877,55 +931,45 @@ export class DashboardController implements vscode.Disposable {
       antigravityPercentage: antigravityPct,
       antigravityResetTime: antigravityReset,
       antigravityEstimatedAbsolute: current.antigravityEstimatedAbsolute ?? previous.antigravityEstimatedAbsolute,
-      antigravityTokensLeft: current.antigravityTokensLeft || previous.antigravityTokensLeft,
-      antigravityMax: current.antigravityMax || previous.antigravityMax,
+      antigravityTokensLeft: current.antigravityTokensLeft ?? previous.antigravityTokensLeft,
+      antigravityMax: current.antigravityMax ?? previous.antigravityMax,
 
       antigravityWeeklyPercentage: antigravityWeeklyPct,
       antigravityWeeklyResetTime: antigravityWeeklyReset,
-      antigravityWeeklyTokensLeft: current.antigravityWeeklyTokensLeft || previous.antigravityWeeklyTokensLeft,
-      antigravityWeeklyMax: current.antigravityWeeklyMax || previous.antigravityWeeklyMax,
+      antigravityWeeklyTokensLeft: current.antigravityWeeklyTokensLeft ?? previous.antigravityWeeklyTokensLeft,
+      antigravityWeeklyMax: current.antigravityWeeklyMax ?? previous.antigravityWeeklyMax,
 
       opusPercentage: opusPct,
       opusResetTime: opusReset,
       opusEstimatedAbsolute: current.opusEstimatedAbsolute ?? previous.opusEstimatedAbsolute,
-      opusTokensLeft: current.opusTokensLeft || previous.opusTokensLeft,
-      opusMax: current.opusMax || previous.opusMax,
+      opusTokensLeft: current.opusTokensLeft ?? previous.opusTokensLeft,
+      opusMax: current.opusMax ?? previous.opusMax,
 
       opusWeeklyPercentage: opusWeeklyPct,
       opusWeeklyResetTime: opusWeeklyReset,
       opusWeeklyEstimatedAbsolute: current.opusWeeklyEstimatedAbsolute ?? previous.opusWeeklyEstimatedAbsolute,
-      opusWeeklyTokensLeft: current.opusWeeklyTokensLeft || previous.opusWeeklyTokensLeft,
-      opusWeeklyMax: current.opusWeeklyMax || previous.opusWeeklyMax,
+      opusWeeklyTokensLeft: current.opusWeeklyTokensLeft ?? previous.opusWeeklyTokensLeft,
+      opusWeeklyMax: current.opusWeeklyMax ?? previous.opusWeeklyMax,
 
       codexPercentage: codexPct,
       codexResetTime: codexReset,
       codexEstimatedAbsolute: current.codexEstimatedAbsolute ?? previous.codexEstimatedAbsolute,
-      codexTokensLeft: current.codexTokensLeft || previous.codexTokensLeft,
-      codexMax: current.codexMax || previous.codexMax,
+      codexTokensLeft: current.codexTokensLeft ?? previous.codexTokensLeft,
+      codexMax: current.codexMax ?? previous.codexMax,
 
       codexWeeklyPercentage: codexWeeklyPct,
       codexWeeklyResetTime: codexWeeklyReset,
       codexWeeklyEstimatedAbsolute: current.codexWeeklyEstimatedAbsolute ?? previous.codexWeeklyEstimatedAbsolute,
-      codexWeeklyTokensLeft: current.codexWeeklyTokensLeft || previous.codexWeeklyTokensLeft,
-      codexWeeklyMax: current.codexWeeklyMax || previous.codexWeeklyMax,
+      codexWeeklyTokensLeft: current.codexWeeklyTokensLeft ?? previous.codexWeeklyTokensLeft,
+      codexWeeklyMax: current.codexWeeklyMax ?? previous.codexWeeklyMax,
 
       claudeDirectUsage: current.claudeDirectUsage ?? previous.claudeDirectUsage,
-      localComputeStatus: {
-        endpointHealth: current.localComputeStatus?.endpointHealth ?? previous.localComputeStatus?.endpointHealth ?? "offline",
-        programName: current.localComputeStatus?.programName ?? previous.localComputeStatus?.programName ?? "Offline",
-        loadedModels: (current.localComputeStatus?.loadedModels && current.localComputeStatus.loadedModels.length > 0)
-          ? current.localComputeStatus.loadedModels
-          : previous.localComputeStatus?.loadedModels || [],
-        gpus: (current.localComputeStatus?.gpus && current.localComputeStatus.gpus.length > 0)
-          ? current.localComputeStatus.gpus
-          : previous.localComputeStatus?.gpus || [],
-      },
-      codexStatus: (current.codexStatus && current.codexStatus !== "offline") ? current.codexStatus : previous.codexStatus || "offline",
-      llmStatus: (current.llmStatus && current.llmStatus !== "offline") ? current.llmStatus : previous.llmStatus || "offline",
-      recommendedTaskWeight: (current.recommendedTaskWeight && current.recommendedTaskWeight !== "unknown")
-        ? current.recommendedTaskWeight
-        : previous.recommendedTaskWeight || "unknown",
-      activity: (current.activity && current.activity.length) ? current.activity : previous.activity || [],
+      localComputeStatus: current.localComputeStatus ?? previous.localComputeStatus,
+      quotaPools: (current.quotaPools && current.quotaPools.length > 0) ? current.quotaPools : previous.quotaPools,
+      codexStatus: current.codexStatus ?? previous.codexStatus ?? "offline",
+      llmStatus: current.llmStatus ?? previous.llmStatus ?? "offline",
+      recommendedTaskWeight: current.recommendedTaskWeight ?? previous.recommendedTaskWeight ?? "unknown",
+      activity: (current.activity && current.activity.length > 0) ? current.activity : previous.activity ?? [],
       errors: current.errors ?? previous.errors,
     };
   }
@@ -935,25 +979,28 @@ export class DashboardController implements vscode.Disposable {
       return false;
     }
 
-    return [
-      status.antigravityMax,
-      status.opusMax,
-      status.codexMax,
-      status.antigravityTokensLeft,
-      status.opusTokensLeft,
-      status.codexTokensLeft,
-      status.antigravityEstimatedAbsolute,
-      status.opusEstimatedAbsolute,
-      status.codexEstimatedAbsolute,
-      status.opusWeeklyEstimatedAbsolute,
-      status.codexWeeklyEstimatedAbsolute,
+    const exactPercentages = [
       status.antigravityPercentage,
       status.antigravityWeeklyPercentage,
       status.opusPercentage,
       status.opusWeeklyPercentage,
       status.codexPercentage,
       status.codexWeeklyPercentage,
-    ].some((value) => typeof value === "number" && Number.isFinite(value) && value > 0);
+    ];
+    if (exactPercentages.some((value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100)) {
+      return true;
+    }
+    return [
+      status.antigravityEstimatedAbsolute,
+      status.opusEstimatedAbsolute,
+      status.codexEstimatedAbsolute,
+      status.opusWeeklyEstimatedAbsolute,
+      status.codexWeeklyEstimatedAbsolute,
+    ].some((value) => typeof value === "number" && Number.isFinite(value) && value > 0)
+      || [[status.antigravityTokensLeft, status.antigravityMax], [status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax],
+        [status.opusTokensLeft, status.opusMax], [status.opusWeeklyTokensLeft, status.opusWeeklyMax],
+        [status.codexTokensLeft, status.codexMax], [status.codexWeeklyTokensLeft, status.codexWeeklyMax]]
+        .some(([left, max]) => typeof left === "number" && Number.isFinite(left) && left >= 0 && typeof max === "number" && Number.isFinite(max) && max > 0);
   }
 
   private seedVisibleState(state: Partial<DashboardState> | undefined): void {
@@ -1220,6 +1267,17 @@ export class DashboardController implements vscode.Disposable {
     if (isWeeklyExhausted) {
       return { eligible: false, reason: `${label} weekly quota is exhausted (${(weeklyPct ?? 0).toFixed(1)}% remaining). All 5-hour capacity is locked.`, prefix, targetModel, cliModel, label };
     }
+    if (weeklyPct === undefined) {
+      return { eligible: false, reason: `${label} weekly quota is unknown; pre-warm requires a measured weekly window.`, prefix, targetModel, cliModel, label };
+    }
+
+    const poolId = prefix === "antigravity" ? "antigravity.default" : prefix === "opus" ? "opus.default" : "codex.5h";
+    const quotaPool = status.quotaPools?.find((pool) => pool.id === poolId);
+    const fallbackTimestamp = (status as any).updatedAt ?? (status as any).lastSync ?? "";
+    const measuredAt = Date.parse(quotaPool?.measuredAt ?? "") || Date.parse(fallbackTimestamp);
+    if (!Number.isFinite(measuredAt) || Date.now() - measuredAt > 5 * 60_000 || measuredAt > Date.now() + 60_000) {
+      return { eligible: false, reason: `${label} quota data is not fresh; pre-warm requires a recent provider measurement.`, prefix, targetModel, cliModel, label };
+    }
 
     // Check 5-hour percentage
     const fiveHPct = typeof (status as any)[`${prefix}Percentage`] === "number"
@@ -1227,23 +1285,6 @@ export class DashboardController implements vscode.Disposable {
       : 0;
     if (fiveHPct < 99.95) {
       return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
-    }
-
-    // Refuse pre-warm if 5-hour rolling recharge cycle is already active ahead of time
-    const currentResetTime = (status as any)[`${prefix}ResetTime`] as string | undefined;
-    if (currentResetTime) {
-      const resetMs = new Date(currentResetTime).getTime();
-      if (Number.isFinite(resetMs) && resetMs > Date.now()) {
-        const remainingMin = Math.max(1, Math.ceil((resetMs - Date.now()) / 60000));
-        return {
-          eligible: false,
-          reason: `${label} 5-hour rolling recharge cycle is already active (${remainingMin}m remaining until reset).`,
-          prefix,
-          targetModel,
-          cliModel,
-          label,
-        };
-      }
     }
 
     if (!isManual) {
@@ -1265,21 +1306,6 @@ export class DashboardController implements vscode.Disposable {
     }
 
     return { eligible: true, reason: "Ready", prefix, targetModel, cliModel, label };
-  }
-
-  private applyPrewarmTransition(
-    currentStatus: TokenStatus,
-    prefix: string,
-    nowMs: number = Date.now()
-  ): TokenStatus {
-    const updated = { ...currentStatus };
-    const currentPct = typeof (currentStatus as any)[`${prefix}Percentage`] === "number"
-      ? Number((currentStatus as any)[`${prefix}Percentage`])
-      : 100;
-    (updated as any)[`${prefix}Percentage`] = Math.max(0, currentPct - 0.1);
-    const resetDate = new Date(nowMs + 5 * 3600 * 1000);
-    (updated as any)[`${prefix}ResetTime`] = resetDate.toISOString();
-    return updated;
   }
 
   private async handlePrewarm(modelKey?: string, isManual = false): Promise<void> {
@@ -1317,16 +1343,6 @@ export class DashboardController implements vscode.Disposable {
     this.output.appendLine(`[prewarm] 5-hour quota pre-warm approved for ${check.label} (100% Ready). Dispatching ping...`);
     const now = Date.now();
     this.lastAutoPrewarmByTarget[check.prefix] = now;
-
-    // Immediately apply optimistic prewarm state transition to live state & notify webview
-    if (this.state.tokenStatus) {
-      this.state = {
-        ...this.state,
-        tokenStatus: this.applyPrewarmTransition(this.state.tokenStatus, check.prefix, now),
-        updatedAt: new Date().toISOString(),
-      };
-      this.postState();
-    }
 
     if (check.prefix === "codex") {
       // Codex / ChatGPT: Use codex CLI with lowest verified model (e.g. gpt-6-luna), ephemeral flag, and instant abort
@@ -1471,7 +1487,7 @@ export class DashboardController implements vscode.Disposable {
 
     if (isManual) {
       void vscode.window.showInformationMessage(
-        `[Integrated Power] Instant pre-warm probe dispatched for ${check.label} (model: ${check.cliModel}). Live quota clock initiated.`
+        `[Integrated Power] Pre-warm probe dispatched for ${check.label} (model: ${check.cliModel}). Provider quota and timer state remain unconfirmed until fresh telemetry arrives.`
       );
     }
   }
@@ -1489,18 +1505,6 @@ export class DashboardController implements vscode.Disposable {
       isStale: false,
       refreshStartedAt: undefined,
       tokenStatus: {
-          antigravityTokensLeft: 0,
-          antigravityMax: 0,
-          antigravityWeeklyTokensLeft: 0,
-          antigravityWeeklyMax: 0,
-          opusTokensLeft: 0,
-          opusMax: 0,
-          opusWeeklyTokensLeft: 0,
-          opusWeeklyMax: 0,
-          codexTokensLeft: 0,
-          codexMax: 0,
-          codexWeeklyTokensLeft: 0,
-          codexWeeklyMax: 0,
           codexStatus: "offline",
           llmStatus: "offline",
           recommendedTaskWeight: "unknown",

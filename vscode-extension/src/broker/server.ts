@@ -232,7 +232,7 @@ export async function startBrokerServer(
         const payload = await readJson(request) as any;
         const protoVersion = String(request.headers["mcp-protocol-version"] || payload?.params?.protocolVersion || "2024-11-05");
         response.setHeader("MCP-Protocol-Version", protoVersion);
-        const message = await processMcpRequest(broker, payload);
+        const message = await processMcpRequest(broker, payload, readTokenStatus);
         if (!message) { response.statusCode = 202; return response.end(); }
         return send(response, 200, message);
       }
@@ -467,6 +467,12 @@ export async function startBrokerServer(
         await broker.approve(approvalId, input.expectedRevision, input.idempotencyKey);
         return send(response, 200, { ok: true });
       }
+      if (request.method === "POST" && url.pathname.startsWith("/v1/approvals/") && url.pathname.endsWith("/reject")) {
+        const approvalId = decodeURIComponent(url.pathname.slice("/v1/approvals/".length, -"/reject".length));
+        const input = await readJson(request) as { expectedRevision?: number; idempotencyKey?: string };
+        await broker.reject(approvalId, input.expectedRevision, input.idempotencyKey);
+        return send(response, 200, { ok: true });
+      }
       if (request.method === "POST" && url.pathname.startsWith("/v1/tasks/") && url.pathname.endsWith("/cancel")) {
         const taskId = decodeURIComponent(url.pathname.slice("/v1/tasks/".length, -"/cancel".length));
         const input = await readJson(request) as { expectedRevision: number; idempotencyKey?: string };
@@ -552,9 +558,7 @@ async function executePrewarmRequest(
   }
   const prefix = resolved.target;
   const weeklyPrefix = `${prefix}Weekly`;
-  const resetTime = stringOrUndefined((liveStatus as any)[`${prefix}ResetTime`]);
-  const measuredAt = Date.parse(liveStatus.lastSync);
-  const windowId = resetTime ?? `5h-${Math.floor((Number.isFinite(measuredAt) ? measuredAt : Date.now()) / (5 * 60 * 60 * 1000))}`;
+  const windowId = `policy-5h-${Math.floor(Date.now() / (5 * 60 * 60 * 1000))}`;
   const windowKey = `${prefix}:${windowId}`;
   const previous = state.windows[windowKey];
   if (previous && (previous.status === "dispatching" || previous.status === "dispatched" || Date.now() - previous.attemptedAt < 30_000)) {
@@ -568,14 +572,20 @@ async function executePrewarmRequest(
   if (!manual && (!settings.initialized || mode === "click")) {
     return { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: resolved.target, targetModel: resolved.model, error: "Automatic prewarm is not armed for this target." } };
   }
-  const fiveHour = numberOrUndefined((liveStatus as any)[`${prefix}Percentage`]) ?? 0;
-  const weekly = numberOrUndefined((liveStatus as any)[`${weeklyPrefix}Percentage`]) ?? 100;
+  const fiveHour = quotaPercentageOrUndefined((liveStatus as any)[`${prefix}Percentage`]);
+  const weekly = quotaPercentageOrUndefined((liveStatus as any)[`${weeklyPrefix}Percentage`]);
+  const pools = Array.isArray((liveStatus as any).quotaPools) ? (liveStatus as any).quotaPools : [];
+  const fivePool = pools.find((pool: any) => pool?.id === `${prefix}.5h` || pool?.id === `${prefix}.default` || (pool?.provider === (prefix === "opus" ? "anthropic" : prefix) && pool?.windowDurationMins === 300));
+  const weeklyPool = pools.find((pool: any) => pool?.id === `${prefix}.weekly` || (pool?.provider === (prefix === "opus" ? "anthropic" : prefix) && pool?.windowDurationMins === 10080));
+  const fallbackTimestamp = Date.parse(String((liveStatus as any).lastSync ?? (liveStatus as any).directUsage?.lastMeasuredAt ?? ""));
+  const fiveMeasuredAt = Date.parse(String(fivePool?.measuredAt ?? "")) || fallbackTimestamp;
+  const weeklyMeasuredAt = Date.parse(String(weeklyPool?.measuredAt ?? "")) || fallbackTimestamp;
+  const isFreshMeasurement = (value: number) => Number.isFinite(value) && value <= Date.now() + 60_000 && Date.now() - value <= 5 * 60_000;
+  if (fiveHour === undefined || weekly === undefined || !isFreshMeasurement(fiveMeasuredAt) || !isFreshMeasurement(weeklyMeasuredAt)) {
+    return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires fresh, reported 5-hour and weekly quota data before pre-warm.` } });
+  }
   if (fiveHour < 99.95) return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} quota is not 100% full (${fiveHour.toFixed(1)}%).` } });
   if (weekly <= 0.05) return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota is exhausted.` } });
-  if (resetTime) {
-    const resetMs = Date.parse(resetTime);
-    if (Number.isFinite(resetMs) && resetMs > Date.now()) return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} 5-hour rolling recharge cycle is already active.` } });
-  }
   const claimId = crypto.createHash("sha256").update(windowKey).digest("hex").slice(0, 24);
   state.windows[windowKey] = { windowId, status: "dispatching", attemptedAt: Date.now(), claimId };
   writePrewarmState(statePath, state);
@@ -810,6 +820,10 @@ function errorMessage(error: unknown): string {
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function quotaPercentageOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100 ? value : undefined;
 }
 
 function stringOrUndefined(value: unknown): string | undefined {

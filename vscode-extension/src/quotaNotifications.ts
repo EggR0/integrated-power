@@ -23,7 +23,7 @@ export const QUOTA_NOTIFICATION_TARGETS: QuotaNotificationTarget[] = [
     getPercentage: (s) => {
       if (!s) return undefined;
       if (typeof s.antigravityPercentage === "number") return s.antigravityPercentage;
-      if (s.antigravityMax > 0 && typeof s.antigravityTokensLeft === "number") {
+      if (typeof s.antigravityMax === "number" && s.antigravityMax > 0 && typeof s.antigravityTokensLeft === "number") {
         return (s.antigravityTokensLeft / s.antigravityMax) * 100;
       }
       return undefined;
@@ -39,7 +39,7 @@ export const QUOTA_NOTIFICATION_TARGETS: QuotaNotificationTarget[] = [
     getPercentage: (s) => {
       if (!s) return undefined;
       if (typeof s.antigravityWeeklyPercentage === "number") return s.antigravityWeeklyPercentage;
-      if (s.antigravityWeeklyMax > 0 && typeof s.antigravityWeeklyTokensLeft === "number") {
+      if (typeof s.antigravityWeeklyMax === "number" && s.antigravityWeeklyMax > 0 && typeof s.antigravityWeeklyTokensLeft === "number") {
         return (s.antigravityWeeklyTokensLeft / s.antigravityWeeklyMax) * 100;
       }
       return undefined;
@@ -57,7 +57,7 @@ export const QUOTA_NOTIFICATION_TARGETS: QuotaNotificationTarget[] = [
     getPercentage: (s) => {
       if (!s) return undefined;
       if (typeof s.opusPercentage === "number") return s.opusPercentage;
-      if (s.opusMax > 0 && typeof s.opusTokensLeft === "number") {
+      if (typeof s.opusMax === "number" && s.opusMax > 0 && typeof s.opusTokensLeft === "number") {
         return (s.opusTokensLeft / s.opusMax) * 100;
       }
       return undefined;
@@ -73,7 +73,7 @@ export const QUOTA_NOTIFICATION_TARGETS: QuotaNotificationTarget[] = [
     getPercentage: (s) => {
       if (!s) return undefined;
       if (typeof s.opusWeeklyPercentage === "number") return s.opusWeeklyPercentage;
-      if (s.opusWeeklyMax > 0 && typeof s.opusWeeklyTokensLeft === "number") {
+      if (typeof s.opusWeeklyMax === "number" && s.opusWeeklyMax > 0 && typeof s.opusWeeklyTokensLeft === "number") {
         return (s.opusWeeklyTokensLeft / s.opusWeeklyMax) * 100;
       }
       return undefined;
@@ -91,7 +91,7 @@ export const QUOTA_NOTIFICATION_TARGETS: QuotaNotificationTarget[] = [
     getPercentage: (s) => {
       if (!s) return undefined;
       if (typeof s.codexPercentage === "number") return s.codexPercentage;
-      if (s.codexMax > 0 && typeof s.codexTokensLeft === "number") {
+      if (typeof s.codexMax === "number" && s.codexMax > 0 && typeof s.codexTokensLeft === "number") {
         return (s.codexTokensLeft / s.codexMax) * 100;
       }
       return undefined;
@@ -107,7 +107,7 @@ export const QUOTA_NOTIFICATION_TARGETS: QuotaNotificationTarget[] = [
     getPercentage: (s) => {
       if (!s) return undefined;
       if (typeof s.codexWeeklyPercentage === "number") return s.codexWeeklyPercentage;
-      if (s.codexWeeklyMax > 0 && typeof s.codexWeeklyTokensLeft === "number") {
+      if (typeof s.codexWeeklyMax === "number" && s.codexWeeklyMax > 0 && typeof s.codexWeeklyTokensLeft === "number") {
         return (s.codexWeeklyTokensLeft / s.codexWeeklyMax) * 100;
       }
       return undefined;

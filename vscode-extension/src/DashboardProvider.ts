@@ -42,6 +42,7 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
     );
 
     this.controller.publishState();
+    this.controller.postBrokerState();
   }
 
   public dispose(): void {
@@ -56,6 +57,10 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   public refreshQuotaSettings(force = false): Promise<void> {
     return this.controller.refreshQuotaSettings(force);
+  }
+
+  public refreshBrokerControls(): Promise<void> {
+    return this.controller.refreshBrokerControls();
   }
 
   public useLegacyQuotaSettingsFallback(): void {

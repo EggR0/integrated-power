@@ -133,6 +133,27 @@ async function main() {
     assert.strictEqual(state.approvals.length, 0, "real broker accepts the IDE decision and removes the approval");
     assert.strictEqual(broker.getTask(task.id).status, "running", "approval action reaches the actual broker task state");
 
+    const thirdTask = await client.createTask({
+      title: "Reject approval flow", goal: "Synthetic reject test", originProvider: "local.openai-compatible",
+      workspacePath, privacy: "private", idempotencyKey: "reject-approval-task",
+    });
+    const rejectApproval = await client.requestApproval({
+      taskId: thirdTask.id, action: "budget-overage", description: "Reject test", requestedBy: "broker",
+      expectedRevision: thirdTask.revision, idempotencyKey: "reject-approval-request",
+    });
+    await controller.handleMessage({ type: "refreshBroker" });
+    state = outbound.filter((message) => message.type === "brokerState").at(-1).state;
+    const queuedReject = state.approvals.find((a) => a.id === rejectApproval.id);
+    assert.ok(queuedReject, "reject approval is in queue");
+    controls.render({ ...state, approvals: [queuedReject] });
+    controls.find((element) => element.tagName === "BUTTON" && element.textContent === "Reject")[0].click();
+    const rejectDecision = controls.sent.shift();
+    assert.strictEqual(rejectDecision.action, "reject");
+    await controller.handleMessage(rejectDecision);
+    state = outbound.filter((message) => message.type === "brokerState").at(-1).state;
+    assert.strictEqual(state.approvals.find((a) => a.id === rejectApproval.id), undefined, "real broker accepts the IDE reject decision and removes the approval");
+    assert.strictEqual(broker.getTask(thirdTask.id).status, "cancelled", "rejected approval cancels the actual broker task");
+
     const secondTask = await client.createTask({
       title: "Stale approval flow", goal: "Synthetic stale revision test", originProvider: "local.openai-compatible",
       workspacePath, privacy: "private", idempotencyKey: "stale-approval-task",

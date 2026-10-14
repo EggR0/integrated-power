@@ -99,17 +99,17 @@ export interface PrewarmResult {
   ok: boolean;
   targetId: string;
   model: string;
-  tokensConsumed: number;
-  retainedPercentage: number;
-  timerStartedAt: string;
-  resetTime: string;
+  tokensConsumed?: number;
+  retainedPercentage?: number;
+  timerStartedAt?: string;
+  resetTime?: string;
   message: string;
   stopMethod: "cancel_tooltip" | "fallback_square" | "abort_controller" | "simulated";
 }
 
 /** Check if a given metric qualifies for pre-warming. */
 export function canTriggerPrewarm(metric: TokenMetric): boolean {
-  return metric.label === "5Hours" && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
+  return metric.label === "5Hours" && metric.percentage !== undefined && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
 }
 
 /**
@@ -132,22 +132,16 @@ export function generateAntigravityStopScript(): string {
 }
 
 /**
- * Simulates or calculates the post-prewarm state transition:
- * Quota drops slightly (e.g. from 100% to 99.9%), and a 5-hour rolling countdown starts.
+ * A dispatch acknowledgement is not a provider quota measurement. Keep the last
+ * measured status unchanged until a provider response reports updated values.
  */
 export function applyPrewarmTransition(
   currentStatus: TokenStatus,
   prefix: string,
-  nowMs: number = Date.now()
+  _nowMs: number = Date.now()
 ): TokenStatus {
-  const updated = { ...currentStatus };
-  const currentPct = typeof currentStatus[`${prefix}Percentage`] === "number"
-    ? Number(currentStatus[`${prefix}Percentage`])
-    : 100;
-  updated[`${prefix}Percentage`] = Math.max(0, currentPct - 0.1);
-  const resetDate = new Date(nowMs + 5 * 3600 * 1000);
-  updated[`${prefix}ResetTime`] = resetDate.toISOString();
-  return updated;
+  void prefix;
+  return { ...currentStatus };
 }
 
 /**
@@ -159,9 +153,6 @@ export async function executePrewarmPing(
 ): Promise<PrewarmResult> {
   const AC = typeof AbortController !== "undefined" ? AbortController : (typeof globalThis !== "undefined" ? globalThis.AbortController : undefined);
   const abortController = AC ? new AC() : undefined;
-  const startTime = new Date();
-  const resetDate = new Date(startTime.getTime() + 5 * 3600 * 1000);
-
   if (dispatcher && abortController) {
     const promise = dispatcher(PREWARM_PING_PROMPT, abortController.signal);
     abortController.abort();
@@ -173,14 +164,12 @@ export async function executePrewarmPing(
   }
 
   return {
-    ok: true,
+    ok: Boolean(dispatcher),
     targetId: target.id,
     model: target.model,
-    tokensConsumed: 1,
-    retainedPercentage: 99.9,
-    timerStartedAt: startTime.toISOString(),
-    resetTime: resetDate.toISOString(),
-    message: `Pre-warm successful: 5-hour recharge cycle active for ${target.displayName}. >99.9% quota retained.`,
+    message: dispatcher
+      ? `Pre-warm request dispatched for ${target.displayName}; provider quota and timer state are unconfirmed.`
+      : `Pre-warm was not dispatched for ${target.displayName}; provider quota and timer state are unconfirmed.`,
     stopMethod: dispatcher ? "abort_controller" : "simulated",
   };
 }

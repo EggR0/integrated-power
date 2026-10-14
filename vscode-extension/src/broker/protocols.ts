@@ -114,7 +114,7 @@ export const integratedPowerProtocolBoundary: IntegratedPowerProtocolBoundary = 
       },
       {
         name: "integrated_power_get_token_status",
-        description: "Get real-time token quota, remaining percentages, and routing advice across Antigravity IDE, OpenAI Codex, and Local LLM (matching Antigravity extension dashboard).",
+        description: "Read the canonical token telemetry snapshot shared with the broker HTTP status endpoint. Reports provider quota only when measured; unavailable or stale sources are returned as such. Local usage and capability information are not account quota.",
         inputSchema: {
           type: "object",
           properties: {},

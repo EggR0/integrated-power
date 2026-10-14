@@ -379,6 +379,22 @@ export class IntegratedPowerBroker {
     });
   }
 
+  public async reject(approvalId: string, expectedRevision?: number, idempotencyKey?: string): Promise<void> {
+    const approval = this.approvals.get(approvalId);
+    if (!approval) throw new Error("Approval request not found.");
+    await this.withTaskLock(approval.taskId, async () => {
+      if (idempotencyKey && this.idempotency.has(idempotencyKey)) return;
+      const current = this.approvals.get(approvalId);
+      if (!current) throw new Error("Approval request not found.");
+      const task = this.requireTask(current.taskId);
+      const revision = expectedRevision ?? task.revision;
+      if (task.revision !== revision) throw new BrokerConflictError(task.revision);
+      task.status = "cancelled";
+      this.approvals.delete(approvalId);
+      await this.commit(task, "task.rejected", "user", revision, current, idempotencyKey);
+    });
+  }
+
   public async mergeTask(taskId: string, expectedRevision: number, idempotencyKey?: string): Promise<string> {
     if (idempotencyKey && this.mergeResults.has(idempotencyKey)) return this.mergeResults.get(idempotencyKey)!;
     const operation = this.mergeQueue.then(() => this.performMerge(taskId, expectedRevision, idempotencyKey));
@@ -502,6 +518,11 @@ export class IntegratedPowerBroker {
         if (approval?.id) this.approvals.delete(approval.id);
         if (approval?.action) this.approvedActions.add(`${event.taskId}:${approval.action}`);
       }
+      if (event.type === "task.rejected") {
+        task.status = "cancelled";
+        const approval = event.payload as ApprovalRequest;
+        if (approval?.id) this.approvals.delete(approval.id);
+      }
       if (event.type === "task.completed") task.status = "completed";
       if (event.type === "task.failed") task.status = "failed";
       if (event.type === "task.cancelled") task.status = "cancelled";
@@ -547,7 +568,7 @@ export class IntegratedPowerBroker {
     return task;
   }
 
-  public async getTokenStatus(): Promise<Record<string, unknown>> {
+  public async getProviderCapabilities(): Promise<Record<string, unknown>> {
     const capabilities = await this.discover();
     const agyCap = capabilities.find((c) => c.provider === "google.antigravity.ide");
     const codexCap = capabilities.find((c) => c.provider === "openai.codex.app");
@@ -569,13 +590,20 @@ export class IntegratedPowerBroker {
       localLlm: {
         provider: "local.openai-compatible",
         label: "Local LLM (Qwen 3.8 27B / Ollama)",
-        status: localCap?.available ? "사용가능 (Zero Token Cost)" : "미설치",
+        status: localCap?.available ? "사용가능 (Local endpoint)" : "미설치",
         model: localCap?.model || "qwen3.8:27b",
-        role: "VRAM 기반 포맷팅, 자동완성, 민감 데이터 처리, 단순 반복 작업 (비용 0)",
+        role: "VRAM 기반 포맷팅, 자동완성, 민감 데이터 처리, 단순 반복 작업 (로컬 엔드포인트; 제공자 계정 쿼터와 분리)",
       },
-      routingPolicy: "1. Heavy 코드 생성/분석 -> Antigravity\n2. 정밀 로직/아키텍처 검증 -> Codex\n3. 단순 반복/오프라인 작업 -> Local LLM (토큰 소모 없음)",
+      routingPolicy: "1. Heavy 코드 생성/분석 -> Antigravity\n2. 정밀 로직/아키텍처 검증 -> Codex\n3. 단순 반복/오프라인 작업 -> Local LLM (로컬 엔드포인트; 계정 쿼터는 별도 측정)",
       totalTasksLogged: this.tasks.size,
     };
+  }
+
+  public async getTokenStatus(tokenStatusReader?: () => Promise<unknown>): Promise<unknown> {
+    if (!tokenStatusReader) {
+      return { status: "unavailable", reason: "Canonical quota reader is not connected to this call path." };
+    }
+    return tokenStatusReader();
   }
 
   public async quickDelegate(input: {
@@ -584,7 +612,7 @@ export class IntegratedPowerBroker {
     workspacePath?: string;
     targetProvider?: string;
     originProvider?: string;
-  }): Promise<Record<string, unknown>> {
+  }, tokenStatusReader?: () => Promise<unknown>): Promise<Record<string, unknown>> {
     const title = input.title?.trim() || input.prompt.slice(0, 50).replace(/[\r\n]+/g, " ");
     const originProvider = input.originProvider || "openai.chatgpt.app";
     let workspacePath = input.workspacePath?.trim() || process.env.INTEGRATED_POWER_DEFAULT_WORKSPACE;
@@ -622,7 +650,10 @@ export class IntegratedPowerBroker {
     });
 
     const updatedTask = this.getTask(task.id);
-    const tokenStatus = await this.getTokenStatus();
+    const [tokenStatus, providerCapabilities] = await Promise.all([
+      this.getTokenStatus(tokenStatusReader),
+      this.getProviderCapabilities(),
+    ]);
 
     return {
       success: updatedTask?.status === "completed",
@@ -632,6 +663,7 @@ export class IntegratedPowerBroker {
       status: updatedTask?.status,
       result: (event.payload as any)?.text || (event.payload as any)?.prompt || "Delegation processed.",
       tokenStatus,
+      providerCapabilities,
     };
   }
 }

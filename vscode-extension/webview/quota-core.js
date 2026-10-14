@@ -132,7 +132,6 @@ var IPQuota = (() => {
     "percentRemaining",
     "percent_remaining",
     "percentUsedIsComplement",
-    "remaining",
     "pctRemaining",
     "pct_remaining"
   ];
@@ -144,19 +143,21 @@ var IPQuota = (() => {
     "usagePercent",
     "usage_percent"
   ];
-  var LIMIT_KEYS = ["limit", "limitTokens", "limit_tokens", "max", "maxTokens", "max_tokens", "total", "totalTokens", "total_tokens"];
+  var LIMIT_KEYS = ["limit", "limitTokens", "limit_tokens", "max", "maxTokens", "max_tokens"];
   var REMAINING_ABS_KEYS = ["remainingTokens", "remaining_tokens", "tokensRemaining", "tokens_remaining", "left", "leftTokens", "left_tokens", "availableTokens", "available_tokens"];
   var USED_ABS_KEYS = ["usedTokens", "used_tokens", "tokensUsed", "tokens_used", "used", "consumed", "consumedTokens", "consumed_tokens"];
   function tokenPairRemaining(raw) {
-    const limit = toFiniteNumber2(raw[LIMIT_KEYS[0]] ?? raw["limitTokens"] ?? raw["limit_tokens"] ?? raw["max"] ?? raw["maxTokens"] ?? raw["max_tokens"] ?? raw["total"] ?? raw["totalTokens"] ?? raw["total_tokens"]);
+    const limit = toFiniteNumber2(raw[LIMIT_KEYS[0]] ?? raw["limitTokens"] ?? raw["limit_tokens"] ?? raw["max"] ?? raw["maxTokens"] ?? raw["max_tokens"]);
     if (limit === void 0 || limit <= 0) return void 0;
     for (const key of REMAINING_ABS_KEYS) {
       const value = toFiniteNumber2(raw[key]);
-      if (value !== void 0) return Math.min(100, Math.max(0, value / limit * 100));
+      if (value !== void 0) return value >= 0 && value <= limit ? value / limit * 100 : void 0;
     }
+    const genericRemaining = toFiniteNumber2(raw.remaining);
+    if (genericRemaining !== void 0) return genericRemaining >= 0 && genericRemaining <= limit ? genericRemaining / limit * 100 : void 0;
     for (const key of USED_ABS_KEYS) {
       const value = toFiniteNumber2(raw[key]);
-      if (value !== void 0) return Math.min(100, Math.max(0, (limit - value) / limit * 100));
+      if (value !== void 0) return value >= 0 && value <= limit ? (limit - value) / limit * 100 : void 0;
     }
     return void 0;
   }
@@ -171,6 +172,18 @@ var IPQuota = (() => {
     return void 0;
   }
   function extractRemaining(raw) {
+    const paired = tokenPairRemaining(raw);
+    const hasAbsoluteInputs = [...LIMIT_KEYS, ...REMAINING_ABS_KEYS, ...USED_ABS_KEYS, "remaining"].some((key) => raw[key] !== void 0 && raw[key] !== null);
+    const explicit = [...REMAINING_KEYS, ...USED_KEYS].map((key) => ({
+      key,
+      value: toFiniteNumber2(raw[key])
+    })).find((entry) => entry.value !== void 0);
+    if (hasAbsoluteInputs && paired === void 0 && explicit?.value !== void 0) return void 0;
+    if (paired !== void 0 && explicit?.value !== void 0) {
+      const reported = USED_KEYS.includes(explicit.key) ? 100 - explicit.value : explicit.value;
+      if (reported < 0 || reported > 100 || Math.abs(reported - paired) > 0.01) return void 0;
+    }
+    if (paired !== void 0) return paired;
     for (const key of REMAINING_KEYS) {
       const value = toFiniteNumber2(raw[key]);
       if (value !== void 0) return value;
@@ -188,16 +201,28 @@ var IPQuota = (() => {
     }
     return "Window " + (index + 1);
   }
+  function isErrorEnvelope(raw) {
+    const error = raw.error;
+    if (error !== void 0 && error !== null && error !== false && error !== "") return true;
+    const status = raw.status ?? raw.statusCode;
+    if (typeof status === "number" && status >= 400) return true;
+    if (raw.success === false || Array.isArray(raw.errors) && raw.errors.length > 0) return true;
+    return typeof raw.message === "string" && raw.label === void 0 && raw.name === void 0;
+  }
   function windowFrom(raw, index, toneOf) {
     if (raw === null || typeof raw !== "object") return null;
     const obj = raw;
+    if (isErrorEnvelope(obj)) return null;
     const remaining = extractRemaining(obj);
     const label = labelOf(obj, index);
     const note = typeof obj["note"] === "string" ? obj["note"] : typeof obj["description"] === "string" ? obj["description"] : void 0;
     if (remaining === void 0) {
-      return { label, percentage: 0, tone: "critical", unavailable: true, note: note || "remaining field not found" };
+      return { label, tone: "healthy", unavailable: true, note: note || "remaining field not found or outside the 0..100 range" };
     }
-    const percentage = Math.min(100, Math.max(0, remaining));
+    if (remaining < 0 || remaining > 100) {
+      return { label, tone: "healthy", unavailable: true, note: note || "remaining percentage outside the 0..100 range" };
+    }
+    const percentage = remaining;
     return { label, percentage, tone: toneOf(percentage), unavailable: false, note };
   }
   function parseExternalPayload(name, raw, toneOf = (p) => p <= 15 ? "critical" : p <= 35 ? "warning" : "ok") {
@@ -212,6 +237,9 @@ var IPQuota = (() => {
       entries = raw;
     } else {
       const obj = raw;
+      if (isErrorEnvelope(obj)) {
+        return { ok: false, name, windows: [], error: "provider returned an error response" };
+      }
       const windows2 = obj["windows"];
       if (Array.isArray(windows2) && windows2.length > 0) {
         entries = windows2;
@@ -220,7 +248,7 @@ var IPQuota = (() => {
       } else {
         const candidates = [];
         for (const value of Object.values(obj)) {
-          if (value && typeof value === "object" && extractRemaining(value) !== void 0) {
+          if (value && typeof value === "object" && !isErrorEnvelope(value) && extractRemaining(value) !== void 0) {
             candidates.push(value);
           }
         }
@@ -428,44 +456,48 @@ var IPQuota = (() => {
     return `linear-gradient(90deg, ${stops.join(", ")})`;
   }
   function absoluteTokenText(left, max, estimated) {
-    const safeLeft = toFiniteNumber(left);
-    const safeMax = toFiniteNumber(max);
-    if (safeMax > 0) {
+    const safeLeft = typeof left === "number" && Number.isFinite(left) && left >= 0 ? left : void 0;
+    const safeMax = typeof max === "number" && Number.isFinite(max) && max >= 0 ? max : void 0;
+    if (safeLeft !== void 0 && safeMax !== void 0 && safeMax > 0) {
       return `${formatTokenCount(safeLeft)} / ${formatTokenCount(safeMax)}`;
     }
     if (typeof estimated === "number" && Number.isFinite(estimated)) {
-      return formatTokenCount(estimated);
+      return `Estimated ${formatTokenCount(estimated)}`;
     }
-    if (safeLeft > 0) {
+    if (safeLeft !== void 0) {
       return formatTokenCount(safeLeft);
     }
     return void 0;
   }
   function buildTokenMetric(label, status, prefix, ariaLabel, pairedWeeklyPrefix) {
-    const left = toFiniteNumber(status[`${prefix}TokensLeft`]);
-    const max = toFiniteNumber(status[`${prefix}Max`]);
+    const rawLeft = status[`${prefix}TokensLeft`];
+    const rawMax = status[`${prefix}Max`];
+    const left = typeof rawLeft === "number" && Number.isFinite(rawLeft) && rawLeft >= 0 ? rawLeft : void 0;
+    const max = typeof rawMax === "number" && Number.isFinite(rawMax) && rawMax >= 0 ? rawMax : void 0;
     const exactPercentage = status[`${prefix}Percentage`];
     const estimated = status[`${prefix}EstimatedAbsolute`];
     const rawResetTime = status[`${prefix}ResetTime`];
     let percentage;
-    if (typeof exactPercentage === "number" && Number.isFinite(exactPercentage)) {
-      percentage = clamp(exactPercentage, 0, 100);
-    } else if (max > 0) {
-      percentage = clamp(left / max * 100, 0, 100);
+    if (typeof exactPercentage === "number") {
+      if (Number.isFinite(exactPercentage) && exactPercentage >= 0 && exactPercentage <= 100) percentage = exactPercentage;
+    } else if (exactPercentage === void 0 && left !== void 0 && max !== void 0 && max > 0 && left <= max) {
+      percentage = left / max * 100;
     }
-    const hasAbsolute = typeof estimated === "number" || max > 0 || left > 0;
-    let normalizedPercentage = percentage ?? 0;
+    const hasAbsolute = typeof estimated === "number" && Number.isFinite(estimated) || left !== void 0;
+    let effectivePercentage = percentage;
     let isWeeklyExhausted = false;
     let isWeeklyCapped = false;
     let capReason = "";
     if (label === "5Hours" && pairedWeeklyPrefix && percentage !== void 0) {
       const weeklyExact = status[`${pairedWeeklyPrefix}Percentage`];
-      const weeklyLeft = toFiniteNumber(status[`${pairedWeeklyPrefix}TokensLeft`]);
-      const weeklyMax = toFiniteNumber(status[`${pairedWeeklyPrefix}Max`]);
-      let weeklyPct = typeof weeklyExact === "number" && Number.isFinite(weeklyExact) ? clamp(weeklyExact, 0, 100) : weeklyMax > 0 ? clamp(weeklyLeft / weeklyMax * 100, 0, 100) : void 0;
-      if (weeklyPct !== void 0) {
-        const sync = calculateEffective5HourQuota(normalizedPercentage, weeklyPct, prefix);
-        normalizedPercentage = sync.effectivePct;
+      const rawWeeklyLeft = status[`${pairedWeeklyPrefix}TokensLeft`];
+      const rawWeeklyMax = status[`${pairedWeeklyPrefix}Max`];
+      const weeklyLeft = typeof rawWeeklyLeft === "number" && Number.isFinite(rawWeeklyLeft) && rawWeeklyLeft >= 0 ? rawWeeklyLeft : void 0;
+      const weeklyMax = typeof rawWeeklyMax === "number" && Number.isFinite(rawWeeklyMax) && rawWeeklyMax >= 0 ? rawWeeklyMax : void 0;
+      let weeklyPct = typeof weeklyExact === "number" ? Number.isFinite(weeklyExact) && weeklyExact >= 0 && weeklyExact <= 100 ? weeklyExact : void 0 : weeklyExact === void 0 && weeklyLeft !== void 0 && weeklyMax !== void 0 && weeklyMax > 0 && weeklyLeft <= weeklyMax ? weeklyLeft / weeklyMax * 100 : void 0;
+      if (weeklyPct !== void 0 && effectivePercentage !== void 0) {
+        const sync = calculateEffective5HourQuota(effectivePercentage, weeklyPct, prefix);
+        effectivePercentage = sync.effectivePct;
         isWeeklyExhausted = sync.isWeeklyExhausted;
         isWeeklyCapped = sync.isWeeklyCapped;
         if (isWeeklyExhausted) {
@@ -475,15 +507,14 @@ var IPQuota = (() => {
         }
       }
     }
-    const displayPercentage = isWeeklyExhausted ? 0 : normalizedPercentage;
-    const mainText = hasAbsolute || percentage !== void 0 ? `${displayPercentage.toFixed(2)}%` : "Unavailable";
+    const mainText = percentage !== void 0 ? `${percentage.toFixed(2)}%` : "Unavailable";
     let subtextFull = "Waiting for quota data";
     let subtextMedium = "Waiting";
     let subtextShort = "Waiting";
-    if (hasAbsolute || percentage !== void 0) {
-      subtextFull = `${normalizedPercentage.toFixed(2)}% remaining`;
-      subtextMedium = `${normalizedPercentage.toFixed(2)}%`;
-      subtextShort = `${normalizedPercentage.toFixed(1)}%`;
+    if (percentage !== void 0) {
+      subtextFull = `${percentage.toFixed(2)}% remaining`;
+      subtextMedium = `${percentage.toFixed(2)}%`;
+      subtextShort = `${percentage.toFixed(1)}%`;
     }
     let effectiveResetTime = rawResetTime;
     if (isWeeklyExhausted && pairedWeeklyPrefix) {
@@ -492,19 +523,24 @@ var IPQuota = (() => {
         effectiveResetTime = pairedResetTime;
       }
     }
-    const is5HourAt100 = label === "5Hours" && (hasAbsolute || percentage !== void 0) && normalizedPercentage >= 99.95 && !isWeeklyExhausted;
+    const weeklyExactForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}Percentage`] : void 0;
+    const weeklyLeftForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}TokensLeft`] : void 0;
+    const weeklyMaxForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}Max`] : void 0;
+    const weeklyKnownForPrewarm = !pairedWeeklyPrefix || typeof weeklyExactForPrewarm === "number" && Number.isFinite(weeklyExactForPrewarm) && weeklyExactForPrewarm >= 0 && weeklyExactForPrewarm <= 100 || weeklyExactForPrewarm === void 0 && typeof weeklyLeftForPrewarm === "number" && typeof weeklyMaxForPrewarm === "number" && weeklyMaxForPrewarm > 0 && weeklyLeftForPrewarm >= 0 && weeklyLeftForPrewarm <= weeklyMaxForPrewarm;
+    const is5HourAt100 = label === "5Hours" && percentage !== void 0 && percentage >= 99.95 && !isWeeklyExhausted;
+    const is5HourReady = is5HourAt100 && weeklyKnownForPrewarm;
+    const resetDate = effectiveResetTime ? new Date(effectiveResetTime) : void 0;
+    const resetEpoch = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : void 0;
+    const diffMs = resetEpoch !== void 0 ? resetEpoch - Date.now() : void 0;
     const countdown = formatRefreshCountdown(effectiveResetTime);
-    const hasActiveFutureCountdown = Boolean(
-      countdown && effectiveResetTime && new Date(effectiveResetTime).getTime() > Date.now()
-    );
-    const is5HourReady = is5HourAt100 && !hasActiveFutureCountdown;
+    const is5HourActiveCountdown = label === "5Hours" && diffMs !== void 0 && diffMs > 0 && diffMs < 5 * 3600 * 1e3;
     const isPrewarmed = false;
     let refreshFull = "";
     let refreshMedium = "";
     let refreshShort = "";
     let canPrewarm = false;
     let isReady = false;
-    if (is5HourReady) {
+    if (is5HourReady && !is5HourActiveCountdown) {
       refreshFull = "\xB7 Ready";
       refreshMedium = "\xB7 Ready";
       refreshShort = "\xB7 Ready";
@@ -514,14 +550,24 @@ var IPQuota = (() => {
       refreshFull = countdown.full;
       refreshMedium = countdown.medium || countdown.short;
       refreshShort = countdown.short;
-    }
-    let tooltip = `${ariaLabel || label}: ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
-    if (isWeeklyExhausted) {
-      tooltip = `${ariaLabel || label}: 0.00% remaining (Weekly quota is exhausted${refreshFull ? ` \xB7 ${refreshFull}` : ""}). All 5-hour capacity is locked until weekly reset.`;
-    } else if (isWeeklyCapped) {
-      tooltip = `${ariaLabel || label}: ${subtextFull} (${capReason}). 5-hour capacity is constrained by remaining weekly budget.`;
+      if (is5HourReady) {
+        canPrewarm = true;
+        isReady = true;
+      }
     } else if (is5HourReady) {
-      tooltip = `${ariaLabel || label}: ${subtextFull} (Ready \xB7 Timer starts on first request). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+      refreshFull = "\xB7 Ready";
+      refreshMedium = "\xB7 Ready";
+      refreshShort = "\xB7 Ready";
+      canPrewarm = true;
+      isReady = true;
+    }
+    let tooltip = percentage === void 0 ? `${ariaLabel || label}: quota percentage unavailable${hasAbsolute ? "; absolute token count is estimated or incomplete" : ""}.` : `${ariaLabel || label}: Reported ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+    if (isWeeklyExhausted) {
+      tooltip = `${ariaLabel || label}: Reported ${subtextFull}; weekly quota is exhausted. Pre-warm and routing policy are blocked until fresh weekly quota data allows them.`;
+    } else if (isWeeklyCapped) {
+      tooltip = `${ariaLabel || label}: Reported ${subtextFull}; policy ceiling ${effectivePercentage?.toFixed(1)}% (${capReason}).`;
+    } else if (is5HourReady) {
+      tooltip = `${ariaLabel || label}: Reported ${subtextFull} (Ready for policy-gated pre-warm). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     }
     const labelFull = label;
     const labelMedium = label;
@@ -541,9 +587,10 @@ var IPQuota = (() => {
       refreshFull,
       refreshMedium,
       refreshShort,
-      percentage: normalizedPercentage,
-      unavailable: percentage === void 0 && !hasAbsolute,
-      tone: capacityTone(normalizedPercentage),
+      percentage,
+      effectivePercentage,
+      unavailable: percentage === void 0,
+      tone: percentage === void 0 ? "healthy" : capacityTone(percentage),
       tooltip,
       isWeeklyExhausted,
       isWeeklyCapped,
@@ -554,13 +601,13 @@ var IPQuota = (() => {
   }
   function capacitySummaryEntry(labelFull, labelMedium, labelShort, exactPercentage, left, max) {
     let percentage;
-    if (typeof exactPercentage === "number" && Number.isFinite(exactPercentage)) {
-      percentage = clamp(exactPercentage, 0, 100);
-    } else {
-      const safeLeft = toFiniteNumber(left);
-      const safeMax = toFiniteNumber(max);
-      if (safeMax > 0) {
-        percentage = clamp(safeLeft / safeMax * 100, 0, 100);
+    if (typeof exactPercentage === "number") {
+      if (Number.isFinite(exactPercentage) && exactPercentage >= 0 && exactPercentage <= 100) percentage = exactPercentage;
+    } else if (exactPercentage === void 0) {
+      const safeLeft = typeof left === "number" && Number.isFinite(left) && left >= 0 ? left : void 0;
+      const safeMax = typeof max === "number" && Number.isFinite(max) && max >= 0 ? max : void 0;
+      if (safeLeft !== void 0 && safeMax !== void 0 && safeMax > 0) {
+        if (safeLeft <= safeMax) percentage = safeLeft / safeMax * 100;
       }
     }
     return typeof percentage === "number" ? { label: labelFull, labelFull, labelMedium, labelShort, percentage } : void 0;
@@ -844,7 +891,7 @@ var IPQuota = (() => {
     { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude" }
   ]);
   function canTriggerPrewarm(metric) {
-    return metric.label === "5Hours" && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
+    return metric.label === "5Hours" && metric.percentage !== void 0 && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
   }
   function generateAntigravityStopScript() {
     return `(function() {
@@ -861,19 +908,13 @@ var IPQuota = (() => {
     return { success: false, reason: 'no_active_generation' };
   })()`;
   }
-  function applyPrewarmTransition(currentStatus, prefix, nowMs = Date.now()) {
-    const updated = { ...currentStatus };
-    const currentPct = typeof currentStatus[`${prefix}Percentage`] === "number" ? Number(currentStatus[`${prefix}Percentage`]) : 100;
-    updated[`${prefix}Percentage`] = Math.max(0, currentPct - 0.1);
-    const resetDate = new Date(nowMs + 5 * 3600 * 1e3);
-    updated[`${prefix}ResetTime`] = resetDate.toISOString();
-    return updated;
+  function applyPrewarmTransition(currentStatus, prefix, _nowMs = Date.now()) {
+    void prefix;
+    return { ...currentStatus };
   }
   async function executePrewarmPing(target, dispatcher) {
     const AC = typeof AbortController !== "undefined" ? AbortController : typeof globalThis !== "undefined" ? globalThis.AbortController : void 0;
     const abortController = AC ? new AC() : void 0;
-    const startTime = /* @__PURE__ */ new Date();
-    const resetDate = new Date(startTime.getTime() + 5 * 3600 * 1e3);
     if (dispatcher && abortController) {
       const promise = dispatcher(PREWARM_PING_PROMPT, abortController.signal);
       abortController.abort();
@@ -883,14 +924,10 @@ var IPQuota = (() => {
       }
     }
     return {
-      ok: true,
+      ok: Boolean(dispatcher),
       targetId: target.id,
       model: target.model,
-      tokensConsumed: 1,
-      retainedPercentage: 99.9,
-      timerStartedAt: startTime.toISOString(),
-      resetTime: resetDate.toISOString(),
-      message: `Pre-warm successful: 5-hour recharge cycle active for ${target.displayName}. >99.9% quota retained.`,
+      message: dispatcher ? `Pre-warm request dispatched for ${target.displayName}; provider quota and timer state are unconfirmed.` : `Pre-warm was not dispatched for ${target.displayName}; provider quota and timer state are unconfirmed.`,
       stopMethod: dispatcher ? "abort_controller" : "simulated"
     };
   }

@@ -137,7 +137,11 @@ export function activate(context: vscode.ExtensionContext): void {
     toolbarItem,
   );
 
-  void brokerController.start(context).then(() => provider.refreshQuotaSettings(true)).catch((error) => {
+  void brokerController.start(context).then(async () => {
+    await provider.refreshQuotaSettings(true);
+    await provider.refreshBrokerControls();
+    await provider.refresh(true);
+  }).catch((error) => {
     provider.useLegacyQuotaSettingsFallback();
     void vscode.window.showWarningMessage(
       `Integrated Power broker could not start: ${error instanceof Error ? error.message : String(error)}`,
