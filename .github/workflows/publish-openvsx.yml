@@ -17,6 +17,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: publish-openvsx-${{ github.ref_name || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Publish VSIX to Open VSX

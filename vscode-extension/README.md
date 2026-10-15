@@ -8,7 +8,7 @@
 
 > **"멀티 AI 쿼터 실시간 추적, 5시간 프리웜(Pre-warm) 최적화, 독립형 헤드리스 브로커, 로컬 GPU 및 5TB 클라우드 스토리지를 통합 관제하는 올인원 AI 엔지니어링 플랫폼"**
 
-Integrated Power는 **Antigravity IDE, VS Code 및 독립형 데스크톱 관제 센터(IPCC)**를 위한 차세대 멀티 AI 브로커 및 리소스 오케스트레이션 플랫폼입니다. Windows 11, macOS, Linux 환경에서 4대 핵심 AI 모델(Antigravity Gemini · Antigravity Claude · ChatGPT/Codex · Claude Direct)의 실시간 쿼터(5시간/주간), 5시간 선행 프리웜, 3계층 스토리지, 로컬 GPU 하드웨어 텔레메트리를 단일 시스템에서 직관적으로 통합 관제합니다.
+Integrated Power는 **Antigravity IDE 전용 확장 프로그램**으로 구축되어 Antigravity IDE 및 호환 환경, 독립형 데스크톱 관제 센터(IPCC)를 위한 차세대 멀티 AI 브로커 및 리소스 오케스트레이션 플랫폼입니다. Windows 11, macOS, Linux 환경에서 4대 핵심 AI 모델(Antigravity Gemini · Antigravity Claude · ChatGPT/Codex · Claude Direct)의 실시간 쿼터(5시간/주간), 5시간 선행 프리웜, 3계층 스토리지, 로컬 GPU 하드웨어 텔레메트리를 단일 시스템에서 직관적으로 통합 관제합니다.
 
 ---
 
@@ -131,6 +131,17 @@ Integrated Power는 외부 에이전트 도구와의 연동을 위해 **공식 �
 | **설정 디렉터리 (`configDir`)** | `%APPDATA%\IntegratedPower` | `~/.config/integrated-power` | `$XDG_CONFIG_HOME/integrated-power`<br>(기본: `~/.config/...`) |
 | **캐시 디렉터리 (`cacheDir`)** | `%LOCALAPPDATA%\IntegratedPower\cache` | `~/Library/Caches/IntegratedPower` | `$XDG_CACHE_HOME/integrated-power`<br>(기본: `~/.cache/...`) |
 | **Google Drive MCP 인증키** | `%USERPROFILE%\.config\google-drive-mcp\` | `~/.config/google-drive-mcp/` | `~/.config/google-drive-mcp/` |
+
+---
+
+## ⚠️ 제품 경계 및 설치 주의 사항 (Product Boundary)
+
+* **Antigravity IDE 전용 확장 프로그램 및 래퍼**:
+  확장 설치 및 CLI 관리에는 반드시 공식 Antigravity IDE CLI 래퍼를 사용해야 합니다:
+  ```text
+  %LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd
+  ```
+  별도 프로그램인 `%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe`는 확장 설치 대상이 아니며, 이 확장은 별도 `Antigravity.exe`용 확장이 아니며 Codex용 확장도 아니다.
 
 ---
 
