@@ -197,6 +197,7 @@ test("package commands exclude removed Athena workflow and legacy terminals", ()
   const commands = (manifest.contributes?.commands ?? []).map((entry) => entry.command).sort();
 
   assert.deepStrictEqual(commands, [
+    "integratedPower.addTaskToQueue",
     "integratedPower.agentRuns.configureViews",
     "integratedPower.agentRuns.openCompact",
     "integratedPower.agentRuns.openRunsFile",

@@ -81,13 +81,40 @@ async function run() {
       process.exit(1);
     }
 
-    // Test probe against loopback port
+    // 1. Test probe against loopback port
     const { probeBroker } = require(standaloneScript);
     const probe = await probeBroker(37241, 600);
-    // Even if broker is running or stopped, probe function must resolve cleanly without crashing
     if (typeof probe.alive !== 'boolean') {
       console.error('probeBroker returned invalid result:', probe);
       process.exit(1);
+    }
+
+    // 2. Live smoke lifecycle execution test on isolated port
+    const { execFileSync } = require('child_process');
+    const tempState = path.join(require('os').tmpdir(), `ip-verify-broker-${Date.now()}`);
+    try {
+      const smokeOutput = execFileSync(
+        process.execPath,
+        [standaloneScript, '--smoke'],
+        {
+          env: {
+            ...process.env,
+            INTEGRATED_POWER_BROKER_PORT: '37298',
+            INTEGRATED_POWER_STATE_ROOT: tempState,
+          },
+          encoding: 'utf-8',
+          timeout: 10000,
+        }
+      );
+      if (!smokeOutput.includes('SMOKE_COMPLETE') && !smokeOutput.includes('"service":"integrated-power-broker"')) {
+        console.error('standalone broker smoke run output invalid:', smokeOutput);
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error('standalone broker smoke lifecycle test failed:', err);
+      process.exit(1);
+    } finally {
+      try { fs.rmSync(tempState, { recursive: true, force: true }); } catch {}
     }
 
     console.log('standalone broker lifecycle verified');

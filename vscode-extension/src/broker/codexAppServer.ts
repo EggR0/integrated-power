@@ -4,6 +4,7 @@ import * as path from "path";
 import { ChildProcess, ChildProcessWithoutNullStreams, spawn } from "child_process";
 import * as readline from "readline";
 import { AgentCapability, AgentAdapter, AgentStateKind, ProviderId, TaskEnvelope } from "./protocol";
+import { findExecutableOnPath } from "./executable";
 
 type JsonRpcMessage = {
   id?: number;
@@ -365,11 +366,18 @@ export function findCodexCliSync(): string | undefined {
 
     const localBinExe = path.join(homedir, ".local", "bin", "codex.exe");
     if (fs.existsSync(localBinExe)) return localBinExe;
-    const localBinCmd = path.join(homedir, ".local", "bin", "codex.cmd");
-    if (fs.existsSync(localBinCmd)) return localBinCmd;
+    const directCandidates = [
+      path.join(local, "Programs", "Codex", "codex.exe"),
+      path.join(local, "Programs", "ChatGPT", "resources", "codex.exe"),
+      path.join(homedir, ".codex", ".sandbox-bin", "codex.exe"),
+    ];
+    for (const direct of directCandidates) {
+      if (fs.existsSync(direct)) return direct;
+    }
   }
 
-  return "codex";
+  const names = process.platform === "win32" ? ["codex.cmd", "codex.exe", "codex"] : ["codex"];
+  return findExecutableOnPath(names);
 }
 
 export interface LiveCodexRateLimits {

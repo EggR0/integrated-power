@@ -37,3 +37,25 @@
   - `src-tauri/src/main.rs` (Release GUI application centered on active monitor, system tray menu)
   - `src-tauri/target/release/integrated-power-control-center.exe` (Standalone release binary)
   - `start-control-center.cmd` (Interactive Windows launcher script)
+
+---
+
+## Pre-Refactoring Inventory Snapshot (2026-10-15)
+
+### 1. Identified Zombie / Unused Code Candidates
+- `vscode-extension/src/DeadCodeManager.ts` (647 lines)
+- `vscode-extension/src/RefTransactionCoordinator.ts` (812 lines)
+- `vscode-extension/src/SerenaWasmIndexer.ts` (1135 lines)
+- `vscode-extension/scripts/test-visual-graph-safety-guard.js` (155 lines)
+
+### 2. Duplicate Script Copies
+- Canonical: `vscode-extension/assets/antigravity/sync_history.py`
+- Duplicate: `scripts/antigravity/sync_history.py`
+
+### 3. Broken / Needs Fix
+- `scripts/standalone-broker.js` (references non-existent `EncryptedFileLedger` on line 99)
+- `scripts/verify-cross-platform-broker.js` (text-only assertion without live daemon lifecycle test)
+
+### 4. Tracked File Path Counts
+- Tracked Git files count: 255 files
+- Complete list backed up in: `scratch/tracked.txt`

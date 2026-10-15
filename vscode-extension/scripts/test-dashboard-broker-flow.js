@@ -142,6 +142,29 @@ const server = http.createServer((request, response) => {
       task.status = "cancelled";
       return send(response, 200, { event: { id: "event-cancel", taskId: id, type: "task.cancelled", revision: task.revision } });
     }
+    if (request.method === "POST" && url.pathname.startsWith("/v1/tasks/") && url.pathname.endsWith("/classify")) {
+      const id = decodeURIComponent(url.pathname.slice("/v1/tasks/".length, -"/classify".length));
+      const task = tasks.find((candidate) => candidate.id === id);
+      if (!task || task.revision !== body.expectedRevision) return send(response, 409, { error: "revision_conflict" });
+      task.revision++;
+      task.tags = ["refactor", "bugfix"];
+      task.recommendedProvider = "openai.codex.app";
+      return send(response, 200, {
+        event: {
+          id: "event-classify",
+          taskId: id,
+          type: "task.classified",
+          revision: task.revision,
+          tags: task.tags,
+          recommendedProvider: task.recommendedProvider,
+        },
+        tags: task.tags,
+        recommendedProvider: task.recommendedProvider,
+      });
+    }
+    if (request.method === "GET" && url.pathname === "/v1/tags") {
+      return send(response, 200, { ok: true, tags: ["refactor", "bugfix", "ui"] });
+    }
     const approvalMatch = url.pathname.match(/^\/v1\/approvals\/([^/]+)\/(approve|reject)$/);
     if (request.method === "POST" && approvalMatch) {
       const index = approvals.findIndex((approval) => approval.id === decodeURIComponent(approvalMatch[1]));
@@ -153,11 +176,26 @@ const server = http.createServer((request, response) => {
   });
 });
 
+const terminals = [];
 const vscode = {
   window: {
     createOutputChannel: () => ({ appendLine() {}, dispose() {}, show() {} }),
     showWarningMessage: async () => undefined,
     showInformationMessage: async (message) => informationMessages.push(message),
+    showQuickPick: async (items) => {
+      // Return the first item (Offline Fast Classification) to mock user selection
+      return Array.isArray(items) ? items[0] : undefined;
+    },
+    terminals,
+    createTerminal: (name) => {
+      const term = {
+        name,
+        show() {},
+        sendText(text) { term.lastSent = text; },
+      };
+      terminals.push(term);
+      return term;
+    },
   },
   workspace: {
     name: "Synthetic Workspace",
@@ -283,6 +321,76 @@ async function main() {
     const cancelRequest = requests.find((entry) => entry.pathname.endsWith("/cancel"));
     assert.strictEqual(cancelRequest.body.expectedRevision, 5);
     assert.ok(cancelRequest.body.idempotencyKey);
+
+    // Test quick add task queue
+    ui.render(outbound.filter((message) => message.type === "brokerState").at(-1).state);
+    const quickInput = ui.findAll(ui.container, (element) => element.className && element.className.includes("broker-quick-input"))[0];
+    const quickAddBtn = ui.findAll(ui.container, (element) => element.tagName === "BUTTON" && element.textContent === "+ 추가")[0];
+    assert.ok(quickInput && quickAddBtn, "quick add controls are present");
+    quickInput.value = "Quick memo: refactor parser logic";
+    quickAddBtn.click();
+    await controller.handleMessage(ui.sent.shift());
+    const quickAddRequest = requests.find((entry) => entry.method === "POST" && entry.pathname === "/v1/tasks" && entry.body.rawInput === "Quick memo: refactor parser logic");
+    assert.ok(quickAddRequest, "quick add creates task with rawInput");
+
+    // Test AI classification menu trigger
+    ui.render(outbound.filter((message) => message.type === "brokerState").at(-1).state);
+    const classifyBtn = ui.findAll(ui.container, (element) => element.className && element.className.includes("broker-classify-btn"))[0];
+    assert.ok(classifyBtn, "created task card displays AI classify button");
+    classifyBtn.click();
+    const classifyMenuMsg = ui.sent.shift();
+    assert.strictEqual(classifyMenuMsg.type, "requestClassifyMenu", "clicking classify requests QuickPick menu");
+    await controller.handleMessage(classifyMenuMsg);
+    const classifyRequest = requests.find((entry) => entry.pathname.endsWith("/classify"));
+    assert.ok(classifyRequest, "classification is dispatched via broker with offline mode fallback");
+
+    // Test equal 3-platform action buttons (Antigravity, Codex, Local)
+    const latestState = outbound.filter((message) => message.type === "brokerState").at(-1).state;
+    ui.render(latestState);
+    const runGroup = ui.findAll(ui.container, (element) => element.className && element.className.includes("broker-run-group"))[0];
+    assert.ok(runGroup, "broker run group is present for created task");
+    const platformBtns = ui.findAll(runGroup, (element) => element.className && element.className.includes("broker-platform-btn"));
+    assert.strictEqual(platformBtns.length, 3, "three equal platform buttons are rendered in run group");
+
+    const agyBtn = platformBtns.find((btn) => btn.textContent.includes("Antigravity"));
+    assert.ok(agyBtn, "Antigravity button is present with canonical name");
+    agyBtn.click();
+    const agyMsg = ui.sent.shift();
+    assert.strictEqual(agyMsg.provider, "google.antigravity.ide", "Antigravity button delegates to google.antigravity.ide");
+
+    const codexBtn = platformBtns.find((btn) => btn.textContent.includes("Codex"));
+    assert.ok(codexBtn, "Codex button is present");
+    if (!codexBtn.disabled) {
+      codexBtn.click();
+      const codexMsg = ui.sent.shift();
+      assert.strictEqual(codexMsg.provider, "openai.codex.app", "Codex button delegates to openai.codex.app when online");
+    } else {
+      assert.ok(codexBtn.title.includes("비활성화"), "Codex button title explains disabled reason when offline");
+    }
+
+    const localBtn = platformBtns.find((btn) => btn.textContent.includes("Local"));
+    assert.ok(localBtn, "Local button is present");
+    assert.strictEqual(localBtn.disabled, true, "Local button is disabled when server is offline");
+    assert.ok(localBtn.title.includes("비활성화"), "Local button title explains disabled reason");
+
+    // Test that when any platform is absent/offline, its button is strictly disabled without errors
+    ui.render({
+      ...outbound.filter((message) => message.type === "brokerState").at(-1).state,
+      platforms: {
+        antigravityOnline: false,
+        codexOnline: false,
+        localOnline: false,
+        antigravityReason: "Antigravity 미설치",
+        codexReason: "Codex CLI가 설치되어 있지 않습니다.",
+        localReason: "Local LLM 서버가 오프라인입니다.",
+      },
+    });
+    const offlineRunGroup = ui.findAll(ui.container, (element) => element.className && element.className.includes("broker-run-group"))[0];
+    const offlineBtns = ui.findAll(offlineRunGroup, (element) => element.className && element.className.includes("broker-platform-btn"));
+    for (const btn of offlineBtns) {
+      assert.strictEqual(btn.disabled, true, `${btn.textContent} must be strictly disabled when offline/uninstalled`);
+      assert.ok(btn.title.includes("비활성화"), `${btn.textContent} title must explain disabled reason`);
+    }
 
     ui.render(outbound.filter((message) => message.type === "brokerState").at(-1).state);
     ui.findAll(ui.container, (element) => element.tagName === "BUTTON" && element.textContent === "Approve")[0].click();

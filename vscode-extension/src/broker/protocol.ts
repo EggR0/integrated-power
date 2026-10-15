@@ -34,7 +34,8 @@ export type TaskEventType =
   | "task.conflict"
   | "task.completed"
   | "task.failed"
-  | "task.cancelled";
+  | "task.cancelled"
+  | "task.classified";
 
 export interface BudgetPolicy {
   maxUsd?: number;
@@ -47,6 +48,9 @@ export interface TaskEnvelope {
   id: string;
   title: string;
   goal: string;
+  tags?: string[];
+  recommendedProvider?: ProviderId;
+  rawInput?: string;
   workspacePath?: string;
   baseWorkspacePath?: string;
   isolatedWorkspacePath?: string;
@@ -205,6 +209,9 @@ export interface CreateTaskInput {
   privacy?: TaskEnvelope["privacy"];
   budget?: Partial<BudgetPolicy>;
   idempotencyKey?: string;
+  tags?: string[];
+  recommendedProvider?: ProviderId;
+  rawInput?: string;
 }
 
 export interface DelegateTaskInput {

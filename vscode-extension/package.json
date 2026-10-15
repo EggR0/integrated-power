@@ -3,7 +3,7 @@
   "publisher": "EggR0",
   "displayName": "Integrated Power",
   "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "author": {
     "name": "EggR0"
   },
@@ -230,6 +230,11 @@
         "icon": "$(json)"
       },
       {
+        "command": "integratedPower.addTaskToQueue",
+        "title": "Integrated Power: Add Task to Work Queue",
+        "icon": "$(add)"
+      },
+      {
         "command": "integratedPower.agentRuns.configureViews",
         "title": "Antigravity IDE: Configure Dashboard Views"
       },
@@ -304,11 +309,14 @@
     "vscode:prepublish": "npm run compile && node ./scripts/build-extension.js",
     "compile": "tsc -p ./ && node ./scripts/build-broker-package.js && node ./scripts/write-broker-manifest.js",
     "watch": "tsc -watch -p ./",
-    "test": "pnpm run test:reuse && node ./scripts/test-quota-core.js && node ./scripts/test-token-manager-headless.js && pnpm run compile && node ./scripts/test-compact-ui.js && node ./scripts/test-dashboard-broker-flow.js && node ./scripts/test-dashboard-approval-revision.js && node ./scripts/test-prewarm.js && node ./scripts/test-runtime-background-token.js && node ./scripts/test-visual-graph-safety-guard.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && pnpm run test:powershell",
+    "test": "npm run test:reuse && node ./scripts/test-quota-core.js && node ./scripts/test-token-manager-headless.js && npm run compile && node ./scripts/test-compact-ui.js && node ./scripts/test-dashboard-broker-flow.js && node ./scripts/test-dashboard-approval-revision.js && node ./scripts/test-prewarm.js && node ./scripts/test-runtime-background-token.js && node ./scripts/test-first-run-onboarding.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && npm run test:powershell",
     "test:ui": "node ./scripts/test-compact-ui.js && node ./scripts/test-dashboard-broker-flow.js && node ./scripts/test-dashboard-approval-revision.js && node ./scripts/test-token-manager-headless.js",
+    "test:broker": "node ./scripts/run-broker-tests.js",
+    "test:quota": "node ./scripts/test-quota-core.js",
+    "test:onboarding": "node ./scripts/test-first-run-onboarding.js",
     "test:reuse": "node ./scripts/run-reuse-gate.js && node ./scripts/test-gpu-selection.js",
     "test:powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-LocalLLMInventory.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-OnboardingMigration.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/scripts/tests/Invoke-LocalLLM.Tests.ps1",
-    "test:extension": "pnpm run compile && node ./out/test/runTest.js",
+    "test:extension": "npm run compile && node ./out/test/runTest.js",
     "package": "vsce package --no-dependencies"
   },
   "devDependencies": {

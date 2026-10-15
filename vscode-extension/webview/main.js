@@ -348,17 +348,38 @@ function render() {
     </main>
   `;
 
-  if (nextHtml === lastRenderedHtml) {
-    renderBrokerControls();
-    return;
-  }
-
-  const prevScrollTop = window.scrollY || document.documentElement.scrollTop;
   const activeCommand = document.activeElement?.getAttribute("data-command");
   const activeBrokerFocus = document.activeElement?.getAttribute("data-broker-focus");
   const brokerSelection = activeBrokerFocus && typeof document.activeElement.selectionStart === "number"
     ? [document.activeElement.selectionStart, document.activeElement.selectionEnd]
     : undefined;
+
+  function restoreFocus() {
+    if (activeCommand) {
+      const el = root.querySelector(`[data-command="${activeCommand}"]`);
+      if (el) {
+        el.focus();
+      }
+    }
+    if (activeBrokerFocus) {
+      const focusTarget = [...root.querySelectorAll("[data-broker-focus]")]
+        .find((element) => element.getAttribute("data-broker-focus") === activeBrokerFocus);
+      if (focusTarget) {
+        focusTarget.focus();
+        if (brokerSelection && typeof focusTarget.setSelectionRange === "function") {
+          focusTarget.setSelectionRange(brokerSelection[0], brokerSelection[1]);
+        }
+      }
+    }
+  }
+
+  if (nextHtml === lastRenderedHtml) {
+    renderBrokerControls();
+    restoreFocus();
+    return;
+  }
+
+  const prevScrollTop = window.scrollY || document.documentElement.scrollTop;
 
   lastRenderedHtml = nextHtml;
   root.innerHTML = nextHtml;
@@ -367,22 +388,7 @@ function render() {
   if (prevScrollTop > 0) {
     window.scrollTo({ top: prevScrollTop, behavior: "instant" });
   }
-  if (activeCommand) {
-    const el = root.querySelector(`[data-command="${activeCommand}"]`);
-    if (el) {
-      el.focus();
-    }
-  }
-  if (activeBrokerFocus) {
-    const focusTarget = [...root.querySelectorAll("[data-broker-focus]")]
-      .find((element) => element.getAttribute("data-broker-focus") === activeBrokerFocus);
-    if (focusTarget) {
-      focusTarget.focus();
-      if (brokerSelection && typeof focusTarget.setSelectionRange === "function") {
-        focusTarget.setSelectionRange(brokerSelection[0], brokerSelection[1]);
-      }
-    }
-  }
+  restoreFocus();
 
   if (!root.__delegationInitialized) {
     root.__delegationInitialized = true;

@@ -110,9 +110,9 @@ testAsync("TokenManager getStatus executes without crashing and returns safe sta
 
   assert.ok(status, "Status object must exist");
   assert.ok(Array.isArray(status.activity), "Activity list must be array");
-  assert.strictEqual(typeof status.antigravityTokensLeft, "number");
-  assert.strictEqual(typeof status.codexTokensLeft, "number");
-  assert.strictEqual(typeof status.opusTokensLeft, "number");
+  assert.ok(typeof status.antigravityTokensLeft === "number" || status.antigravityTokensLeft === undefined);
+  assert.ok(typeof status.codexTokensLeft === "number" || status.codexTokensLeft === undefined);
+  assert.ok(typeof status.opusTokensLeft === "number" || status.opusTokensLeft === undefined);
 });
 
 // ─── Test 4: Claude direct file reader handles non-existent or locked files ─

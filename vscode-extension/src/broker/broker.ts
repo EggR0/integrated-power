@@ -133,6 +133,9 @@ export class IntegratedPowerBroker {
       id: createTaskId(),
       title: input.title.trim(),
       goal: input.goal.trim(),
+      tags: input.tags ?? [],
+      recommendedProvider: input.recommendedProvider,
+      rawInput: input.rawInput,
       originProvider: input.originProvider,
       workspacePath,
       contextFiles,
@@ -527,6 +530,13 @@ export class IntegratedPowerBroker {
       if (event.type === "task.failed") task.status = "failed";
       if (event.type === "task.cancelled") task.status = "cancelled";
       if (event.type === "task.conflict") task.status = "awaiting_approval";
+      if (event.type === "task.classified") {
+        const payload = event.payload as { tags?: string[]; refinedTitle?: string; refinedGoal?: string; recommendedProvider?: ProviderId };
+        if (Array.isArray(payload.tags)) task.tags = payload.tags;
+        if (payload.refinedTitle) task.title = payload.refinedTitle;
+        if (payload.refinedGoal) task.goal = payload.refinedGoal;
+        if (payload.recommendedProvider) task.recommendedProvider = payload.recommendedProvider;
+      }
       if (event.type === "task.merged") {
         task.status = "completed";
         const payload = event.payload as { clearWorkspaces?: boolean };
@@ -597,6 +607,126 @@ export class IntegratedPowerBroker {
       routingPolicy: "1. Heavy 코드 생성/분석 -> Antigravity\n2. 정밀 로직/아키텍처 검증 -> Codex\n3. 단순 반복/오프라인 작업 -> Local LLM (로컬 엔드포인트; 계정 쿼터는 별도 측정)",
       totalTasksLogged: this.tasks.size,
     };
+  }
+
+  public getAllTags(): string[] {
+    const set = new Set<string>();
+    for (const task of this.tasks.values()) {
+      if (Array.isArray(task.tags)) {
+        for (const tag of task.tags) {
+          if (typeof tag === "string" && tag.trim()) {
+            set.add(tag.trim().toLowerCase());
+          }
+        }
+      }
+    }
+    return Array.from(set).sort();
+  }
+
+  public async classifyTask(
+    taskId: string,
+    expectedRevision: number,
+    provider: ProviderId = "local.openai-compatible",
+    mode: "offline" | "agent" = "agent",
+    idempotencyKey?: string,
+  ): Promise<{ task: TaskEnvelope; event: TaskEvent }> {
+    const task = this.requireTask(taskId);
+    if (task.revision !== expectedRevision) throw new BrokerConflictError(task.revision);
+
+    const knownTags = this.getAllTags();
+    const memo = task.rawInput || task.goal || task.title;
+
+    let resultTags: string[] = [];
+    let refinedTitle: string | undefined;
+    let refinedGoal: string | undefined;
+    let recommendedProvider: ProviderId | undefined;
+
+    const adapter = mode !== "offline" ? this.adapters.get(provider) : undefined;
+    if (adapter) {
+      try {
+        const prompt = `Analyze this user task/idea memo and classify it.
+Task memo: "${memo}"
+Existing system tags pool: [${knownTags.join(", ")}]
+
+Rules:
+1. Re-use suitable tags from the existing pool if applicable.
+2. If none fits, create 1-2 new concise kebab-case tags (e.g. "log-rotate", "gdrive-sync").
+3. Provide a clear one-line title ("refinedTitle") and concise goal ("refinedGoal").
+4. Recommend the best execution platform ("recommendedProvider": "local.openai-compatible" | "openai.codex.app" | "google.antigravity.ide").
+
+Return ONLY valid JSON matching this format:
+{
+  "tags": ["tag1", "tag2"],
+  "refinedTitle": "short clear title",
+  "refinedGoal": "refined goal description",
+  "recommendedProvider": "google.antigravity.ide"
+}`;
+        // 5-second timeout guard to prevent UI blocking on slow/offline models
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Adapter classification timeout")), 5000)
+        );
+        const output = await Promise.race([adapter.submit(task, prompt), timeoutPromise]);
+        const match = output.text.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          if (Array.isArray(parsed.tags)) {
+            resultTags = parsed.tags.map((t: unknown) => String(t).trim().toLowerCase().replace(/^#/, "")).filter(Boolean);
+          }
+          if (typeof parsed.refinedTitle === "string" && parsed.refinedTitle.trim()) {
+            refinedTitle = parsed.refinedTitle.trim();
+          }
+          if (typeof parsed.refinedGoal === "string" && parsed.refinedGoal.trim()) {
+            refinedGoal = parsed.refinedGoal.trim();
+          }
+          if (typeof parsed.recommendedProvider === "string" && ["local.openai-compatible", "openai.codex.app", "google.antigravity.ide"].includes(parsed.recommendedProvider)) {
+            recommendedProvider = parsed.recommendedProvider as ProviderId;
+          }
+        }
+      } catch {
+        // Fall back to heuristic classification immediately if adapter fails or times out
+      }
+    }
+
+    if (!resultTags.length) {
+      const lower = memo.toLowerCase();
+      const derived = new Set<string>();
+      if (lower.match(/버그|오류|에러|고장|fix|bug|error|crash/)) derived.add("bugfix");
+      if (lower.match(/리팩|정리|구조|개선|refactor|clean|structure/)) derived.add("refactor");
+      if (lower.match(/문서|가이드|설명|readme|doc|guide/)) derived.add("docs");
+      if (lower.match(/테스트|검증|test|spec|verify|qa/)) derived.add("test");
+      if (lower.match(/스토리지|드라이브|저장|storage|gdrive|backup|drive/)) derived.add("storage");
+      if (lower.match(/ui|화면|웹뷰|디자인|css|버튼|layout/)) derived.add("ui");
+      if (lower.match(/배포|릴리스|ci|cd|github|release|deploy|vsix/)) derived.add("devops");
+      if (lower.match(/성능|속도|최적화|vram|gpu|perf|speed/)) derived.add("performance");
+      if (!derived.size) derived.add("task");
+      resultTags = Array.from(derived);
+    }
+
+    if (!recommendedProvider) {
+      const lower = memo.toLowerCase();
+      if (lower.match(/아키텍처|핵심|중요|어려운|complex|arch|refactor/)) {
+        recommendedProvider = "openai.codex.app";
+      } else if (lower.match(/정리|요약|단순|포맷|format|clean|extract/)) {
+        recommendedProvider = "local.openai-compatible";
+      } else {
+        recommendedProvider = "google.antigravity.ide";
+      }
+    }
+
+    task.tags = Array.from(new Set([...(task.tags || []), ...resultTags]));
+    if (refinedTitle) task.title = refinedTitle;
+    if (refinedGoal) task.goal = refinedGoal;
+    task.recommendedProvider = recommendedProvider;
+    task.updatedAt = new Date().toISOString();
+
+    const event = await this.commit(task, "task.classified" as any, provider, expectedRevision, {
+      tags: task.tags,
+      refinedTitle: task.title,
+      refinedGoal: task.goal,
+      recommendedProvider: task.recommendedProvider,
+    }, idempotencyKey);
+
+    return { task, event };
   }
 
   public async getTokenStatus(tokenStatusReader?: () => Promise<unknown>): Promise<unknown> {

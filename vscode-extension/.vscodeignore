@@ -12,6 +12,7 @@ out/test/
 out/**
 !out/extension.js
 !out/shared-quota.js
+!out/broker/**
 package-lock.json
 pnpm-lock.yaml
 pnpm-workspace.yaml

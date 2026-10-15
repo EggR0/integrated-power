@@ -750,7 +750,7 @@ test("future reset alone does not prove an active countdown for full quota", () 
   // If reset time is 5h or more, dormant Ready is displayed
   const full5h = shared.buildTokenMetric("5Hours", {
     antigravityPercentage: 100,
-    antigravityResetTime: resetIn(5),
+    antigravityResetTime: new Date(Date.now() + 5.1 * 3600e3).toISOString(),
     antigravityWeeklyPercentage: 100,
     antigravityWeeklyResetTime: resetIn(48),
   }, "antigravity", "Gemini 5Hours", "antigravityWeekly");

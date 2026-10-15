@@ -53,6 +53,18 @@ Integrated Power는 **Antigravity IDE 전용 확장 프로그램**으로 구축�
 - 로컬 연산 패널에서 GPU Load, VRAM 사용량, 소모 전력(`[GPU] 35% load | 170.8W / 370W`)을 대칭형 프로그레스 바로 실시간 모니터링.
 - 기본 로컬 LLM으로 `qwen3.8:27b`를 자동 바인딩하여 안전한 오프라인 전처리/추론 지원.
 
+### 7. AI 작업 큐 및 자동 태그 분류 (Unified Task Queue & AI Tag Pool)
+- **상단 퀵 추가 바 (Quick Add)**: 사이드바 상단 입력창과 명령 팔레트(`integratedPower.addTaskToQueue`)를 통해 에이전트 작업 메모를 원장에 즉시 기록.
+- **AI 태그 풀 매칭 및 자동 분류 (`/v1/tasks/:id/classify`)**: 등록된 작업 메모를 기존 태그 풀과 대조하여 의미론적 태그(`tags: [...]`) 및 최적 모델 플랫폼을 자동 추천 (오프라인 규칙 기반 폴백 내장).
+- **원클릭 실행 및 플랫폼 전환 칩**: AI 추천 플랫폼 즉시 실행 버튼(`[▶ Run on Codex]`)과 1클릭 전환 칩(`[Local | Codex | Agy]`)을 제공하여 조작 동선 최소화.
+
+### 8. 리뉴얼된 설정 센터 & 프로바이더별 텔레메트리 가이드
+- **프로바이더별 텔레메트리 가이드**: Google Antigravity (Google 1회 로그인), OpenAI Codex (CLI 로그인), Anthropic Claude (로컬 로그 자동 집계), 로컬 LLM (Ollama/vLLM 엔드포인트)의 정상 수집 조건을 인포그래픽 카드로 안내.
+- **4대 기능 그룹 구분자**: *제공자 및 모델 사용량*, *에이전트 제어 및 대시보드 패널*, *백그라운드 브로커 및 시스템 알림*, *데이터 영구 저장 및 유지 관리* 카테고리로 체계적 분리.
+
+### 9. 신규 설치 사용자 온보딩 무결성 검증 (5-Gate Usability Discipline)
+- VSIX 패키지 100% 자산 동봉(`!out/broker/**`), 순정 격리 프로필 클린 활성화 시 브로커 자동 기동, zero-CLI 웹뷰 복원력 등 5대 오라클 게이트(`GATES.md`) 전수 통과 및 영구 회귀 테스트 체계 구축.
+
 ---
 
 ## 🏛️ 4대 코어 시스템 아키텍처
@@ -152,7 +164,7 @@ Integrated Power는 외부 에이전트 도구와의 연동을 위해 **공식 �
 | **제품 표시명** | Integrated Power |
 | **Publisher / 네임스페이스** | **EggR0** |
 | **확장 ID** | **`EggR0.integrated-power`** |
-| **현재 최신 버전** | **`v0.10.1`** |
+| **현재 최신 버전** | **`v0.11.0`** |
 | **공식 마켓플레이스** | [Open VSX Registry](https://open-vsx.org/extension/EggR0/integrated-power) · [GitHub Releases (Latest)](https://github.com/EggR0/integrated-power/releases/latest) |
 | **지원 플랫폼** | Windows 11, macOS, Linux |
 | **지원 클라이언트** | Antigravity IDE, VS Code (^1.80.0), Standalone Desktop IPCC (Tauri) |

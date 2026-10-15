@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.11.0] - 2026-10-15
+
+### Added & Enhanced
+
+- **First-Time User Onboarding & VSIX Integrity Verification (`GATES.md`, `scripts/test-first-run-onboarding.js`, `.vscodeignore`)**:
+  - **Fixed VSIX Bundle Closure**: Resolved critical `.vscodeignore` bug where `out/broker/**` was omitted, ensuring the 1.48MB production VSIX completely packages all broker daemon runtime assets.
+  - **Clean-Slate Isolation Gates**: Established 5 acceptance gates (G1~G5) verifying clean activation, automatic broker cold-start, 4 configuration center tabs, zero-CLI webview resilience, and full E2E user workflows in an isolated test environment.
+  - **Permanent CI Regression**: Registered `test:onboarding` script in `package.json` and integrated into the primary `npm test` suite.
+- **Configuration Center Modern Redesign (`src/ConfigurationCenter.ts`)**:
+  - **Token Telemetry Guide Banner**: Added a modern glassmorphic guide card detailing exact prerequisites for real-time quota retrieval across Google Antigravity, OpenAI Codex, Anthropic Claude, and Local LLMs.
+  - **Categorized Section Dividers**: Reorganized settings into clean semantic groups (*Providers & Quota*, *Agent Panels*, *Broker & System*, *Storage & Maintenance*) with pill badges.
+  - **Refined Typography & Captions**: Replaced cluttered text with polished, concise single-line setting descriptions and hover transitions.
+- **Unified Task Queue with Quick Add & AI Tag Classification (`src/broker/`, `webview/broker-controls.js`)**:
+  - **Quick Add Task Queue**: Top-bar quick input field in the sidebar webview and global command `Integrated Power: Add Task to Queue` (`integratedPower.addTaskToQueue`), allowing users to jot down raw notes and tasks that are instantly recorded in the durable broker ledger.
+  - **AI Tag Pool Matching & Generation (`POST /v1/tasks/:id/classify`, `GET /v1/tags`)**: Compares new task memos against existing historical tag pools, assigning existing tags or generating new semantic tags (`tags: [...]`) via user-chosen agent platform with robust offline heuristic fallbacks.
+  - **One-Click Execution & Multi-Platform Switch Chips**: Added one-click run buttons (`[▶ Run on Codex]`) targeting AI-recommended platforms alongside instant switch chips (`[Local | Codex | Agy]`) for direct execution without extra navigation.
+  - **Compact UI Strict Overflow Prevention**: Verified zero-overflow and zero dynamic `innerHTML` rendering down to 120px narrow sidebar widths.
+- **Repository Architecture Cleanup & Standalone Daemon Fix (`scripts/standalone-broker.js`, `src/storagePath.ts`)**:
+  - **Fixed Standalone Broker Daemon**: Fixed `TypeError: EncryptedFileLedger is not a constructor` and directory key path issues by adopting canonical `createPreferredEventLedger` and key loading with live E2E process lifecycle verification.
+  - **Retired Zombie Code**: Safely retired ~96KB of unused modules (`DeadCodeManager`, `RefTransactionCoordinator`, `SerenaWasmIndexer`, `test-visual-graph-safety-guard`) and streamlined CI test chains.
+  - **SSOT Path Consolidation**: Aligned `storagePath.ts` with cross-platform `platformPaths.ts` and replaced duplicate `sync_history.py` with a forwarding wrapper to the canonical extension asset.
+
 ## [0.10.1] - 2026-10-15
 
 ### Enhanced & Docs

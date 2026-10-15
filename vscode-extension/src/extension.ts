@@ -72,6 +72,16 @@ export function activate(context: vscode.ExtensionContext): void {
       await provider.refresh(true);
     }),
     vscode.commands.registerCommand("integratedPower.agentRuns.openRunsFile", () => provider.openRunsFile()),
+    vscode.commands.registerCommand("integratedPower.addTaskToQueue", async () => {
+      const input = await vscode.window.showInputBox({
+        prompt: "작업 큐에 추가할 아이디어나 메모를 입력하세요 (자동 태그 분류 및 원클릭 실행 가능)",
+        placeHolder: "예: 로그 파일 자동 압축 스크립트 작성",
+      });
+      if (input && input.trim()) {
+        await provider.createTaskFromRawInput(input.trim());
+        void vscode.window.showInformationMessage(`[Integrated Power] 작업 큐에 등록되었습니다: "${input.trim().slice(0, 30)}..."`);
+      }
+    }),
     vscode.commands.registerCommand(
       "integratedPower.agentRuns.configureViews",
       () => openConfigurationCenter("dashboard"),

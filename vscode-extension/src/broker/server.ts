@@ -485,6 +485,15 @@ export async function startBrokerServer(
         const commit = await broker.mergeTask(taskId, input.expectedRevision, input.idempotencyKey);
         return send(response, 200, { ok: true, commit });
       }
+      if (request.method === "POST" && url.pathname.startsWith("/v1/tasks/") && url.pathname.endsWith("/classify")) {
+        const taskId = decodeURIComponent(url.pathname.slice("/v1/tasks/".length, -"/classify".length));
+        const input = await readJson(request) as { expectedRevision: number; provider?: import("./protocol").ProviderId; mode?: "offline" | "agent"; idempotencyKey?: string };
+        const result = await broker.classifyTask(taskId, input.expectedRevision, input.provider, input.mode, input.idempotencyKey);
+        return send(response, 200, result);
+      }
+      if (request.method === "GET" && url.pathname === "/v1/tags") {
+        return send(response, 200, { tags: broker.getAllTags() });
+      }
       return send(response, 404, { error: "not_found" });
     } catch (error) {
       if (error instanceof BrokerConflictError) {

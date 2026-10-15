@@ -71,6 +71,14 @@ export class DashboardProvider implements vscode.WebviewViewProvider, vscode.Dis
     return this.controller.openRunsFile();
   }
 
+  public getController(): DashboardController {
+    return this.controller;
+  }
+
+  public createTaskFromRawInput(raw: string): Promise<void> {
+    return this.controller.createTaskFromRawInput(raw);
+  }
+
   private postMessage(message: DashboardOutboundMessage): void {
     void this.view?.webview.postMessage(message);
   }

@@ -6,6 +6,14 @@ export interface BrokerDashboardState {
   workspaceName: string;
   tasks: TaskEnvelope[];
   approvals: ApprovalRequest[];
+  platforms?: {
+    localOnline: boolean;
+    codexOnline: boolean;
+    antigravityOnline: boolean;
+    localReason?: string;
+    codexReason?: string;
+    antigravityReason?: string;
+  };
   error?: string;
   loading?: boolean;
   busy?: boolean;
@@ -221,7 +229,9 @@ export type WebviewToExtensionMessage =
   | { type: "prewarm"; model?: string }
   | { type: "setPrewarmMode"; mode: PrewarmMode; target?: string }
   | { type: "refreshBroker" }
-  | { type: "createBrokerTask"; title: string; goal: string; originProvider: ProviderId }
+  | { type: "createBrokerTask"; title: string; goal: string; originProvider: ProviderId; tags?: string[]; recommendedProvider?: ProviderId; rawInput?: string }
+  | { type: "requestClassifyMenu"; taskId: string; expectedRevision: number }
+  | { type: "classifyBrokerTask"; taskId: string; expectedRevision: number; provider?: ProviderId; mode?: "offline" | "agent" }
   | { type: "delegateBrokerTask"; taskId: string; expectedRevision: number; provider: ProviderId; prompt: string }
   | { type: "cancelBrokerTask"; taskId: string; expectedRevision: number }
   | { type: "resolveBrokerApproval"; approvalId: string; expectedRevision: number; action: "approve" | "reject" };

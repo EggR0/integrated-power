@@ -500,6 +500,136 @@ export class ConfigurationCenter implements vscode.Disposable {
     }
     .subform { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
     .hidden { display: none !important; }
+
+    /* Modern Telemetry Guide & Section Dividers */
+    .telemetry-guide-card {
+      border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 32%, var(--line));
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 22px;
+      background: linear-gradient(135deg, color-mix(in srgb, var(--vscode-editor-background) 80%, var(--vscode-focusBorder) 10%), var(--card));
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+    .telemetry-guide-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .telemetry-guide-header h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+    .telemetry-guide-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+    }
+    .telemetry-provider-card {
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .telemetry-provider-card:hover {
+      border-color: color-mix(in srgb, var(--vscode-focusBorder) 50%, var(--line));
+      transform: translateY(-1px);
+    }
+    .provider-tag {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+      margin-bottom: 6px;
+    }
+    .tag-google { background: rgba(66, 133, 244, 0.18); color: #6ba4ff; }
+    .tag-openai { background: rgba(16, 163, 127, 0.18); color: #10a37f; }
+    .tag-anthropic { background: rgba(217, 119, 6, 0.18); color: #f59e0b; }
+    .tag-local { background: rgba(139, 92, 246, 0.18); color: #a78bfa; }
+    .telemetry-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.48;
+      margin: 0;
+    }
+
+    .section-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 26px 0 14px;
+    }
+    .section-divider h3 {
+      margin: 0;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--vscode-editor-foreground);
+      white-space: nowrap;
+      letter-spacing: -0.2px;
+    }
+    .section-divider .divider-pill {
+      font-size: 10.5px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--vscode-badge-background) 25%, transparent);
+      color: var(--vscode-badge-foreground);
+    }
+    .section-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .setting-card-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .setting-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: color-mix(in srgb, var(--card) 65%, transparent);
+      transition: background 0.15s ease, border-color 0.15s ease;
+      cursor: pointer;
+    }
+    .setting-item:hover {
+      background: color-mix(in srgb, var(--card) 95%, var(--vscode-editor-foreground) 4%);
+      border-color: color-mix(in srgb, var(--line) 85%, transparent);
+    }
+    .setting-item input[type="checkbox"] {
+      margin-top: 3px;
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--vscode-focusBorder);
+    }
+    .setting-text {
+      flex: 1;
+    }
+    .setting-name {
+      display: block;
+      font-weight: 500;
+      font-size: 13.5px;
+      color: var(--vscode-editor-foreground);
+      margin-bottom: 2px;
+      line-height: 1.35;
+    }
+    .setting-caption {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
   </style>
 </head>
 <body>
@@ -557,24 +687,141 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="dashboard">
       <article class="card">
         <h2>Dashboard 설정</h2>
-        <p class="hint">표시 영역과 Integrated Power 상태 저장 위치만 변경합니다. 프로젝트 파일은 이동하지 않습니다. 기존 <code>EggR\state</code> 데이터는 최초 전환 때 새 경로로 누락 파일만 복사하고 원본을 남깁니다.</p>
-        <label class="check"><input id="show-antigravity" type="checkbox"><span>Antigravity IDE 사용량 표시</span></label>
-        <label class="check"><input id="show-codex" type="checkbox"><span>OpenAI (ChatGPT · Codex) 사용량 표시</span></label>
-        <label class="check"><input id="show-claude" type="checkbox"><span>Anthropic Claude (API · CLI) 사용량 표시</span></label>
-        <label class="check"><input id="show-local-llm" type="checkbox"><span>로컬 LLM·GPU 상태 표시</span></label>
-        <label class="check"><input id="show-queue" type="checkbox"><span>AI Work Queue 패널 표시</span></label>
-        <label class="check"><input id="show-metrics" type="checkbox"><span>최근 토큰/시간 측정 메트릭(Metrics) 패널 표시</span></label>
-        <label class="check"><input id="show-errors" type="checkbox"><span>에러(Errors) 패널 표시</span></label>
-        <label class="check"><input id="notify-full-tokens" type="checkbox"><span>토큰 100% 완충 시 알림 발송</span></label>
-        <label class="check"><input id="auto-start-boot" type="checkbox"><span>Windows 부팅 시 자동 시작</span></label>
-        <div class="field">
-          <label for="dashboard-state-root">Integrated Power 상태 경로</label>
-          <div class="inline"><input id="dashboard-state-root" type="text"><button type="button" class="secondary" data-action="chooseStateRoot">찾기</button></div>
+        <p class="hint">사이드바 대시보드의 표시 항목과 Integrated Power 상태 저장 경로를 설정합니다. 프로젝트 소스 파일은 변경되지 않습니다.</p>
+
+        <!-- 프로바이더별 토큰 연동 가이드 배너 -->
+        <div class="telemetry-guide-card">
+          <div class="telemetry-guide-header">
+            <h3>프로바이더별 토큰 연동 및 수집 조건 안내</h3>
+          </div>
+          <div class="telemetry-guide-grid">
+            <div class="telemetry-provider-card">
+              <span class="provider-tag tag-google">Google Antigravity</span>
+              <p class="telemetry-desc">Windows 자격 증명 관리자의 OAuth 토큰으로 Google Cloud Code 쿼터 API를 직접 조회합니다. <strong>agy CLI 또는 Antigravity IDE에 구글 계정으로 1회 이상 로그인</strong>되어 있어야 정상 갱신됩니다.</p>
+            </div>
+            <div class="telemetry-provider-card">
+              <span class="provider-tag tag-openai">OpenAI Codex</span>
+              <p class="telemetry-desc">백그라운드 <code>codex app-server</code> RPC를 호출해 추론 토큰 소모 없이 실시간 쿼터를 조회합니다. <strong>codex CLI 설치 및 터미널 <code>codex login</code> 상태</strong>가 요구됩니다.</p>
+            </div>
+            <div class="telemetry-provider-card">
+              <span class="provider-tag tag-anthropic">Anthropic Claude</span>
+              <p class="telemetry-desc"><code>~/.claude</code> 및 <code>%APPDATA%\Claude</code>의 로컬 세션 로그를 오프라인 스캔합니다. 별도 API 로그인 없이 <strong>PC에서 Claude CLI/데스크톱 앱으로 작업한 이력</strong>이 있으면 일일/7일 사용량이 자동 집계됩니다.</p>
+            </div>
+            <div class="telemetry-provider-card">
+              <span class="provider-tag tag-local">로컬 LLM & GPU</span>
+              <p class="telemetry-desc">Ollama(<code>http://localhost:11434</code>) 또는 vLLM 엔드포인트와 GPU 드라이버를 조회합니다. <strong>로컬 모델 서버가 기동 중</strong>이어야 모델 인벤토리와 VRAM 점유 현황이 표시됩니다.</p>
+            </div>
+          </div>
         </div>
-        <div class="actions"><button type="button" data-action="saveDashboard">Dashboard 설정 저장</button></div>
-        <div id="antigravity-sync-card" class="subform">
+
+        <!-- 그룹 1: 제공자 및 모델 사용량 표시 -->
+        <div class="section-divider">
+          <h3>제공자 및 모델 사용량</h3>
+          <span class="divider-pill">Providers & Quota</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="show-antigravity">
+            <input id="show-antigravity" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">Antigravity IDE 사용량 표시</span>
+              <span class="setting-caption">Google Gemini 및 Claude Opus의 5시간/주간 쿼터 잔여율 게이지를 표시합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-codex">
+            <input id="show-codex" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">OpenAI (ChatGPT · Codex) 사용량 표시</span>
+              <span class="setting-caption">Codex의 5시간 및 주간 쿼터 잔여율과 실시간 리셋 카운트다운을 표시합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-claude">
+            <input id="show-claude" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">Anthropic Claude (API · CLI) 사용량 표시</span>
+              <span class="setting-caption">로컬 CLI 및 Desktop 세션에서 발생한 오늘 및 7일간의 토큰 소비량을 집계합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-local-llm">
+            <input id="show-local-llm" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">로컬 LLM · GPU 상태 표시</span>
+              <span class="setting-caption">GPU VRAM 가용 용량과 로컬 서빙 모델(Ollama/vLLM)의 활성 상태를 확인합니다.</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- 그룹 2: 에이전트 대시보드 및 도구 패널 -->
+        <div class="section-divider">
+          <h3>에이전트 제어 및 대시보드 패널</h3>
+          <span class="divider-pill">Agent Panels</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="show-queue">
+            <input id="show-queue" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">AI Work Queue 패널 표시</span>
+              <span class="setting-caption">작업 큐 등록, 모델별 AI 태그 자동 분류, 원클릭 [▶ Run] 실행 패널을 사이드바에 표시합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-metrics">
+            <input id="show-metrics" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">최근 토큰/시간 측정 메트릭(Metrics) 패널 표시</span>
+              <span class="setting-caption">최근 실행된 작업들의 실제 소요 시간과 소모된 토큰량을 비교 분석합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-errors">
+            <input id="show-errors" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">에러(Errors) 패널 표시</span>
+              <span class="setting-caption">프로바이더 통신 장애 및 백오프 쿨다운 현황을 대시보드 하단에 실시간 진단합니다.</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- 그룹 3: 백그라운드 브로커 및 시스템 알림 -->
+        <div class="section-divider">
+          <h3>백그라운드 브로커 및 시스템 알림</h3>
+          <span class="divider-pill">Broker & System</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="notify-full-tokens">
+            <input id="notify-full-tokens" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">토큰 100% 완충 시 알림 발송</span>
+              <span class="setting-caption">5시간 주기 클라우드 쿼터가 100%로 완충되었을 때 윈도우 알림을 발송합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="auto-start-boot">
+            <input id="auto-start-boot" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">Windows 부팅 시 자동 시작</span>
+              <span class="setting-caption">IDE 종료 상태에서도 백그라운드 브로커가 유지되어 쿼터 완충 감지 및 5시간 프리웜을 지속합니다.</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- 그룹 4: 저장 경로 및 데이터 유지 관리 -->
+        <div class="section-divider">
+          <h3>데이터 영구 저장 및 유지 관리</h3>
+          <span class="divider-pill">Storage & Maintenance</span>
+        </div>
+        <div class="field">
+          <label for="dashboard-state-root">Integrated Power 상태 경로 (State Root)</label>
+          <div class="inline">
+            <input id="dashboard-state-root" type="text">
+            <button type="button" class="secondary" data-action="chooseStateRoot">찾기</button>
+          </div>
+          <div class="hint" style="margin-top: 5px;">암호화된 작업 큐 원장(events.enc.jsonl), 토큰 캐시, 영구 설정이 저장되는 정본 디렉터리입니다.</div>
+        </div>
+
+        <div class="actions" style="margin-top: 20px;">
+          <button type="button" data-action="saveDashboard">Dashboard 설정 저장</button>
+        </div>
+
+        <div id="antigravity-sync-card" class="subform" style="margin-top: 22px;">
           <h3>Antigravity IDE 대화 기록 동기화</h3>
-          <p class="hint">IDE 비정상 종료나 크래시 등으로 좌측 사이드바 히스토리에서 누락된 대화 세션을 디스크(.db)와 대조하여 복원 인덱싱합니다.</p>
+          <p class="hint">IDE 비정상 종료 시 SQLite 로컬 DB와 대조하여 사이드바 히스토리에서 누락된 대화 세션을 복원합니다.</p>
           <div class="actions">
             <button type="button" class="secondary" data-action="forceSyncHistory">대화 기록 강제 동기화 실행</button>
           </div>
@@ -585,52 +832,138 @@ export class ConfigurationCenter implements vscode.Disposable {
     <section id="orchestrator">
       <article class="card">
         <h2>Integrated Orchestrator 설정 및 설치</h2>
-        <p class="hint">설정 파일과 Antigravity IDE 플러그인은 분리되어 있습니다. 현재 사용자 홈의 표준 위치는 제안값일 뿐이며, 실제 설치 루트는 여기서 확인·변경한 뒤 저장합니다. 다른 사용자 폴더를 검색하지 않습니다. 플러그인 3.3.0부터 한 Antigravity 작업 안의 모델 호출 결과는 기본적으로 단일 <code>ip-orchestrator.md</code>를 재사용하며 기존 brain 파일은 삭제하지 않습니다.</p>
+        <p class="hint">다중 모델 라우팅 정책과 Antigravity IDE 전용 관리 플러그인을 설정합니다. 작업별 출력은 <code>ip-orchestrator.md</code> 하나로 통합되어 불필요한 아티팩트 증식을 방지합니다.</p>
+
+        <!-- 그룹 1: 플러그인 환경 및 마이그레이션 -->
+        <div class="section-divider">
+          <h3>Antigravity IDE 플러그인 관리</h3>
+          <span class="divider-pill">Plugin Environment</span>
+        </div>
         <div id="plugin-status" class="status"></div>
         <code id="plugin-path" class="path"></code>
         <code id="orchestrator-settings-path" class="path"></code>
-        <div class="field">
+        <div class="field" style="margin-top: 14px;">
           <label for="plugin-root">Antigravity IDE 플러그인 루트</label>
-          <div class="inline"><input id="plugin-root" type="text"><button type="button" class="secondary" data-action="choosePluginRoot">찾기</button></div>
+          <div class="inline">
+            <input id="plugin-root" type="text">
+            <button type="button" class="secondary" data-action="choosePluginRoot">찾기</button>
+          </div>
           <div id="plugin-root-source" class="hint"></div>
         </div>
         <div class="subform">
           <h3>배포 마이그레이션 계획</h3>
           <div id="plugin-plan-status" class="status"></div>
           <ul id="plugin-plan-actions" class="diag-list"></ul>
-          <p class="hint">Integrated Power가 소유한 정확한 <code>ip-orchestrator</code>, 이전 <code>eggr-orchestrator</code>, 더 이전 <code>codex-orchestrator</code> 경로만 확인합니다. 인식되지 않은 폴더는 자동 이동하지 않으며, 기존 항목은 삭제하지 않고 백업합니다.</p>
+          <p class="hint">Integrated Power가 소유한 <code>ip-orchestrator</code> 경로를 확인합니다. 인식되지 않은 폴더는 자동 이동하지 않으며 기존 항목은 백업됩니다.</p>
         </div>
 
-        <label class="check"><input id="enable-codex" type="checkbox"><span>Codex 위임 경로 사용</span></label>
-        <div id="codex-options" class="subform">
+        <!-- 그룹 2: Codex 위임 설정 -->
+        <div class="section-divider">
+          <h3>Codex 위임 실행 경로</h3>
+          <span class="divider-pill">Codex Delegation</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="enable-codex">
+            <input id="enable-codex" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">Codex 위임 경로 사용</span>
+              <span class="setting-caption">정밀한 로직 작성, 아키텍처 토론 및 Writer-Critic 상호 검증 작업을 OpenAI Codex CLI로 위임합니다.</span>
+            </div>
+          </label>
+        </div>
+        <div id="codex-options" class="subform" style="margin-top: 10px;">
           <div class="field">
-            <label for="codex-exe">Codex 실행 파일</label>
-            <div class="inline"><input id="codex-exe" type="text"><button type="button" class="secondary" data-action="chooseCodexExe">찾기</button></div>
+            <label for="codex-exe">Codex 실행 파일 경로</label>
+            <div class="inline">
+              <input id="codex-exe" type="text" placeholder="예: codex 또는 C:\Users\...\codex.cmd">
+              <button type="button" class="secondary" data-action="chooseCodexExe">찾기</button>
+            </div>
+            <div class="hint" style="margin-top: 4px;">기본 시스템 PATH 외 별도 환경(nvm, 포터블 경로 등)에 설치된 경우 직접 지정합니다.</div>
           </div>
         </div>
 
-        <label class="check"><input id="enable-local-llm" type="checkbox"><span>로컬 LLM 위임 경로 사용</span></label>
-        <div id="local-llm-options" class="subform">
-          <div class="field"><label for="local-provider">공급자</label><select id="local-provider"><option value="ollama">Ollama</option><option value="vllm">vLLM / OpenAI 호환 API</option></select></div>
-          <div class="field"><label for="local-endpoint">Endpoint</label><input id="local-endpoint" type="url"></div>
-          <div class="field"><label for="selection-mode">모델 선택</label><select id="selection-mode"><option value="auto">현재 VRAM·GPU 기능에 맞춰 자동 선택</option><option value="user_default">사용자 지정 모델 우선</option></select></div>
-          <div id="model-field" class="field"><label for="local-model">사용자 기본 모델 ID</label><input id="local-model" type="text"></div>
-          <div class="field"><label for="reserve-vram">남겨 둘 VRAM(GB)</label><input id="reserve-vram" type="number" min="0" max="256" step="0.5"></div>
-          <label class="check"><input id="allow-cpu-offload" type="checkbox"><span>VRAM 부족 시 CPU offload 허용</span></label>
+        <!-- 그룹 3: 로컬 LLM 위임 설정 -->
+        <div class="section-divider">
+          <h3>로컬 LLM (Ollama / vLLM) 위임 경로</h3>
+          <span class="divider-pill">Local Compute</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="enable-local-llm">
+            <input id="enable-local-llm" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">로컬 LLM 위임 경로 사용</span>
+              <span class="setting-caption">민감 데이터 로그 전처리, 자동완성 및 클라우드 쿼터 절약을 위해 로컬 GPU/CPU 모델로 위임합니다.</span>
+            </div>
+          </label>
+        </div>
+        <div id="local-llm-options" class="subform" style="margin-top: 10px;">
+          <div class="field">
+            <label for="local-provider">공급자 백엔드</label>
+            <select id="local-provider">
+              <option value="ollama">Ollama (기본 권장)</option>
+              <option value="vllm">vLLM / OpenAI 호환 API</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="local-endpoint">로컬 서버 Endpoint</label>
+            <input id="local-endpoint" type="url" placeholder="http://localhost:11434">
+          </div>
+          <div class="field">
+            <label for="selection-mode">하드웨어 최적 모델 선택</label>
+            <select id="selection-mode">
+              <option value="auto">현재 VRAM·GPU 스펙에 맞춰 최적 모델 자동 선택 (권장)</option>
+              <option value="user_default">사용자 지정 모델 우선</option>
+            </select>
+          </div>
+          <div id="model-field" class="field">
+            <label for="local-model">사용자 기본 모델 ID</label>
+            <input id="local-model" type="text" placeholder="예: qwen2.5-coder:14b">
+          </div>
+          <div class="field">
+            <label for="reserve-vram">시스템 디스플레이용 예약 VRAM (GB)</label>
+            <input id="reserve-vram" type="number" min="0" max="256" step="0.5">
+            <div class="hint" style="margin-top: 4px;">운영체제 및 화면 렌더링 안정성을 위해 로컬 모델이 침범하지 않고 남겨 둘 최소 VRAM입니다.</div>
+          </div>
+          <label class="setting-item" for="allow-cpu-offload" style="margin: 10px 0;">
+            <input id="allow-cpu-offload" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">VRAM 부족 시 CPU Offload 허용</span>
+              <span class="setting-caption">모델 가중치가 GPU 메모리를 초과할 경우 시스템 RAM을 활용하여 작업 중단을 방지합니다.</span>
+            </div>
+          </label>
           <div class="subform">
             <h3>Ollama 모델 인벤토리</h3>
-            <p class="hint"><code>ollama list</code>에 해당하는 설치 모델 목록을 사용자 전용 레지스트리와 비교합니다. 설치된 미등록 모델은 추가하지만, 등록됐으나 설치되지 않은 모델은 사용자 확인 없이 내려받지 않습니다.</p>
+            <p class="hint"><code>ollama list</code> 명령으로 로컬에 설치된 모델 목록을 조회하여 지원 가능한 모델 레지스트리와 동기화합니다.</p>
             <div id="ollama-inventory-status" class="status">아직 동기화하지 않았습니다.</div>
             <code id="ollama-registry-path" class="path"></code>
             <div id="ollama-inventory-details" class="hint"></div>
             <ul id="ollama-inventory-models" class="diag-list"></ul>
-            <div class="actions"><button type="button" class="secondary" data-action="syncOllamaInventory">설치 모델 다시 확인·레지스트리 동기화</button></div>
+            <div class="actions">
+              <button type="button" class="secondary" data-action="syncOllamaInventory">설치 모델 다시 확인·레지스트리 동기화</button>
+            </div>
           </div>
         </div>
 
-        <div class="field"><label for="default-route">기본 실행 경로</label><select id="default-route"><option value="main_agent">현재 에이전트 직접 처리</option><option value="codex">Codex 위임</option><option value="local_llm">로컬 LLM 위임</option></select></div>
-        <div class="actions">
+        <!-- 그룹 4: 기본 라우팅 정책 -->
+        <div class="section-divider">
+          <h3>기본 라우팅 정책</h3>
+          <span class="divider-pill">Default Routing</span>
+        </div>
+        <div class="field">
+          <label for="default-route">기본 실행 경로</label>
+          <select id="default-route">
+            <option value="main_agent">현재 에이전트 직접 처리 (Antigravity / Gemini)</option>
+            <option value="codex">Codex 위임 (OpenAI)</option>
+            <option value="local_llm">로컬 LLM 위임 (Ollama / vLLM)</option>
+          </select>
+          <div class="hint" style="margin-top: 4px;">작업 지시 시 명시적인 라우팅 대상이 없을 때 적용할 기본 실행 엔진입니다.</div>
+        </div>
+        <div class="actions" style="margin-top: 20px;">
           <button type="button" class="secondary" data-action="saveOrchestrator">설정만 저장</button>
+          <button type="button" data-action="saveAndInstallOrchestrator">설정 저장 및 플러그인 설치·갱신</button>
+        </div>
+      </article>
+    </section>
           <button type="button" data-action="saveAndInstallOrchestrator">설정 저장 및 플러그인 설치·갱신</button>
         </div>
       </article>

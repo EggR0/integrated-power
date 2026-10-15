@@ -157,6 +157,22 @@ export function createHeadlessTokenManagerHost(): TokenManagerHost {
   };
 }
 
+/**
+ * TokenManager
+ *
+ * Central telemetry orchestrator and quota tracking manager for Integrated Power.
+ *
+ * Primary Responsibilities:
+ * 1. Multi-Provider Quota Collection:
+ *    - Google Antigravity IDE (Gemini / Claude via AgyQuotaClient & Cloud Code API)
+ *    - OpenAI Codex (live rate limit probe & CLI session logs)
+ *    - Anthropic Claude (direct usage logs & CLI sessions)
+ *    - Local Compute (Ollama / vLLM / LM Studio models & multi-GPU VRAM metrics)
+ * 2. Caching & Resilience:
+ *    - 5-second in-memory TTL quota cache (QUOTA_CACHE_TTL_MS)
+ *    - Circuit breaker pattern for failing external providers (30s cooldown)
+ *    - Dual-mode host support: IDE mode (VS Code workspace fs) & Headless mode (Node fs)
+ */
 export class TokenManager {
   private readonly host: TokenManagerHost;
   private readonly agyQuotaClient: AgyQuotaClient;

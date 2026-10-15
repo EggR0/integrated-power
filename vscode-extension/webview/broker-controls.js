@@ -2,6 +2,7 @@
   "use strict";
 
   const drafts = {
+    quickAdd: "",
     createOpen: false,
     title: "",
     goal: "",
@@ -56,6 +57,51 @@
     }
     wrapper.appendChild(select);
     return { wrapper, select };
+  }
+
+  function quickAddBar(send, disabled) {
+    const bar = element("div", "broker-quick-add");
+    const input = element("input", "broker-input broker-quick-input");
+    input.type = "text";
+    input.placeholder = "작업/메모 입력 (Enter로 큐 추가)...";
+    input.setAttribute("aria-label", "Quick add task");
+    input.setAttribute("data-broker-focus", "quick-add");
+    input.maxLength = 1000;
+    input.value = drafts.quickAdd || "";
+    input.addEventListener("input", () => {
+      drafts.quickAdd = input.value;
+    });
+
+    const addBtn = element("button", "broker-action broker-primary", "+ 추가");
+    addBtn.type = "button";
+    addBtn.disabled = Boolean(disabled);
+
+    function submitQuickTask() {
+      const val = input.value.trim();
+      if (!val || addBtn.disabled) return;
+      addBtn.disabled = true;
+      const title = val.length > 50 ? val.slice(0, 47) + "..." : val;
+      send({
+        type: "createBrokerTask",
+        title,
+        goal: val,
+        originProvider: "local.openai-compatible",
+        rawInput: val,
+      });
+      drafts.quickAdd = "";
+      input.value = "";
+    }
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submitQuickTask();
+      }
+    });
+    addBtn.addEventListener("click", submitQuickTask);
+
+    bar.append(input, addBtn);
+    return bar;
   }
 
   function createTaskForm(send, disabled) {
@@ -138,15 +184,99 @@
     return { full: `${match[1]}-${match[2]}-${match[3]}`, short: `${month}/${day}` };
   }
 
-  function renderTaskCard(task, send, writeDisabled) {
+  function providerShortName(provider) {
+    if (provider === "openai.codex.app") return "Codex";
+    if (provider === "google.antigravity.ide") return "Agy";
+    return "Local";
+  }
+
+  function renderTaskCard(task, send, writeDisabled, platforms) {
     const card = element("article", "broker-card");
     const name = typeof task.title === "string" && task.title ? task.title : task.id;
     card.appendChild(element("h3", "broker-card-title", name || "Untitled task"));
     const date = taskCreatedDate(task.createdAt);
     card.appendChild(element("p", "broker-task-state", `${task.status || "unknown"} · r${Number(task.revision) || 0}${date ? ` · ${date.full}` : ""}`));
+
+    // Render tags
+    const tagList = element("div", "broker-tag-list");
+    if (Array.isArray(task.tags) && task.tags.length > 0) {
+      for (const tag of task.tags) {
+        tagList.appendChild(element("span", "broker-tag", `#${tag}`));
+      }
+    }
+    if (task.status === "created") {
+      const classifyBtn = element("button", "broker-action broker-classify-btn", "🏷️ AI 분류");
+      classifyBtn.type = "button";
+      classifyBtn.title = "클릭하여 플랫폼(오프라인, Antigravity Flash, Codex Luna, Local)을 선택해 분류 작업을 실행합니다";
+      classifyBtn.disabled = Boolean(writeDisabled);
+      classifyBtn.addEventListener("click", () => {
+        send({
+          type: "requestClassifyMenu",
+          taskId: task.id,
+          expectedRevision: task.revision,
+        });
+      });
+      tagList.appendChild(classifyBtn);
+    }
+    if (tagList.children.length > 0) {
+      card.appendChild(tagList);
+    }
+
     const goal = typeof task.goal === "string" ? task.goal : "";
-    if (goal) card.appendChild(element("p", "broker-task-goal", goal));
+    if (goal && goal !== name) card.appendChild(element("p", "broker-task-goal", goal));
+
     const actions = element("div", "broker-actions");
+
+    // Equal-size 3-platform execution button group if task is created
+    if (task.status === "created") {
+      const rec = task.recommendedProvider || "google.antigravity.ide";
+      const runGroup = element("div", "broker-run-group");
+
+      const platformList = [
+        {
+          id: "google.antigravity.ide",
+          label: "Antigravity",
+          online: Boolean(platforms?.antigravityOnline),
+          reason: platforms?.antigravityReason || "Antigravity IDE 또는 CLI가 감지되지 않았습니다.",
+        },
+        {
+          id: "openai.codex.app",
+          label: "Codex",
+          online: Boolean(platforms?.codexOnline),
+          reason: platforms?.codexReason || "Codex CLI가 설치되어 있지 않거나 PATH에 없습니다.",
+        },
+        {
+          id: "local.openai-compatible",
+          label: "Local",
+          online: Boolean(platforms?.localOnline),
+          reason: platforms?.localReason || "Local LLM 서버(Ollama/vLLM)가 실행 중이지 않습니다.",
+        },
+      ];
+
+      for (const p of platformList) {
+        const isRec = p.id === rec;
+        const btnText = isRec ? `▶ ${p.label}` : p.label;
+        const btnClass = "broker-action broker-platform-btn" + (isRec ? " broker-recommended" : "") + (!p.online ? " broker-btn-offline" : "");
+        const btn = element("button", btnClass, btnText);
+        btn.type = "button";
+        btn.disabled = Boolean(writeDisabled || !p.online);
+        btn.title = !p.online
+          ? `${p.label} (비활성화: ${p.reason})`
+          : (isRec ? `추천 플랫폼 (${p.label})에서 실행` : `${p.label}에서 실행`);
+        btn.addEventListener("click", () => {
+          send({
+            type: "delegateBrokerTask",
+            taskId: task.id,
+            expectedRevision: task.revision,
+            provider: p.id,
+            prompt: task.goal || task.title,
+          });
+        });
+        runGroup.appendChild(btn);
+      }
+      actions.appendChild(runGroup);
+    }
+
     if (task.status === "created" || task.status === "running" || task.status === "awaiting_approval") {
       actions.appendChild(button("Cancel", () => send({
         type: "cancelBrokerTask", taskId: task.id, expectedRevision: task.revision,
@@ -169,6 +299,7 @@
     if (state.error) section.appendChild(element("p", "broker-error", state.error));
     if (state.loading) section.appendChild(element("p", "broker-muted", "Loading tasks…"));
     const writeDisabled = Boolean(state.busy || state.loading || state.error);
+    section.appendChild(quickAddBar(send, writeDisabled));
     section.appendChild(createTaskForm(send, writeDisabled));
 
     const tasks = Array.isArray(state.tasks) ? state.tasks : [];
@@ -177,7 +308,7 @@
     const taskList = element("div", "broker-list");
     taskList.setAttribute("aria-label", "Workspace tasks");
     if (!tasks.length && !state.loading) taskList.appendChild(element("p", "broker-muted", "No tasks in this workspace."));
-    for (const task of activeTasks) taskList.appendChild(renderTaskCard(task, send, writeDisabled));
+    for (const task of activeTasks) taskList.appendChild(renderTaskCard(task, send, writeDisabled, state.platforms));
     if (historyTasks.length) {
       const history = element("details", "broker-history");
       history.open = historyOpen;
@@ -195,7 +326,7 @@
       historySummary.appendChild(element("span", "text-short", `History (${historyTasks.length})`));
       history.appendChild(historySummary);
       const historyList = element("div", "broker-list");
-      for (const task of historyTasks) historyList.appendChild(renderTaskCard(task, send, writeDisabled));
+      for (const task of historyTasks) historyList.appendChild(renderTaskCard(task, send, writeDisabled, state.platforms));
       history.appendChild(historyList);
       taskList.appendChild(history);
     }

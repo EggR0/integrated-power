@@ -105,12 +105,24 @@ body {
 .broker-action { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .broker-primary { justify-self: start; }
 .broker-approvals { min-width: 0; margin-top: 8px; }
+.broker-quick-add { display: flex; gap: 4px; margin: 6px 0; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.broker-quick-input { flex: 1; min-width: 0; font-size: 11px; padding: 4px 6px; }
+.broker-tag-list { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; align-items: center; min-width: 0; }
+.broker-tag { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--vscode-badge-background, rgba(128, 128, 128, 0.2)); color: var(--vscode-badge-foreground, inherit); font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.broker-run-group { display: flex; gap: 4px; width: 100%; min-width: 0; margin: 4px 0; }
+.broker-platform-btn { flex: 1 1 0; min-width: 0; min-height: 22px; line-height: 1.25; font-size: 10.5px; padding: 4px 6px; text-align: center; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; justify-content: center; }
+.broker-platform-btn.broker-recommended { border-color: var(--vscode-focusBorder, #007acc); background: color-mix(in srgb, var(--vscode-button-background), transparent 20%); font-weight: 600; }
+.broker-platform-btn.broker-btn-offline { opacity: 0.38; cursor: not-allowed; filter: grayscale(100%); background: color-mix(in srgb, var(--vscode-button-secondaryBackground, #3a3d41), transparent 30%); color: var(--vscode-disabledForeground, rgba(255, 255, 255, 0.4)); border-style: dashed; }
 
 @container (max-width: 200px) {
   .broker-panel { padding: 5px; }
   .broker-heading { align-items: flex-start; }
   .broker-action { padding: 4px 5px; font-size: 10px; }
   .broker-history > .broker-summary { font-size: 9px; }
+  .broker-quick-add { flex-direction: column; }
+  .broker-tag { font-size: 9px; padding: 1px 3px; }
+  .broker-run-group { flex-direction: column; gap: 3px; }
+  .broker-platform-btn { flex: 0 0 auto; width: 100%; min-height: 22px; font-size: 10px; padding: 3px 4px; }
 }
 
 .task-content {

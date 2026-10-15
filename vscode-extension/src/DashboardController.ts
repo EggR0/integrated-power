@@ -27,6 +27,22 @@ const QUOTA_NOTIFICATION_KEYS = [
   "claudeWeekly",
 ] as const;
 
+/**
+ * DashboardController
+ *
+ * Core coordinator between the Webview UI, local TokenManager, RunStore,
+ * and the background Integrated Power Broker.
+ *
+ * Primary Responsibilities:
+ * 1. Webview ↔ Extension PostMessage Protocol:
+ *    - Bidirectional message dispatching and typed message handling.
+ * 2. State Aggregation & Synchronization:
+ *    - Merges local token status, runs history, work queue tasks, and broker approvals.
+ * 3. Prewarm & Quota Automation:
+ *    - Arbitrates per-target 5-hour quota prewarming and refill notification dispatch.
+ * 4. Task Queue Lifecycle & AI Tag Classification:
+ *    - Manages task creation, classification delegation, and platform routing.
+ */
 export class DashboardController implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly watchers: vscode.Disposable[] = [];
@@ -162,7 +178,13 @@ export class DashboardController implements vscode.Disposable {
         await this.refreshBrokerControls();
         return;
       case "createBrokerTask":
-        await this.createBrokerTask(message.title, message.goal, message.originProvider);
+        await this.createBrokerTask(message.title, message.goal, message.originProvider, message.tags, message.recommendedProvider, message.rawInput);
+        return;
+      case "requestClassifyMenu":
+        await this.requestClassifyMenu(message.taskId, message.expectedRevision);
+        return;
+      case "classifyBrokerTask":
+        await this.classifyBrokerTask(message.taskId, message.expectedRevision, message.provider, message.mode);
         return;
       case "delegateBrokerTask":
         await this.delegateBrokerTask(message.taskId, message.expectedRevision, message.provider, message.prompt);
@@ -243,6 +265,56 @@ export class DashboardController implements vscode.Disposable {
       this.brokerApprovals.clear();
       for (const task of taskResult.tasks) this.brokerTasks.set(task.id, task);
       for (const approval of approvalResult.approvals) this.brokerApprovals.set(approval.id, approval);
+
+      const lcs = this.state.tokenStatus?.localComputeStatus;
+      let localOnline = Boolean(
+        (lcs && lcs.endpointHealth === "online") ||
+        (lcs?.loadedModels && lcs.loadedModels.length > 0) ||
+        (this.state.tokenStatus?.llmStatus === "online" || this.state.tokenStatus?.llmStatus === "active"),
+      );
+      const codexCli = this.tokenManager.findCodexCli();
+      let codexOnline = Boolean(
+        codexCli &&
+        this.state.tokenStatus?.codexStatus !== "offline" &&
+        (this.state.tokenStatus?.codexStatus === "online" || this.state.tokenStatus?.codexPercentage !== undefined),
+      );
+      let antigravityOnline = Boolean(
+        process.env.ANTIGRAVITY_APP_DIR ||
+        process.env.VSCODE_PID ||
+        (process.platform === "win32" && process.env.LOCALAPPDATA && fs.existsSync(path.join(process.env.LOCALAPPDATA, "Programs", "Antigravity IDE", "bin", "antigravity-ide.cmd"))),
+      );
+
+      let localReason = localOnline ? undefined : "Local LLM 서버(Ollama/vLLM)가 오프라인입니다.";
+      let codexReason = codexOnline ? undefined : (codexCli ? "Codex 서비스가 오프라인입니다." : "Codex CLI가 설치되어 있지 않거나 PATH에 없습니다.");
+      let antigravityReason = antigravityOnline ? undefined : "Antigravity IDE 또는 agy CLI가 설치되어 있지 않습니다.";
+
+      try {
+        const caps = await client.listCapabilities();
+        const codexCap = caps.find((c) => c.provider === "openai.codex.app");
+        const agyCap = caps.find((c) => c.provider === "google.antigravity.ide");
+        const localCap = caps.find((c) => c.provider === "local.openai-compatible");
+        if (codexCap) {
+          codexOnline = codexCap.available && codexOnline;
+          if (!codexCap.available) codexReason = codexCap.reason || codexReason;
+        }
+        if (agyCap) {
+          antigravityOnline = agyCap.available || antigravityOnline;
+          if (!antigravityOnline) antigravityReason = agyCap.reason || antigravityReason;
+        }
+        if (localCap) {
+          localOnline = localCap.available && localOnline;
+          if (!localCap.available) localReason = localCap.reason || localReason;
+        }
+      } catch {}
+
+      this.brokerState.platforms = {
+        localOnline,
+        codexOnline,
+        antigravityOnline,
+        localReason,
+        codexReason,
+        antigravityReason,
+      };
     } catch (error) {
       this.brokerState.error = this.errorMessage(error);
       this.brokerState.tasks = [];
@@ -277,20 +349,137 @@ export class DashboardController implements vscode.Disposable {
     }
   }
 
-  private async createBrokerTask(title: string, goal: string, originProvider: import("./broker/protocol").ProviderId): Promise<void> {
+  public async createBrokerTask(
+    title: string,
+    goal: string,
+    originProvider: import("./broker/protocol").ProviderId,
+    tags?: string[],
+    recommendedProvider?: import("./broker/protocol").ProviderId,
+    rawInput?: string,
+  ): Promise<void> {
     await this.runBrokerAction(async () => {
       const scope = this.brokerScope();
       await this.getBrokerClient().createTask({
-        title: title.trim(), goal: goal.trim(), originProvider,
+        title: title.trim(),
+        goal: goal.trim(),
+        originProvider,
+        tags,
+        recommendedProvider,
+        rawInput,
         workspacePath: scope.workspacePath,
         idempotencyKey: randomUUID(),
       });
     });
   }
 
-  private async delegateBrokerTask(taskId: string, expectedRevision: number, provider: import("./broker/protocol").ProviderId, prompt: string): Promise<void> {
+  public async createTaskFromRawInput(rawInput: string): Promise<void> {
+    const trimmed = rawInput.trim();
+    if (!trimmed) return;
+    const title = trimmed.length > 50 ? trimmed.slice(0, 47) + "..." : trimmed;
+    await this.createBrokerTask(title, trimmed, "local.openai-compatible", undefined, undefined, trimmed);
+  }
+
+  public async requestClassifyMenu(taskId: string, expectedRevision: number): Promise<void> {
+    const task = this.brokerTasks.get(taskId);
+    if (!task) return;
+
+    const platforms = this.brokerState.platforms;
+    const localOnline = Boolean(platforms?.localOnline);
+    const codexOnline = Boolean(platforms?.codexOnline);
+    const antigravityOnline = Boolean(platforms?.antigravityOnline);
+
+    interface ClassifyQuickPickItem extends vscode.QuickPickItem {
+      mode: "offline" | "agent";
+      provider?: import("./broker/protocol").ProviderId;
+      terminalRegex?: RegExp;
+      terminalName?: string;
+      online?: boolean;
+      offlineReason?: string;
+    }
+
+    const items: ClassifyQuickPickItem[] = [
+      {
+        label: "$(zap) ⚡ 오프라인 빠른 분류 (추천)",
+        description: "토큰 소모 없음 (지연 시간 0ms)",
+        detail: "단어 및 기존 태그 풀 매칭으로 안전하게 즉시 태그/추천 분류를 적용합니다.",
+        mode: "offline",
+        online: true,
+      },
+      {
+        label: `$(globe) 🌐 Antigravity ${antigravityOnline ? "" : "(미설치/오프라인)"}`,
+        description: antigravityOnline ? "Gemini 3.6 Flash Low-Tier" : "사용 불가",
+        detail: antigravityOnline
+          ? "Antigravity 에이전트를 통해 최저가 플래시 모델로 지능형 태그 분류를 수행합니다."
+          : (platforms?.antigravityReason || "Antigravity IDE 또는 CLI가 감지되지 않았습니다."),
+        mode: "agent",
+        provider: "google.antigravity.ide",
+        online: antigravityOnline,
+        offlineReason: platforms?.antigravityReason,
+      },
+      {
+        label: `$(hubot) 🤖 Codex ${codexOnline ? "" : "(미설치/오프라인)"}`,
+        description: codexOnline ? "GPT-6 Luna Low-Tier" : "사용 불가",
+        detail: codexOnline
+          ? "Codex 에이전트를 통해 최저 토큰 루나 모델로 지능형 태그 분류를 수행합니다."
+          : (platforms?.codexReason || "Codex CLI가 설치되어 있지 않거나 PATH에 없습니다."),
+        mode: "agent",
+        provider: "openai.codex.app",
+        online: codexOnline,
+        offlineReason: platforms?.codexReason,
+      },
+      {
+        label: `$(server) 💻 Local LLM ${localOnline ? "(Online)" : "(오프라인 - 서버 미실행)"}`,
+        description: localOnline ? "로컬 경량 모델" : "서버 꺼짐 (사용 불가)",
+        detail: localOnline
+          ? "로컬 VRAM 환경에서 경량 모델로 분류 작업을 수행합니다."
+          : (platforms?.localReason || "로컬 Ollama/vLLM 서버가 실행 중이지 않아 사용할 수 없습니다."),
+        mode: "agent",
+        provider: "local.openai-compatible",
+        online: localOnline,
+        offlineReason: platforms?.localReason,
+      },
+    ];
+
+    const pick = await vscode.window.showQuickPick(items, {
+      placeHolder: `[${task.title}] 작업을 어떤 플랫폼으로 분류하시겠습니까?`,
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
+
+    if (!pick) return;
+
+    if (pick.mode === "agent" && !pick.online) {
+      void vscode.window.showInformationMessage(
+        `선택하신 플랫폼(${pick.provider})이 설치되어 있지 않거나 오프라인 상태입니다. 토큰 소모가 없는 안전한 오프라인 빠른 분류로 자동 진행합니다.`
+      );
+      await this.classifyBrokerTask(taskId, expectedRevision, undefined, "offline");
+      return;
+    }
+
+    await this.classifyBrokerTask(taskId, expectedRevision, pick.provider, pick.mode);
+  }
+
+  private async classifyBrokerTask(
+    taskId: string,
+    expectedRevision: number,
+    provider?: import("./broker/protocol").ProviderId,
+    mode?: "offline" | "agent",
+  ): Promise<void> {
     await this.runBrokerAction(async () => {
       const task = this.requireScopedTask(taskId, expectedRevision);
+      await this.getBrokerClient().classifyTask(taskId, task.revision, provider, mode, randomUUID());
+    });
+  }
+
+  private async delegateBrokerTask(
+    taskId: string,
+    expectedRevision: number,
+    provider: import("./broker/protocol").ProviderId,
+    prompt: string,
+  ): Promise<void> {
+    await this.runBrokerAction(async () => {
+      const task = this.requireScopedTask(taskId, expectedRevision);
+
       await this.getBrokerClient().delegateTask({
         taskId, provider, prompt: prompt.trim(), expectedRevision: task.revision, idempotencyKey: randomUUID(),
       });
@@ -689,11 +878,15 @@ export class DashboardController implements vscode.Disposable {
       .filter((run) => run.status === "error" || run.status === "failed" || (run.exitCode !== undefined && run.exitCode !== 0))
       .map((run) => `Run failed: ${run.title} (ID: ${run.id})`);
 
-    const combinedSystemErrors = [
-      ...(this.state.systemErrors || []),
-      ...(resolvedTokenStatus?.errors || []),
-      ...backgroundJobErrors
-    ];
+    const nonPartialTokenErrors = (resolvedTokenStatus?.errors || []).filter(
+      (err) => !err.includes("scan was partial"),
+    );
+
+    const combinedSystemErrors = Array.from(new Set([
+      ...(this.state.systemErrors || []).filter((err) => !err.includes("scan was partial")),
+      ...nonPartialTokenErrors,
+      ...backgroundJobErrors,
+    ])).slice(0, 10);
 
     return {
       workspaceName: this.paths.workspaceName,
@@ -883,85 +1076,73 @@ export class DashboardController implements vscode.Disposable {
     if (!previous) return current;
     if (!current) return previous;
 
-    const antigravityPct = current.antigravityPercentage ?? previous.antigravityPercentage;
-    const antigravityReset = current.antigravityPercentage !== undefined
+    const antigravityPct = current.antigravityPercentage;
+    const antigravityReset = antigravityPct !== undefined
       ? this.sanitizeResetTime(current.antigravityResetTime, antigravityPct, true)
-      : (previous.antigravityPercentage !== undefined
-        ? this.sanitizeResetTime(previous.antigravityResetTime, antigravityPct, true)
-        : undefined);
+      : undefined;
 
-    const antigravityWeeklyPct = current.antigravityWeeklyPercentage ?? previous.antigravityWeeklyPercentage;
-    const antigravityWeeklyReset = current.antigravityWeeklyPercentage !== undefined
+    const antigravityWeeklyPct = current.antigravityWeeklyPercentage;
+    const antigravityWeeklyReset = antigravityWeeklyPct !== undefined
       ? this.sanitizeResetTime(current.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
-      : (previous.antigravityWeeklyPercentage !== undefined
-        ? this.sanitizeResetTime(previous.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
-        : undefined);
+      : undefined;
 
-    const opusPct = current.opusPercentage ?? previous.opusPercentage;
-    const opusReset = current.opusPercentage !== undefined
+    const opusPct = current.opusPercentage;
+    const opusReset = opusPct !== undefined
       ? this.sanitizeResetTime(current.opusResetTime, opusPct, true)
-      : (previous.opusPercentage !== undefined
-        ? this.sanitizeResetTime(previous.opusResetTime, opusPct, true)
-        : undefined);
+      : undefined;
 
-    const opusWeeklyPct = current.opusWeeklyPercentage ?? previous.opusWeeklyPercentage;
-    const opusWeeklyReset = current.opusWeeklyPercentage !== undefined
+    const opusWeeklyPct = current.opusWeeklyPercentage;
+    const opusWeeklyReset = opusWeeklyPct !== undefined
       ? this.sanitizeResetTime(current.opusWeeklyResetTime, opusWeeklyPct, false)
-      : (previous.opusWeeklyPercentage !== undefined
-        ? this.sanitizeResetTime(previous.opusWeeklyResetTime, opusWeeklyPct, false)
-        : undefined);
+      : undefined;
 
-    const codexPct = current.codexPercentage ?? previous.codexPercentage;
-    const codexReset = current.codexPercentage !== undefined
+    const codexPct = current.codexPercentage;
+    const codexReset = codexPct !== undefined
       ? this.sanitizeResetTime(current.codexResetTime, codexPct, true)
-      : (previous.codexPercentage !== undefined
-        ? this.sanitizeResetTime(previous.codexResetTime, codexPct, true)
-        : undefined);
+      : undefined;
 
-    const codexWeeklyPct = current.codexWeeklyPercentage ?? previous.codexWeeklyPercentage;
-    const codexWeeklyReset = current.codexWeeklyPercentage !== undefined
+    const codexWeeklyPct = current.codexWeeklyPercentage;
+    const codexWeeklyReset = codexWeeklyPct !== undefined
       ? this.sanitizeResetTime(current.codexWeeklyResetTime, codexWeeklyPct, false)
-      : (previous.codexWeeklyPercentage !== undefined
-        ? this.sanitizeResetTime(previous.codexWeeklyResetTime, codexWeeklyPct, false)
-        : undefined);
+      : undefined;
 
     return {
       ...previous,
       ...current,
       antigravityPercentage: antigravityPct,
       antigravityResetTime: antigravityReset,
-      antigravityEstimatedAbsolute: current.antigravityEstimatedAbsolute ?? previous.antigravityEstimatedAbsolute,
-      antigravityTokensLeft: current.antigravityTokensLeft ?? previous.antigravityTokensLeft,
-      antigravityMax: current.antigravityMax ?? previous.antigravityMax,
+      antigravityEstimatedAbsolute: antigravityPct !== undefined ? current.antigravityEstimatedAbsolute : undefined,
+      antigravityTokensLeft: antigravityPct !== undefined ? current.antigravityTokensLeft : undefined,
+      antigravityMax: antigravityPct !== undefined ? current.antigravityMax : undefined,
 
       antigravityWeeklyPercentage: antigravityWeeklyPct,
       antigravityWeeklyResetTime: antigravityWeeklyReset,
-      antigravityWeeklyTokensLeft: current.antigravityWeeklyTokensLeft ?? previous.antigravityWeeklyTokensLeft,
-      antigravityWeeklyMax: current.antigravityWeeklyMax ?? previous.antigravityWeeklyMax,
+      antigravityWeeklyTokensLeft: antigravityWeeklyPct !== undefined ? current.antigravityWeeklyTokensLeft : undefined,
+      antigravityWeeklyMax: antigravityWeeklyPct !== undefined ? current.antigravityWeeklyMax : undefined,
 
       opusPercentage: opusPct,
       opusResetTime: opusReset,
-      opusEstimatedAbsolute: current.opusEstimatedAbsolute ?? previous.opusEstimatedAbsolute,
-      opusTokensLeft: current.opusTokensLeft ?? previous.opusTokensLeft,
-      opusMax: current.opusMax ?? previous.opusMax,
+      opusEstimatedAbsolute: opusPct !== undefined ? current.opusEstimatedAbsolute : undefined,
+      opusTokensLeft: opusPct !== undefined ? current.opusTokensLeft : undefined,
+      opusMax: opusPct !== undefined ? current.opusMax : undefined,
 
       opusWeeklyPercentage: opusWeeklyPct,
       opusWeeklyResetTime: opusWeeklyReset,
-      opusWeeklyEstimatedAbsolute: current.opusWeeklyEstimatedAbsolute ?? previous.opusWeeklyEstimatedAbsolute,
-      opusWeeklyTokensLeft: current.opusWeeklyTokensLeft ?? previous.opusWeeklyTokensLeft,
-      opusWeeklyMax: current.opusWeeklyMax ?? previous.opusWeeklyMax,
+      opusWeeklyEstimatedAbsolute: opusWeeklyPct !== undefined ? current.opusWeeklyEstimatedAbsolute : undefined,
+      opusWeeklyTokensLeft: opusWeeklyPct !== undefined ? current.opusWeeklyTokensLeft : undefined,
+      opusWeeklyMax: opusWeeklyPct !== undefined ? current.opusWeeklyMax : undefined,
 
       codexPercentage: codexPct,
       codexResetTime: codexReset,
-      codexEstimatedAbsolute: current.codexEstimatedAbsolute ?? previous.codexEstimatedAbsolute,
-      codexTokensLeft: current.codexTokensLeft ?? previous.codexTokensLeft,
-      codexMax: current.codexMax ?? previous.codexMax,
+      codexEstimatedAbsolute: codexPct !== undefined ? current.codexEstimatedAbsolute : undefined,
+      codexTokensLeft: codexPct !== undefined ? current.codexTokensLeft : undefined,
+      codexMax: codexPct !== undefined ? current.codexMax : undefined,
 
       codexWeeklyPercentage: codexWeeklyPct,
       codexWeeklyResetTime: codexWeeklyReset,
-      codexWeeklyEstimatedAbsolute: current.codexWeeklyEstimatedAbsolute ?? previous.codexWeeklyEstimatedAbsolute,
-      codexWeeklyTokensLeft: current.codexWeeklyTokensLeft ?? previous.codexWeeklyTokensLeft,
-      codexWeeklyMax: current.codexWeeklyMax ?? previous.codexWeeklyMax,
+      codexWeeklyEstimatedAbsolute: codexWeeklyPct !== undefined ? current.codexWeeklyEstimatedAbsolute : undefined,
+      codexWeeklyTokensLeft: codexWeeklyPct !== undefined ? current.codexWeeklyTokensLeft : undefined,
+      codexWeeklyMax: codexWeeklyPct !== undefined ? current.codexWeeklyMax : undefined,
 
       claudeDirectUsage: current.claudeDirectUsage ?? previous.claudeDirectUsage,
       localComputeStatus: current.localComputeStatus ?? previous.localComputeStatus,
@@ -1190,6 +1371,16 @@ export class DashboardController implements vscode.Disposable {
       return typeof input.title === "string" && input.title.trim().length > 0 && input.title.length <= 120
         && typeof input.goal === "string" && input.goal.trim().length > 0 && input.goal.length <= 12000
         && knownProvider(input.originProvider);
+    }
+    if (input.type === "requestClassifyMenu") {
+      return typeof input.taskId === "string" && input.taskId.length > 0
+        && typeof input.expectedRevision === "number" && Number.isInteger(input.expectedRevision);
+    }
+    if (input.type === "classifyBrokerTask") {
+      return typeof input.taskId === "string" && input.taskId.length > 0
+        && typeof input.expectedRevision === "number" && Number.isInteger(input.expectedRevision)
+        && (input.provider === undefined || knownProvider(input.provider))
+        && (input.mode === undefined || input.mode === "offline" || input.mode === "agent");
     }
     if (input.type === "delegateBrokerTask") {
       return typeof input.taskId === "string" && input.taskId.length > 0

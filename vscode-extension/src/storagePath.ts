@@ -361,13 +361,15 @@ function defaultProductStateRoot(
   userHome: string,
   platform: NodeJS.Platform,
 ): string {
-  if (platform === "win32" && env.LOCALAPPDATA?.trim()) {
-    return path.join(env.LOCALAPPDATA, PRODUCT_STATE_DIRECTORY, "state");
+  if (platform === "win32") {
+    const localAppData = env.LOCALAPPDATA || path.join(userHome, "AppData", "Local");
+    return path.join(localAppData, PRODUCT_STATE_DIRECTORY, "state");
   }
-  if (env.XDG_STATE_HOME?.trim()) {
-    return path.join(env.XDG_STATE_HOME, "integrated-power");
+  if (platform === "darwin") {
+    return path.join(userHome, "Library", "Application Support", PRODUCT_STATE_DIRECTORY, "state");
   }
-  return path.join(userHome, ".local", "state", "integrated-power");
+  const xdgDataHome = env.XDG_DATA_HOME || path.join(userHome, ".local", "share");
+  return path.join(xdgDataHome, PRODUCT_STATE_DIRECTORY, "state");
 }
 
 function defaultLegacyStateRoot(

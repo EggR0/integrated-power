@@ -96,10 +96,21 @@ async function main() {
   }
 
   // Initialize canonical SQLite/encrypted ledger & broker
-  const { EncryptedFileLedger } = brokerMod;
-  const ledgerPath = path.join(stateRoot, 'ledger.dat');
-  const ledger = new EncryptedFileLedger(ledgerPath);
-  await ledger.initialize();
+  const {
+    createPreferredEventLedger,
+    loadOrCreateLedgerKey,
+    getCanonicalBrokerLedgerPath,
+  } = brokerMod;
+
+  const canonicalLedgerBase = getCanonicalBrokerLedgerPath
+    ? getCanonicalBrokerLedgerPath(stateRoot)
+    : path.join(stateRoot, "broker", "events.enc.jsonl");
+  const keyFilePath = `${canonicalLedgerBase}.key`;
+  const ledgerKey = loadOrCreateLedgerKey
+    ? loadOrCreateLedgerKey(keyFilePath)
+    : undefined;
+
+  const ledger = createPreferredEventLedger(canonicalLedgerBase, ledgerKey);
 
   const broker = new IntegratedPowerBroker(ledger, createFirstWaveAdapters());
   await broker.initialize();

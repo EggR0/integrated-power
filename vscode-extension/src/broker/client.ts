@@ -196,6 +196,33 @@ export class BrokerClient {
     return (await this.request<{ event: TaskEvent }>("POST", `/v1/tasks/${encodeURIComponent(taskId)}/cancel`, { expectedRevision, idempotencyKey })).event;
   }
 
+  public async classifyTask(
+    taskId: string,
+    expectedRevision: number,
+    provider?: import("./protocol").ProviderId,
+    mode?: "offline" | "agent",
+    idempotencyKey?: string,
+  ): Promise<{ task: TaskEnvelope; event: TaskEvent }> {
+    await this.requireCapability("tasks.write");
+    return await this.request<{ task: TaskEnvelope; event: TaskEvent }>(
+      "POST",
+      `/v1/tasks/${encodeURIComponent(taskId)}/classify`,
+      { expectedRevision, provider, mode, idempotencyKey },
+    );
+  }
+
+  public async getTags(): Promise<string[]> {
+    return (await this.request<{ tags: string[] }>("GET", "/v1/tags")).tags;
+  }
+
+  public async listCapabilities(): Promise<import("./protocol").AgentCapability[]> {
+    try {
+      return (await this.request<{ capabilities: import("./protocol").AgentCapability[] }>("GET", "/v1/capabilities")).capabilities;
+    } catch {
+      return [];
+    }
+  }
+
   public async requestApproval(input: ApprovalCommandInput): Promise<ApprovalRequest> {
     await this.requireCapability("approvals.userDecision");
     return (await this.request<{ approval: ApprovalRequest }>("POST", "/v1/approvals", input)).approval;
