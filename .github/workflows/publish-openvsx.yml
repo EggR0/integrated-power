@@ -3,6 +3,9 @@ name: Publish to Open VSX
 on:
   release:
     types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
@@ -27,7 +30,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
         run: |
           mkdir -p ./release-assets
           if [ -n "$TAG_NAME" ]; then
