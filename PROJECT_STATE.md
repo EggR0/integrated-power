@@ -2,9 +2,9 @@
 
 Updated: 2026-10-15
 
-## Release Checkpoint (0.10.0)
+## Release Checkpoint (0.10.1)
 
-Integrated Power v0.10.0 introduces major architectural expansions with 5TB Google One Cloud Storage integration (user Google account), Drive Inbox Task Ingestion (`DriveIngestionService`, Option B), and Large Artifact Cloud Offloading (`DriveArtifactOffloader`, Option C), passing all unlazy gates and live E2E Google Drive API verification.
+Integrated Power v0.10.1 delivers comprehensive documentation overhauls (cross-platform OS paths, 4-tier architecture, multi-tier storage guides) alongside automated Open VSX CI/CD tag-push pipeline, expanding upon the 0.10.0 Google Drive 5TB storage broker and standalone daemon.
 
 ### Key Enhancements in 0.10.0:
 - **Google Drive 5TB Storage Broker Integration**: Connected user 5TB cloud storage as a Tier 2 secondary cloud storage tier (`gdriveStorage.ts`, `docs/reference/google-drive-storage-broker.ko.md`).

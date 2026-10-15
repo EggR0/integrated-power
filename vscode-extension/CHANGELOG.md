@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.1] - 2026-10-15
+
+### Enhanced & Docs
+
+- **Complete Overhaul of Documentation & READMEs**:
+  - Overhauled repository root `README.md` and extension `README.md` with modern 4-tier system architecture diagrams, cross-platform OS path standards (Windows, macOS, Linux XDG), and clear multi-tier storage guides.
+  - Published comprehensive end-user storage setup manuals: [Google Drive MCP Setup Guide](docs/guides/google-drive-mcp-setup.ko.md) and [Multi-Tier Storage Architecture Guide](docs/guides/storage-backends.ko.md).
+- **Automated Open VSX CI/CD Pipeline on Tag Push**:
+  - Updated `.github/workflows/publish-openvsx.yml` to trigger on both GitHub release publish events and direct Git version tags (`v*`), ensuring reliable and immediate marketplace synchronization.
+
 ## [0.10.0] - 2026-10-15
 
 ### Added & Major Features
