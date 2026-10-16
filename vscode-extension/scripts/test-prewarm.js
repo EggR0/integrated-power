@@ -153,22 +153,64 @@ async function runAsyncTests() {
   assert.strictEqual(result.timerStartedAt, undefined, "ACK does not prove the provider started a timer");
   assert.match(result.message, /dispatched|accepted/i);
   assert.strictEqual(dispatchedPrompt, "integrated power");
-  // 7. AGY Lowest Model Resolution for Gemini and Claude
-  const { getLowestAgyModel } = require("../out/broker/agyModelResolver");
+  // 7. Dynamic Model Resolution Contracts for AGY (Gemini/Claude) and Codex
+  const { getLowestAgyModel, resolveLowestModelFromList } = require("../out/broker/agyModelResolver");
+  const { resolveLowestCodexModelFromList } = require("../out/broker/codexAppServer");
+
+  // Contract A: Arbitrary future Gemini model list adapts without code changes
+  const futureGeminiList = [
+    { id: "gemini-9-ultra-high", name: "Gemini 9 Ultra (High)" },
+    { id: "gemini-9-flash-low", name: "Gemini 9 Flash (Low)" },
+    { id: "gemini-9-pro-medium", name: "Gemini 9 Pro (Medium)" },
+  ];
+  const resolvedFutureGemini = resolveLowestModelFromList(futureGeminiList, "gemini");
+  assert.strictEqual(resolvedFutureGemini.model, "gemini-9-flash-low", "Must resolve lowest flash tier from arbitrary future list");
+  assert.strictEqual(resolvedFutureGemini.family, "gemini");
+  assert.strictEqual(resolvedFutureGemini.effort, "low");
+
+  // Contract B: Arbitrary future Claude model list adapts without code changes
+  const futureClaudeList = [
+    { id: "claude-7-opus-high", name: "Claude 7 Opus (High)" },
+    { id: "claude-7-haiku-low", name: "Claude 7 Haiku (Low)" },
+  ];
+  const resolvedFutureClaude = resolveLowestModelFromList(futureClaudeList, "claude");
+  assert.strictEqual(resolvedFutureClaude.model, "claude-7-haiku-low", "Must resolve lowest haiku tier from arbitrary future list");
+  assert.strictEqual(resolvedFutureClaude.family, "claude");
+  assert.strictEqual(resolvedFutureClaude.effort, "low");
+
+  // Contract C: Unfamiliar naming fallback (family keyword match only)
+  const unfamiliarList = [
+    { id: "gemini-quantum-experimental", name: "Gemini Quantum Experimental" },
+  ];
+  const resolvedUnfamiliar = resolveLowestModelFromList(unfamiliarList, "gemini");
+  assert.strictEqual(resolvedUnfamiliar.model, "gemini-quantum-experimental", "Must fallback to any matching family model when tier is unknown");
+
+  // Contract D: Arbitrary future Codex model list adapts without code changes
+  const futureCodexList = [
+    { slug: "gpt-8-heavy", default_reasoning_level: "high" },
+    { slug: "gpt-8-mini", supported_reasoning_levels: [{ effort: "low" }] },
+  ];
+  const resolvedFutureCodex = resolveLowestCodexModelFromList(futureCodexList);
+  assert.strictEqual(resolvedFutureCodex.model, "gpt-8-mini", "Must resolve lightweight mini tier from arbitrary future Codex list");
+  assert.strictEqual(resolvedFutureCodex.reasoningEffort, "low");
+
+  // Contract E: Live environment model invariant checks (no brittle version hardcoding)
   const lowestGemini = getLowestAgyModel("gemini");
+  assert.ok(typeof lowestGemini.model === "string" && lowestGemini.model.length > 0, "Gemini model must be a valid non-empty string");
   assert.strictEqual(lowestGemini.family, "gemini");
   assert.strictEqual(lowestGemini.effort, "low");
-  assert.ok(lowestGemini.model.toLowerCase().includes("gemini"), "lowest Gemini model must contain gemini");
+  assert.ok(lowestGemini.model.toLowerCase().includes("gemini"), "Gemini model must contain family keyword");
 
   const lowestClaude = getLowestAgyModel("claude");
+  assert.ok(typeof lowestClaude.model === "string" && lowestClaude.model.length > 0, "Claude model must be a valid non-empty string");
   assert.strictEqual(lowestClaude.family, "claude");
   assert.strictEqual(lowestClaude.effort, "low");
-  assert.ok(lowestClaude.model.toLowerCase().includes("claude"), "lowest Claude model must contain claude");
+  assert.ok(lowestClaude.model.toLowerCase().includes("claude"), "Claude model must contain family keyword");
 
   console.log("  ok - stop selectors parity verified");
   console.log("  ok - minimal token ping and instant cancellation verified");
   console.log("  ok - pre-warm request cancellation preserves measured quota and does not invent a reset or retained percentage");
-  console.log("  ok - separate AGY lowest-tier model resolution (Gemini 3.6 Flash Low & Claude Sonnet 5.5 Low) verified");
+  console.log("  ok - dynamic model-agnostic resolution contracts verified across future arbitrary model lists");
   console.log("\npre-warm trigger test passed");
 }
 

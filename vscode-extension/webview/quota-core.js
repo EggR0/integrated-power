@@ -73,6 +73,7 @@ var IPQuota = (() => {
   var K_CAPACITY_RATIOS = Object.freeze({
     opus: 4.5,
     antigravity: 5,
+    gemini: 5,
     codex: 4,
     claude: 4.5
   });

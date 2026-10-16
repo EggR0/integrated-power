@@ -66,46 +66,62 @@ function discoverAgyModels(): Array<{ id: string; name: string }> {
 }
 
 /**
- * Resolves the lowest resource/cost model for Antigravity (AGY) 5-hour quota pre-warming.
- * Discovers live models from AGY CLI, matching by family keyword ("gemini" or "claude"),
- * selecting the lowest-tier / flash model, or falling back to any matching model in the family.
+ * Pure model resolver: given an arbitrary list of discovered models, resolves the lowest
+ * resource/cost model matching the given family keyword ("gemini" or "claude").
+ * Automatically adapts regardless of version numbers, prefixes, or naming convention changes.
  */
-export function getLowestAgyModel(family: "gemini" | "claude"): AgyModelResolution {
-  const models = discoverAgyModels();
+export function resolveLowestModelFromList(
+  models: Array<{ id: string; name: string }>,
+  family: "gemini" | "claude"
+): AgyModelResolution | undefined {
   const keyword = family.toLowerCase();
   const matches = models.filter((m) =>
     m.id.toLowerCase().includes(keyword) || m.name.toLowerCase().includes(keyword)
   );
 
-  if (matches.length > 0) {
-    // 1. Prefer lowest effort with flash (gemini) or sonnet/haiku (claude)
-    let picked = matches.find((m) => {
-      const lower = `${m.id} ${m.name}`.toLowerCase();
-      return lower.includes("low") && (family === "gemini" ? lower.includes("flash") : (lower.includes("sonnet") || lower.includes("haiku")));
-    });
-    // 2. Prefer low effort
-    if (!picked) {
-      picked = matches.find((m) => `${m.id} ${m.name}`.toLowerCase().includes("low"));
-    }
-    // 3. Prefer flash (gemini) or sonnet (claude)
-    if (!picked) {
-      picked = matches.find((m) => {
-        const lower = `${m.id} ${m.name}`.toLowerCase();
-        return family === "gemini" ? lower.includes("flash") : lower.includes("sonnet");
-      });
-    }
-    // 4. Fallback to any model containing the family keyword
-    if (!picked) {
-      picked = matches[0];
-    }
-    return {
-      model: picked.id,
-      effort: "low",
-      family,
-      displayName: picked.name,
-      cliModel: picked.id,
-    };
+  if (matches.length === 0) return undefined;
+
+  // 1. Prefer lowest effort with flash (gemini) or sonnet/haiku (claude)
+  let picked = matches.find((m) => {
+    const lower = `${m.id} ${m.name}`.toLowerCase();
+    return lower.includes("low") && (family === "gemini" ? lower.includes("flash") : (lower.includes("sonnet") || lower.includes("haiku")));
+  });
+  // 2. Prefer low effort
+  if (!picked) {
+    picked = matches.find((m) => `${m.id} ${m.name}`.toLowerCase().includes("low"));
   }
+  // 3. Prefer flash (gemini) or sonnet/haiku (claude)
+  if (!picked) {
+    picked = matches.find((m) => {
+      const lower = `${m.id} ${m.name}`.toLowerCase();
+      return family === "gemini" ? lower.includes("flash") : (lower.includes("sonnet") || lower.includes("haiku"));
+    });
+  }
+  // 4. Fallback to any model containing the family keyword
+  if (!picked) {
+    picked = matches[0];
+  }
+  return {
+    model: picked.id,
+    effort: "low",
+    family,
+    displayName: picked.name,
+    cliModel: picked.id,
+  };
+}
+
+/**
+ * Resolves the lowest resource/cost model for Antigravity (AGY) 5-hour quota pre-warming.
+ * Discovers live models from AGY CLI, matching by family keyword ("gemini" or "claude"),
+ * selecting the lowest-tier / flash model, or falling back to any matching model in the family.
+ */
+export function getLowestAgyModel(
+  family: "gemini" | "claude",
+  modelsOverride?: Array<{ id: string; name: string }>
+): AgyModelResolution {
+  const models = modelsOverride || discoverAgyModels();
+  const resolved = resolveLowestModelFromList(models, family);
+  if (resolved) return resolved;
 
   // Static fallback if CLI models query is unavailable
   if (family === "gemini") {

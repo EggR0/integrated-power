@@ -300,40 +300,67 @@ export interface CodexModelResolution {
   source: "cache" | "fallback";
 }
 
+export function resolveLowestCodexModelFromList(models: any[]): CodexModelResolution | undefined {
+  if (!Array.isArray(models) || models.length === 0) return undefined;
+
+  // 1. Preferred lightweight models in order of known affordability
+  const candidates = ["gpt-6-luna", "gpt-5.6-luna", "gpt-reserve", "gpt-6.1-sol", "gpt-6-sol"];
+  for (const candidate of candidates) {
+    const match = models.find((m: any) => m?.slug === candidate);
+    if (match) {
+      const hasLow = match.supported_reasoning_levels?.some((l: any) => l?.effort === "low");
+      return {
+        model: match.slug,
+        reasoningEffort: hasLow ? "low" : (match.default_reasoning_level || "low"),
+        source: "cache",
+      };
+    }
+  }
+
+  // 2. Keyword search for lightweight tiers (luna, mini, flash, affordable, efficient, small, low)
+  const affordable = models.find((m: any) => {
+    const text = `${m?.slug || ""} ${m?.description || ""}`.toLowerCase();
+    return text.includes("luna") || text.includes("mini") || text.includes("flash") || text.includes("affordable") || text.includes("efficient") || text.includes("small");
+  });
+  if (affordable) {
+    const hasLow = affordable.supported_reasoning_levels?.some((l: any) => l?.effort === "low");
+    return {
+      model: affordable.slug,
+      reasoningEffort: hasLow ? "low" : (affordable.default_reasoning_level || "low"),
+      source: "cache",
+    };
+  }
+
+  // 3. Fallback to any model supporting "low" reasoning effort
+  const anyLow = models.find((m: any) => m?.supported_reasoning_levels?.some((l: any) => l?.effort === "low"));
+  if (anyLow) {
+    return {
+      model: anyLow.slug,
+      reasoningEffort: "low",
+      source: "cache",
+    };
+  }
+
+  // 4. Fallback to the first available model
+  if (models[0]?.slug) {
+    return {
+      model: models[0].slug,
+      reasoningEffort: models[0].default_reasoning_level || "low",
+      source: "cache",
+    };
+  }
+
+  return undefined;
+}
+
 export function getLowestCodexModel(customCachePath?: string): CodexModelResolution {
   try {
     const cachePath = customCachePath || path.join(os.homedir(), ".codex", "models_cache.json");
     if (fs.existsSync(cachePath)) {
       const raw = fs.readFileSync(cachePath, "utf8");
       const data = JSON.parse(raw);
-      if (Array.isArray(data?.models) && data.models.length > 0) {
-        // Preferred lightweight models in order of affordability
-        const candidates = ["gpt-6-luna", "gpt-5.6-luna", "gpt-reserve", "gpt-6.1-sol", "gpt-6-sol"];
-        for (const candidate of candidates) {
-          const match = data.models.find((m: any) => m?.slug === candidate);
-          if (match) {
-            const hasLow = match.supported_reasoning_levels?.some((l: any) => l?.effort === "low");
-            return {
-              model: match.slug,
-              reasoningEffort: hasLow ? "low" : (match.default_reasoning_level || "low"),
-              source: "cache",
-            };
-          }
-        }
-
-        const affordable = data.models.find((m: any) => {
-          const text = `${m?.slug || ""} ${m?.description || ""}`.toLowerCase();
-          return text.includes("luna") || text.includes("affordable") || text.includes("efficient");
-        });
-        if (affordable) {
-          const hasLow = affordable.supported_reasoning_levels?.some((l: any) => l?.effort === "low");
-          return {
-            model: affordable.slug,
-            reasoningEffort: hasLow ? "low" : (affordable.default_reasoning_level || "low"),
-            source: "cache",
-          };
-        }
-      }
+      const resolved = resolveLowestCodexModelFromList(data?.models);
+      if (resolved) return resolved;
     }
   } catch {
     // Best effort parse

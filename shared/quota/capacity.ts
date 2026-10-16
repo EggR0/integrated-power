@@ -10,6 +10,7 @@
 export const K_CAPACITY_RATIOS = Object.freeze({
   opus: 4.5,
   antigravity: 5.0,
+  gemini: 5.0,
   codex: 4.0,
   claude: 4.5,
 });
