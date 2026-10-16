@@ -1753,7 +1753,7 @@ export class TokenManager {
     let opusWeeklyPercentage: number | undefined;
     let opusWeeklyResetTime: string | undefined;
     let measuredAt: string | undefined;
-    const bucketCandidates: Array<{ provider: "gemini" | "claude"; window: "5h" | "weekly"; percentage?: number; resetTime?: string }> = [];
+    const bucketCandidates: Array<{ provider: "gemini" | "claude"; window: "5h" | "weekly"; percentage?: number; resetTime?: string; isPrimary?: boolean }> = [];
 
     try {
       const result = await this.agyQuotaClient.fetchQuota();
@@ -1762,19 +1762,20 @@ export class TokenManager {
       if (Array.isArray(result.quota?.groups)) {
         for (const group of result.quota.groups) {
           const label = group.displayName || "";
+          const isPrimaryGemini = label === "Gemini Models" || (label.includes("Gemini") && !label.includes("Argon"));
           if (label.includes("Gemini")) {
             for (const bucket of group.buckets || []) {
               const window = bucket.window;
               const percentage = typeof bucket.remainingFraction === "number" && bucket.remainingFraction >= 0 && bucket.remainingFraction <= 1 ? bucket.remainingFraction * 100 : undefined;
-              if (window === "5h") bucketCandidates.push({ provider: "gemini", window, percentage, resetTime: bucket.resetTime });
-              else if (window === "weekly" || window === "7d") bucketCandidates.push({ provider: "gemini", window: "weekly", percentage, resetTime: bucket.resetTime });
+              if (window === "5h") bucketCandidates.push({ provider: "gemini", window, percentage, resetTime: bucket.resetTime, isPrimary: isPrimaryGemini });
+              else if (window === "weekly" || window === "7d") bucketCandidates.push({ provider: "gemini", window: "weekly", percentage, resetTime: bucket.resetTime, isPrimary: isPrimaryGemini });
             }
           } else if (label.includes("Claude") || label.includes("Opus")) {
             for (const bucket of group.buckets || []) {
               const window = bucket.window;
               const percentage = typeof bucket.remainingFraction === "number" && bucket.remainingFraction >= 0 && bucket.remainingFraction <= 1 ? bucket.remainingFraction * 100 : undefined;
-              if (window === "5h") bucketCandidates.push({ provider: "claude", window, percentage, resetTime: bucket.resetTime });
-              else if (window === "weekly" || window === "7d") bucketCandidates.push({ provider: "claude", window: "weekly", percentage, resetTime: bucket.resetTime });
+              if (window === "5h") bucketCandidates.push({ provider: "claude", window, percentage, resetTime: bucket.resetTime, isPrimary: true });
+              else if (window === "weekly" || window === "7d") bucketCandidates.push({ provider: "claude", window: "weekly", percentage, resetTime: bucket.resetTime, isPrimary: true });
             }
           }
         }
@@ -1787,8 +1788,11 @@ export class TokenManager {
     }
 
     const oneUnambiguousValue = (provider: "gemini" | "claude", window: "5h" | "weekly") => {
-      const candidates = bucketCandidates.filter((candidate) => candidate.provider === provider && candidate.window === window);
-      if (!candidates.length || candidates.some((candidate) => candidate.percentage === undefined)) return undefined;
+      let candidates = bucketCandidates.filter((candidate) => candidate.provider === provider && candidate.window === window);
+      if (!candidates.length) return undefined;
+      const primary = candidates.filter((candidate) => candidate.isPrimary);
+      if (primary.length > 0) candidates = primary;
+      if (candidates.some((candidate) => candidate.percentage === undefined)) return undefined;
       const first = candidates[0];
       return candidates.every((candidate) => candidate.percentage === first.percentage && candidate.resetTime === first.resetTime)
         ? first

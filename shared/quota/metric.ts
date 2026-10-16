@@ -68,6 +68,8 @@ export interface TokenMetric {
   percentage?: number;
   /** Policy-only 5h ceiling after weekly synchronization; never presented as measured quota. */
   effectivePercentage?: number;
+  /** Effective display percentage taking weekly exhaustion into account (0 when weekly exhausted). */
+  displayPercentage?: number;
   /** No absolute data and no percentage: render "Unavailable". */
   unavailable: boolean;
   tone: CapacityTone;
@@ -189,12 +191,21 @@ export function buildTokenMetric(
     }
   }
 
-  const mainText = percentage !== undefined ? `${percentage.toFixed(2)}%` : "Unavailable";
+  const displayPercentage = isWeeklyExhausted ? 0.0 : percentage;
+  const mainText = isWeeklyExhausted
+    ? "0.00%"
+    : percentage !== undefined
+      ? `${percentage.toFixed(2)}%`
+      : "Unavailable";
 
   let subtextFull = "Waiting for quota data";
   let subtextMedium = "Waiting";
   let subtextShort = "Waiting";
-  if (percentage !== undefined) {
+  if (isWeeklyExhausted) {
+    subtextFull = "0.00% remaining (Weekly exhausted)";
+    subtextMedium = "0.00%";
+    subtextShort = "0.0%";
+  } else if (percentage !== undefined) {
     subtextFull = `${percentage.toFixed(2)}% remaining`;
     subtextMedium = `${percentage.toFixed(2)}%`;
     subtextShort = `${percentage.toFixed(1)}%`;
@@ -285,8 +296,9 @@ export function buildTokenMetric(
     refreshShort,
     percentage,
     effectivePercentage,
+    displayPercentage,
     unavailable: percentage === undefined,
-    tone: percentage === undefined ? "healthy" : capacityTone(percentage),
+    tone: percentage === undefined ? "healthy" : isWeeklyExhausted ? "critical" : capacityTone(percentage),
     tooltip,
     isWeeklyExhausted,
     isWeeklyCapped,
@@ -381,22 +393,31 @@ export function calculateCapacitySummary(
   const entries: CapacitySummaryEntry[] = [];
 
   if (isServiceActiveForSummary(status, "gemini", filter)) {
-    const g5 = capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax);
     const gw = capacitySummaryEntry("Gemini Weekly", "Gemini Weekly", "Gemini W", status.antigravityWeeklyPercentage, status.antigravityWeeklyTokensLeft, status.antigravityWeeklyMax);
+    const g5 = capacitySummaryEntry("Gemini 5Hours", "Gemini 5Hours", "Gemini 5H", status.antigravityPercentage, status.antigravityTokensLeft, status.antigravityMax);
+    if (g5 && gw && typeof gw.percentage === "number") {
+      g5.percentage = calculateEffective5HourQuota(g5.percentage, gw.percentage, "antigravity").effectivePct;
+    }
     if (g5) entries.push(g5);
     if (gw) entries.push(gw);
   }
 
   if (isServiceActiveForSummary(status, "claude", filter)) {
-    const c5 = capacitySummaryEntry("Claude 5Hours", "Claude 5Hours", "Claude 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax);
     const cw = capacitySummaryEntry("Claude Weekly", "Claude Weekly", "Claude W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax);
+    const c5 = capacitySummaryEntry("Claude 5Hours", "Claude 5Hours", "Claude 5H", status.opusPercentage, status.opusTokensLeft, status.opusMax);
+    if (c5 && cw && typeof cw.percentage === "number") {
+      c5.percentage = calculateEffective5HourQuota(c5.percentage, cw.percentage, "opus").effectivePct;
+    }
     if (c5) entries.push(c5);
     if (cw) entries.push(cw);
   }
 
   if (isServiceActiveForSummary(status, "codex", filter)) {
-    const x5 = capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax);
     const xw = capacitySummaryEntry("ChatGPT Weekly", "ChatGPT Weekly", "ChatGPT W", status.codexWeeklyPercentage, status.codexWeeklyTokensLeft, status.codexWeeklyMax);
+    const x5 = capacitySummaryEntry("ChatGPT 5Hours", "ChatGPT 5Hours", "ChatGPT 5H", status.codexPercentage, status.codexTokensLeft, status.codexMax);
+    if (x5 && xw && typeof xw.percentage === "number") {
+      x5.percentage = calculateEffective5HourQuota(x5.percentage, xw.percentage, "codex").effectivePct;
+    }
     if (x5) entries.push(x5);
     if (xw) entries.push(xw);
   }

@@ -401,6 +401,20 @@ test("calculateCapacitySummary excludes unauthenticated / offline services from 
   assert.strictEqual(r3.lowest.label, "Gemini 5Hours");
 });
 
+test("calculateCapacitySummary caps 5H when weekly is exhausted so 5H cannot falsely win Best", () => {
+  const s = {
+    antigravityPercentage: 50, antigravityWeeklyPercentage: 50,
+    opusPercentage: 100, opusWeeklyPercentage: 0, // Claude weekly exhausted!
+    codexPercentage: 40, codexWeeklyPercentage: 50,
+  };
+  const r = shared.calculateCapacitySummary(s);
+  assert.ok(r);
+  const opus5h = r.entries.find((e) => e.label === "Claude 5Hours");
+  assert.strictEqual(opus5h.percentage, 0, "Claude 5Hours must be locked to 0% when Claude Weekly is 0%");
+  assert.notStrictEqual(r.strongest.label, "Claude 5Hours", "Claude 5Hours must not win Best when Weekly is 0%");
+  assert.strictEqual(r.strongest.percentage, 50);
+});
+
 test("absoluteTokenText: left/max, estimated fallback, left-only, none (A4)", () => {
   assert.strictEqual(shared.absoluteTokenText(500, 1000, undefined), "500 tokens / 1.00K tokens");
   assert.strictEqual(shared.absoluteTokenText(1234567, 2000000, undefined), "1.23M tokens / 2.00M tokens");

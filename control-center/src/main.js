@@ -450,7 +450,7 @@ function renderTokens() {
   for (const [id, m] of Object.entries(windows)) {
     const label = $(`label-${id}`);
     if (label) {
-      label.textContent = m.unavailable ? noDataText : `${m.percentage.toFixed(2)}% remaining`;
+      label.textContent = m.unavailable ? noDataText : m.isWeeklyExhausted ? "0.00% remaining (Weekly exhausted)" : `${m.percentage.toFixed(2)}% remaining`;
       label.title = m.tooltip; // A7 tooltip (hover)
     }
     const reset = $(`reset-${id}`);
@@ -481,7 +481,8 @@ function renderTokens() {
     }
     const bar = $(`bar-${id}`);
     if (bar) {
-      bar.style.width = `${Math.max(0, Math.min(100, m.percentage ?? 0))}%`;
+      const displayPct = typeof m.displayPercentage === "number" ? m.displayPercentage : m.percentage;
+      bar.style.width = `${Math.max(0, Math.min(100, displayPct ?? 0))}%`;
       // Unified tone thresholds (<=15 critical, 15-35 caution) via the shared
       // capacityTone — replaces the old hard-coded <20% warning.
       bar.classList.toggle("warning", m.tone === "warning");

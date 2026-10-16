@@ -996,9 +996,10 @@ function renderCapacityMetric(metric, groupTitle = "") {
     : "";
   const segments = metric.label === "Weekly" ? 7 : 5;
   const ticks = IPQuota.buildGaugeTickGradient(segments);
+  const fillPercentage = typeof metric.displayPercentage === "number" ? metric.displayPercentage : metric.percentage;
   const quotaGauge = metric.isUsageOnly ? "" : `
     <div class="progress-track" aria-label="${escapeHtml(metric.ariaLabel)} quota${metric.unavailable ? " unavailable" : ""}">
-      <div class="progress-fill" data-progress="${escapeAttr(typeof metric.percentage === "number" ? metric.percentage.toFixed(1) : "")}"${typeof metric.percentage === "number" ? ` style="width:${metric.percentage}%"` : " style=\"width:0%\""}></div>
+      <div class="progress-fill" data-progress="${escapeAttr(typeof fillPercentage === "number" ? fillPercentage.toFixed(1) : "")}"${typeof fillPercentage === "number" ? ` style="width:${fillPercentage}%"` : " style=\"width:0%\""}></div>
       <div class="progress-ticks" data-segments="${segments}" aria-hidden="true" style="background-image:${escapeAttr(ticks)}"></div>
     </div>`;
 

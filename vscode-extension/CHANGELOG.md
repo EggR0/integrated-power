@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.1] - 2026-10-16
+
+### Fixed & Enhanced
+
+- **Dynamic AGY Model Resolution & Universal Family Fallback (`src/broker/agyModelResolver.ts`, `src/broker/server.ts`)**:
+  - Dynamically discovers live models via `agy models` CLI with in-memory caching instead of hardcoding static model slugs.
+  - Automatically matches family keywords (`gemini`, `claude`) and resolves lowest-resource / flash tiers, with generic model-name fallback.
+  - Updated static fallbacks to active versions (`gemini-3.8-flash-low`, `claude-sonnet-5-5-low`).
+  - Fixed prewarm process spawning by removing premature 250ms process kills and adopting `--print-timeout 3s` with clean exit-code handling.
+- **Cross-Provider Weekly Quota Exhaustion Lock (`shared/quota/metric.ts`, `webview/main.js`, `control-center/src/main.js`)**:
+  - Enforced weekly quota constraints across Gemini, Claude, and Codex/ChatGPT 5-hour windows.
+  - When weekly quota reaches 0%, 5-hour window display locks to `0.00% remaining (Weekly exhausted)` with `critical` tone, disabling prewarm.
+  - Updated `calculateCapacitySummary` to rank 5-hour windows by their effective ceiling, preventing 0% weekly models from erroneously winning the Best recommendation.
+- **Primary Model Group Parsing (`src/TokenManager.ts`)**:
+  - Prioritizes canonical model groups (`Gemini Models`) over separate preview tiers (`Gemini 4 Argon`), preventing conflicting weekly quotas from falsely causing `W Waiting`.
+
 ## [0.11.0] - 2026-10-15
 
 ### Added & Enhanced

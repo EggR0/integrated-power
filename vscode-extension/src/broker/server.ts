@@ -16,6 +16,7 @@ import { getAutoStartStatus, setAutoStart } from "./autostart";
 import { requestForceRefresh, scanLiveTokenStatus, LiveTokenStatus } from "./tokenScanner";
 import { QuotaSettingsStore, QuotaSettingsWrite } from "./quotaSettingsStore";
 import { getLowestCodexModel, findCodexCliSync } from "./codexAppServer";
+import { getLowestAgyModel } from "./agyModelResolver";
 import { findExecutableOnPath } from "./executable";
 import { eggRWorkspaceId, resolveEggRWorkspaceDescriptor, resolveIntegratedPowerStateRoot, workspaceStoragePathForFolder } from "../storagePath";
 
@@ -616,9 +617,9 @@ async function executePrewarmRequest(
 
 function resolvePrewarmTarget(model?: string): { target: "antigravity" | "opus" | "codex"; model: string } {
   const value = (model || "antigravity").toLowerCase();
-  if (value.includes("opus") || value.includes("claude")) return { target: "opus", model: "claude-sonnet-5-5-low" };
+  if (value.includes("opus") || value.includes("claude")) return { target: "opus", model: getLowestAgyModel("claude").model };
   if (value.includes("codex") || value.includes("chatgpt")) return { target: "codex", model: getLowestCodexModel().model };
-  return { target: "antigravity", model: "gemini-3.8-flash-low" };
+  return { target: "antigravity", model: getLowestAgyModel("gemini").model };
 }
 
 function readPrewarmState(filePath: string): PersistedPrewarmArbitration {
@@ -663,14 +664,29 @@ async function spawnPrewarm(target: "antigravity" | "opus" | "codex", model: str
         if (!codexCli) return finish({ spawned: false, error: "Codex CLI is unavailable." });
         const lowest = getLowestCodexModel();
         const proc = cp.spawn(codexCli, ["exec", "-m", lowest.model, "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--disable", "skills", "-c", `model="${lowest.model}"`, "-c", `model_reasoning_effort="${lowest.reasoningEffort}"`, "1"], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true, shell: codexCli === "codex" || codexCli.endsWith(".cmd") });
-        proc.once("spawn", () => { setTimeout(() => { if (!proc.killed) { try { proc.kill(); } catch { /* best-effort prewarm stop */ } } }, 250).unref(); finish({ spawned: true }); });
-        proc.once("error", (error) => finish({ spawned: false, error: error.message }));
+        const timer = setTimeout(() => {
+          try { if (!proc.killed) proc.kill(); } catch {}
+          finish({ spawned: true });
+        }, 3000);
+        proc.once("error", (error) => { clearTimeout(timer); finish({ spawned: false, error: error.message }); });
+        proc.once("close", (code) => {
+          clearTimeout(timer);
+          finish(code === 0 || code === null ? { spawned: true } : { spawned: false, error: `Codex exited with code ${code}` });
+        });
       } else {
-        const agyBin = findExecutableOnPath(process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"]);
+        const agyBin = findExecutableOnPath(process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"])
+          || (process.platform === "win32" && process.env.LOCALAPPDATA && fs.existsSync(path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe")) ? path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe") : undefined);
         if (!agyBin) return finish({ spawned: false, error: "Antigravity CLI was not found on PATH." });
-        const proc = cp.spawn(agyBin, ["-p", "integrated power", "--model", model, "--effort", "low", "--disable-slash-commands", "--print-timeout", "500ms"], { windowsHide: true, shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(agyBin) });
-        proc.once("spawn", () => { setTimeout(() => { if (!proc.killed) { try { proc.kill(); } catch { /* best-effort prewarm stop */ } } }, 250).unref(); finish({ spawned: true }); });
-        proc.once("error", (error) => finish({ spawned: false, error: error.message }));
+        const proc = cp.spawn(agyBin, ["-p", "1", "--model", model, "--effort", "low", "--disable-slash-commands", "--print-timeout", "3s"], { windowsHide: true, shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(agyBin) });
+        const timer = setTimeout(() => {
+          try { if (!proc.killed) proc.kill(); } catch {}
+          finish({ spawned: true });
+        }, 8000);
+        proc.once("error", (error) => { clearTimeout(timer); finish({ spawned: false, error: error.message }); });
+        proc.once("close", (code) => {
+          clearTimeout(timer);
+          finish(code === 0 || code === null ? { spawned: true } : { spawned: false, error: `AGY exited with code ${code}` });
+        });
       }
     } catch (error) { finish({ spawned: false, error: error instanceof Error ? error.message : String(error) }); }
   });
