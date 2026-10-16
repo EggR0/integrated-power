@@ -153,7 +153,7 @@ Integrated Power는 외부 에이전트 도구와의 연동을 위해 **공식 �
 | **제품 표시명** | Integrated Power |
 | **Publisher / 네임스페이스** | **EggR0** |
 | **확장 ID** | **`EggR0.integrated-power`** |
-| **현재 최신 버전** | **`v0.11.1`** |
+| **현재 최신 버전** | **`v0.11.2`** |
 | **공식 마켓플레이스** | [Open VSX Registry](https://open-vsx.org/extension/EggR0/integrated-power) · [GitHub Releases (Latest)](https://github.com/EggR0/integrated-power/releases/latest) |
 | **지원 플랫폼** | Windows 11, macOS, Linux |
 | **지원 클라이언트** | Antigravity IDE, VS Code (^1.80.0), Standalone Desktop IPCC (Tauri) |

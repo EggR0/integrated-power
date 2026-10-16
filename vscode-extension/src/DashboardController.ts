@@ -220,7 +220,8 @@ export class DashboardController implements vscode.Disposable {
         await vscode.commands.executeCommand("integratedPower.terminals.showWebUI");
         return;
       case "prewarm":
-        await this.handlePrewarm((message as { model?: string }).model, true);
+        const prewarmPayload = message as { model?: string; window?: "5h" | "weekly" };
+        await this.handlePrewarm(prewarmPayload.model, prewarmPayload.window || "5h", true);
         return;
       case "setPrewarmMode":
         const prewarmMsg = message as { mode: PrewarmMode; target?: string };
@@ -1402,6 +1403,7 @@ export class DashboardController implements vscode.Disposable {
 
   private getPrewarmEligibility(
     modelKey?: string,
+    windowType: "5h" | "weekly" = "5h",
     status?: TokenStatus,
     isManual = false
   ): { eligible: boolean; reason: string; prefix: string; targetModel: string; cliModel: string; label: string } {
@@ -1411,7 +1413,7 @@ export class DashboardController implements vscode.Disposable {
     const agyGemini = getLowestAgyModel("gemini");
     let targetModel = agyGemini.model;
     let cliModel = agyGemini.displayName;
-    let label = "Gemini 5Hours";
+    let label = windowType === "weekly" ? "Gemini Weekly" : "Gemini 5Hours";
 
     if (raw.includes("opus") || raw.includes("claude")) {
       prefix = "opus";
@@ -1419,13 +1421,13 @@ export class DashboardController implements vscode.Disposable {
       const agyClaude = getLowestAgyModel("claude");
       targetModel = agyClaude.model;
       cliModel = agyClaude.displayName;
-      label = "Claude 5Hours";
+      label = windowType === "weekly" ? "Claude Weekly" : "Claude 5Hours";
     } else if (raw.includes("codex") || raw.includes("chatgpt")) {
       prefix = "codex";
       weeklyPrefix = "codexWeekly";
       targetModel = getLowestCodexModel().model;
       cliModel = targetModel;
-      label = "ChatGPT 5Hours";
+      label = windowType === "weekly" ? "ChatGPT Weekly" : "ChatGPT 5Hours";
     }
 
     if (!status) {
@@ -1437,50 +1439,72 @@ export class DashboardController implements vscode.Disposable {
       return { eligible: false, reason: "ChatGPT / Codex provider is offline", prefix, targetModel, cliModel, label };
     }
 
-    // Check weekly quota exhaustion
-    const weeklyPct = typeof (status as any)[`${weeklyPrefix}Percentage`] === "number"
-      ? Number((status as any)[`${weeklyPrefix}Percentage`])
-      : undefined;
-    const weeklyLeft = typeof (status as any)[`${weeklyPrefix}TokensLeft`] === "number"
-      ? Number((status as any)[`${weeklyPrefix}TokensLeft`])
-      : undefined;
-    const weeklyMax = typeof (status as any)[`${weeklyPrefix}Max`] === "number"
-      ? Number((status as any)[`${weeklyPrefix}Max`])
-      : 0;
-
-    let isWeeklyExhausted = false;
-    if (typeof weeklyPct === "number") {
-      isWeeklyExhausted = weeklyPct <= 0.05;
-    } else if (weeklyMax > 0 && typeof weeklyLeft === "number") {
-      isWeeklyExhausted = weeklyLeft === 0;
-    }
-
-    if (isWeeklyExhausted) {
-      return { eligible: false, reason: `${label} weekly quota is exhausted (${(weeklyPct ?? 0).toFixed(1)}% remaining). All 5-hour capacity is locked.`, prefix, targetModel, cliModel, label };
-    }
-    if (weeklyPct === undefined) {
-      return { eligible: false, reason: `${label} weekly quota is unknown; pre-warm requires a measured weekly window.`, prefix, targetModel, cliModel, label };
-    }
-
-    const poolId = prefix === "antigravity" ? "antigravity.default" : prefix === "opus" ? "opus.default" : "codex.5h";
-    const quotaPool = status.quotaPools?.find((pool) => pool.id === poolId);
     const fallbackTimestamp = (status as any).updatedAt ?? (status as any).lastSync ?? "";
-    const measuredAt = Date.parse(quotaPool?.measuredAt ?? "") || Date.parse(fallbackTimestamp);
-    if (!Number.isFinite(measuredAt) || Date.now() - measuredAt > 5 * 60_000 || measuredAt > Date.now() + 60_000) {
-      return { eligible: false, reason: `${label} quota data is not fresh; pre-warm requires a recent provider measurement.`, prefix, targetModel, cliModel, label };
+
+    if (windowType === "5h") {
+      // Check 5-hour percentage
+      const fiveHPct = typeof (status as any)[`${prefix}Percentage`] === "number"
+        ? Number((status as any)[`${prefix}Percentage`])
+        : 0;
+      if (fiveHPct < 99.95) {
+        return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
+      }
+
+      // Check if 5-hour time window is full (not actively counting down)
+      const resetTimeStr = (status as any)[`${prefix}ResetTime`];
+      const resetEpoch = resetTimeStr ? Date.parse(resetTimeStr) : NaN;
+      const diffMs = Number.isFinite(resetEpoch) ? resetEpoch - Date.now() : undefined;
+      if (diffMs !== undefined && diffMs > 0 && diffMs < 5 * 3600 * 1000 - 15 * 60 * 1000) {
+        const waitMin = Math.ceil(diffMs / 60000);
+        return { eligible: false, reason: `${label} 5시간 타이머가 이미 시작되어 재충전 중입니다 (${waitMin}분 남음). 5시간이 꽉 차 있을 때만 실행할 수 있습니다.`, prefix, targetModel, cliModel, label };
+      }
+
+      // Check weekly quota exhaustion only (do not require weekly data freshness for 5h prewarm)
+      const weeklyPct = typeof (status as any)[`${weeklyPrefix}Percentage`] === "number"
+        ? Number((status as any)[`${weeklyPrefix}Percentage`])
+        : undefined;
+      if (weeklyPct !== undefined && weeklyPct <= 0.05) {
+        return { eligible: false, reason: `${label} weekly quota is exhausted (${weeklyPct.toFixed(1)}% remaining). All 5-hour capacity is locked.`, prefix, targetModel, cliModel, label };
+      }
+
+      const poolId = prefix === "antigravity" ? "antigravity.default" : prefix === "opus" ? "opus.default" : "codex.5h";
+      const quotaPool = status.quotaPools?.find((pool) => pool.id === poolId);
+      const measuredAt = Date.parse(quotaPool?.measuredAt ?? "") || Date.parse(fallbackTimestamp);
+      if (Number.isFinite(measuredAt) && (Date.now() - measuredAt > 5 * 60_000 || measuredAt > Date.now() + 60_000)) {
+        return { eligible: false, reason: `${label} quota data is not fresh; pre-warm requires a recent provider measurement.`, prefix, targetModel, cliModel, label };
+      }
+    } else {
+      // windowType === "weekly"
+      const weeklyPct = typeof (status as any)[`${weeklyPrefix}Percentage`] === "number"
+        ? Number((status as any)[`${weeklyPrefix}Percentage`])
+        : undefined;
+      if (weeklyPct === undefined) {
+        return { eligible: false, reason: `${label} weekly quota data unavailable.`, prefix, targetModel, cliModel, label };
+      }
+      if (weeklyPct < 99.95) {
+        return { eligible: false, reason: `${label} quota is not 100% full (${weeklyPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
+      }
+
+      // Check if weekly time window is full (not actively counting down)
+      const weeklyResetTimeStr = (status as any)[`${weeklyPrefix}ResetTime`];
+      const weeklyResetEpoch = weeklyResetTimeStr ? Date.parse(weeklyResetTimeStr) : NaN;
+      const weeklyDiffMs = Number.isFinite(weeklyResetEpoch) ? weeklyResetEpoch - Date.now() : undefined;
+      if (weeklyDiffMs !== undefined && weeklyDiffMs > 0 && weeklyDiffMs < 168 * 3600 * 1000 - 4 * 3600 * 1000) {
+        const waitHours = Math.ceil(weeklyDiffMs / 3600000);
+        return { eligible: false, reason: `${label} 주간 타이머가 이미 시작되어 재충전 중입니다 (${waitHours}시간 남음). 일주일(168시간)이 꽉 차 있을 때만 실행할 수 있습니다.`, prefix, targetModel, cliModel, label };
+      }
+
+      const weeklyPool = status.quotaPools?.find((pool) => pool.id === `${prefix}.weekly`);
+      const measuredAt = Date.parse(weeklyPool?.measuredAt ?? "") || Date.parse(fallbackTimestamp);
+      if (Number.isFinite(measuredAt) && (Date.now() - measuredAt > 5 * 60_000 || measuredAt > Date.now() + 60_000)) {
+        return { eligible: false, reason: `${label} weekly quota data is not fresh; pre-warm requires a recent provider measurement.`, prefix, targetModel, cliModel, label };
+      }
     }
 
-    // Check 5-hour percentage
-    const fiveHPct = typeof (status as any)[`${prefix}Percentage`] === "number"
-      ? Number((status as any)[`${prefix}Percentage`])
-      : 0;
-    if (fiveHPct < 99.95) {
-      return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
-    }
-
+    const targetKey = `${prefix}-${windowType}`;
     if (!isManual) {
       // Auto-prewarm cooldown (minimum 30 minutes to prevent repeated automated pings)
-      const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
+      const lastPrewarm = this.lastAutoPrewarmByTarget[targetKey] || 0;
       const elapsed = Date.now() - lastPrewarm;
       const COOLDOWN_MS = 30 * 60 * 1000;
       if (elapsed < COOLDOWN_MS) {
@@ -1489,7 +1513,7 @@ export class DashboardController implements vscode.Disposable {
       }
     } else {
       // Manual click: debounce rapid accidental double-clicks (5 seconds)
-      const lastPrewarm = this.lastAutoPrewarmByTarget[prefix] || 0;
+      const lastPrewarm = this.lastAutoPrewarmByTarget[targetKey] || 0;
       const elapsed = Date.now() - lastPrewarm;
       if (elapsed < 5000) {
         return { eligible: false, reason: `${label} pre-warm was recently initiated. Please wait a few seconds.`, prefix, targetModel, cliModel, label };
@@ -1499,21 +1523,22 @@ export class DashboardController implements vscode.Disposable {
     return { eligible: true, reason: "Ready", prefix, targetModel, cliModel, label };
   }
 
-  private async handlePrewarm(modelKey?: string, isManual = false): Promise<void> {
+  private async handlePrewarm(modelKey?: string, windowType: "5h" | "weekly" = "5h", isManual = false): Promise<void> {
     if (this.sharedQuotaSettingsReady && this.brokerController) {
       if (!isManual) return; // Once/Always scheduling belongs to the shared broker.
       try {
         const result = await this.brokerController.getClient().prewarm({
           model: modelKey,
+          window: windowType,
           manual: true,
           idempotencyKey: randomUUID(),
           expectedSettingsRevision: this.quotaSettingsRevision,
         });
-        this.output.appendLine(`[prewarm] Shared broker result: ${result.status}; timer confirmed: ${result.timerConfirmed}.`);
+        this.output.appendLine(`[prewarm] Shared broker result: ${result.status}; window: ${windowType}; timer confirmed: ${result.timerConfirmed}.`);
         if (result.status === "failed" || result.status === "skipped") {
           void vscode.window.showWarningMessage(`[Integrated Power] Pre-warm ${result.status}: ${result.error || "The broker did not dispatch the request."}`);
         } else if (result.status === "dispatched" && !result.timerConfirmed) {
-          void vscode.window.showInformationMessage("[Integrated Power] Pre-warm dispatch accepted; the remote timer is not confirmed yet.");
+          void vscode.window.showInformationMessage(`[Integrated Power] ${windowType === "weekly" ? "Weekly (168h)" : "5-hour"} pre-warm dispatch accepted; the remote timer is not confirmed yet.`);
         }
       } catch (error) {
         this.output.appendLine(`[prewarm] Shared broker request failed: ${this.errorMessage(error)}`);
@@ -1522,7 +1547,7 @@ export class DashboardController implements vscode.Disposable {
       return;
     }
 
-    const check = this.getPrewarmEligibility(modelKey, this.state.tokenStatus, isManual);
+    const check = this.getPrewarmEligibility(modelKey, windowType, this.state.tokenStatus, isManual);
     if (!check.eligible) {
       this.output.appendLine(`[prewarm] Refusing pre-warm for ${check.label}: ${check.reason}`);
       if (isManual) {
@@ -1531,9 +1556,9 @@ export class DashboardController implements vscode.Disposable {
       return;
     }
 
-    this.output.appendLine(`[prewarm] 5-hour quota pre-warm approved for ${check.label} (100% Ready). Dispatching ping...`);
+    this.output.appendLine(`[prewarm] ${windowType === "weekly" ? "Weekly" : "5-hour"} quota pre-warm approved for ${check.label} (100% Ready). Dispatching ping...`);
     const now = Date.now();
-    this.lastAutoPrewarmByTarget[check.prefix] = now;
+    this.lastAutoPrewarmByTarget[`${check.prefix}-${windowType}`] = now;
 
     if (check.prefix === "codex") {
       // Codex / ChatGPT: Use codex CLI with lowest verified model (e.g. gpt-6-luna), ephemeral flag, and instant abort
@@ -1809,10 +1834,10 @@ export class DashboardController implements vscode.Disposable {
         continue;
       }
 
-      const check = this.getPrewarmEligibility(target, status, false);
+      const check = this.getPrewarmEligibility(target, "5h", status, false);
       if (check.eligible) {
         this.output.appendLine(`[prewarm] Auto-triggering pre-warm in mode '${targetMode}' for ${check.label}`);
-        await this.handlePrewarm(target, false);
+        await this.handlePrewarm(target, "5h", false);
 
         if (targetMode === "once") {
           this.output.appendLine(`[prewarm] 'Once Pre-warm' executed for ${check.label}. Reverting target mode to 'click'.`);

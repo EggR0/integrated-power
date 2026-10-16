@@ -227,14 +227,16 @@ export function buildTokenMetric(
     || (weeklyExactForPrewarm === undefined && typeof weeklyLeftForPrewarm === "number" && typeof weeklyMaxForPrewarm === "number" && weeklyMaxForPrewarm > 0 && weeklyLeftForPrewarm >= 0 && weeklyLeftForPrewarm <= weeklyMaxForPrewarm);
   const is5HourAt100 = label === "5Hours" && percentage !== undefined && percentage >= 99.95 && !isWeeklyExhausted;
   const is5HourReady = is5HourAt100 && weeklyKnownForPrewarm;
+  const isWeeklyAt100 = label === "Weekly" && percentage !== undefined && percentage >= 99.95;
   const resetDate = effectiveResetTime ? new Date(effectiveResetTime) : undefined;
   const resetEpoch = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : undefined;
   const diffMs = resetEpoch !== undefined ? resetEpoch - Date.now() : undefined;
   const countdown = formatRefreshCountdown(effectiveResetTime);
-  // When remaining time is active and strictly less than 5 hours (e.g. 4h 35m),
-  // display the running countdown even if quota reports 100%, so users see
-  // when their window actually resets.
-  const is5HourActiveCountdown = label === "5Hours" && diffMs !== undefined && diffMs > 0 && diffMs < 5 * 3600 * 1000;
+  // Pre-warm requires 100% quota AND a full time window.
+  // If the reset countdown is already actively ticking down (less than full duration),
+  // the window has already started its rolling cycle and is not eligible for prewarm.
+  const is5HourActiveCountdown = label === "5Hours" && diffMs !== undefined && diffMs > 0 && diffMs < 5 * 3600 * 1000 - 15 * 60 * 1000;
+  const isWeeklyActiveCountdown = label === "Weekly" && diffMs !== undefined && diffMs > 0 && diffMs < 168 * 3600 * 1000 - 4 * 3600 * 1000;
   const isPrewarmed = false;
   let refreshFull = "";
   let refreshMedium = "";
@@ -248,15 +250,19 @@ export function buildTokenMetric(
     refreshShort = "· Ready";
     canPrewarm = true;
     isReady = true;
+  } else if (isWeeklyAt100 && !isWeeklyActiveCountdown) {
+    refreshFull = "· Ready";
+    refreshMedium = "· Ready";
+    refreshShort = "· Ready";
+    canPrewarm = true;
+    isReady = true;
   } else if (countdown) {
     refreshFull = countdown.full;
     refreshMedium = countdown.medium || countdown.short;
     refreshShort = countdown.short;
-    if (is5HourReady) {
-      canPrewarm = true;
-      isReady = true;
-    }
-  } else if (is5HourReady) {
+    canPrewarm = false;
+    isReady = false;
+  } else if (is5HourReady || isWeeklyAt100) {
     refreshFull = "· Ready";
     refreshMedium = "· Ready";
     refreshShort = "· Ready";
@@ -271,8 +277,10 @@ export function buildTokenMetric(
     tooltip = `${ariaLabel || label}: Reported ${subtextFull}; weekly quota is exhausted. Pre-warm and routing policy are blocked until fresh weekly quota data allows them.`;
   } else if (isWeeklyCapped) {
     tooltip = `${ariaLabel || label}: Reported ${subtextFull}; policy ceiling ${effectivePercentage?.toFixed(1)}% (${capReason}).`;
-  } else if (is5HourReady) {
+  } else if (label === "5Hours" && canPrewarm) {
     tooltip = `${ariaLabel || label}: Reported ${subtextFull} (Ready for policy-gated pre-warm). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+  } else if (label === "Weekly" && canPrewarm) {
+    tooltip = `${ariaLabel || label}: Reported ${subtextFull} (Ready for policy-gated weekly pre-warm). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
   }
 
   const labelFull = label;

@@ -746,7 +746,7 @@ test("future reset alone does not prove an active countdown for full quota", () 
   assert.strictEqual(readyPastTimer.canPrewarm, true);
   assert.strictEqual(readyPastTimer.refreshFull, "· Ready");
 
-  // If reset time is active and strictly less than 5h, countdown is displayed even at 100%
+  // If reset time is active and strictly less than 5h, countdown is displayed and prewarm is not available (time not full)
   const active100Pct5h = shared.buildTokenMetric("5Hours", {
     antigravityPercentage: 100,
     antigravityResetTime: resetIn(3),
@@ -754,8 +754,8 @@ test("future reset alone does not prove an active countdown for full quota", () 
     antigravityWeeklyResetTime: resetIn(48),
   }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
 
-  assert.strictEqual(active100Pct5h.isReady, true);
-  assert.strictEqual(active100Pct5h.canPrewarm, true);
+  assert.strictEqual(active100Pct5h.isReady, false);
+  assert.strictEqual(active100Pct5h.canPrewarm, false);
   assert.strictEqual(active100Pct5h.isPrewarmed, false);
   assert.match(active100Pct5h.refreshFull, /^· Refreshes in (?:2h 59m|3h 0m)$/);
   assert.match(active100Pct5h.refreshShort, /^· (?:2:59|3:00)$/);

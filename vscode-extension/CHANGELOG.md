@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.2] - 2026-10-17
+
+### Fixed & Enhanced
+
+- **Independent 5-Hour & Weekly Pre-warm Operations (`shared/quota/`, `src/DashboardController.ts`, `src/broker/server.ts`, `webview/`)**:
+  - Separated 5-Hour (`⚡ Pre-warm`) and Weekly (`⚡ Pre-warm (168h)`) trigger paths into dedicated UI buttons and protocol requests.
+  - Required each quota window to independently satisfy 100% remaining quota and a full time window (idle state) before dispatch.
+- **Fixed 4:59h Idle Recognition & Pre-warm Deadlock (`shared/quota/metric.ts`, `src/DashboardController.ts`, `src/broker/server.ts`)**:
+  - Addressed provider API behavior where idle 100% quota returns `resetTime = measuredAt + 5h`, resulting in ~4:59h remaining due to telemetry polling intervals.
+  - Replaced narrow 30s threshold with a 15-minute margin for 5-hour windows (`diffMs < 5h - 15m`) and a 4-hour margin for weekly windows (`diffMs < 168h - 4h`).
+  - Resolved deadlock where Always prewarm mode and manual clicks were falsely blocked by recognizing idle full windows as active countdowns.
+- **Dynamic Model-Agnostic Resolution Contracts (`src/broker/agyModelResolver.ts`, `src/broker/codexAppServer.ts`)**:
+  - Implemented future-proof model resolution dynamically discovering active models without brittle hardcoded version strings.
+
 ## [0.11.1] - 2026-10-16
 
 ### Fixed & Enhanced

@@ -55,6 +55,7 @@ export interface BrokerServerOptions {
 
 interface PrewarmRequest {
   model?: string;
+  window?: "5h" | "weekly";
   manual?: boolean;
   idempotencyKey?: string;
   expectedSettingsRevision?: number;
@@ -556,7 +557,8 @@ async function executePrewarmRequest(
   const manual = input.manual !== false;
   const idempotencyKey = input.idempotencyKey?.trim() || `legacy-${crypto.randomUUID()}`;
   if (idempotencyKey.length > 128) return { httpStatus: 400, result: { ok: false, status: "failed", timerConfirmed: false, error: "idempotencyKey must not exceed 128 characters." } };
-  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ target: resolved.target, model: resolved.model, manual, expectedSettingsRevision: input.expectedSettingsRevision ?? null })).digest("hex");
+  const windowType: "5h" | "weekly" = input.window === "weekly" ? "weekly" : "5h";
+  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ target: resolved.target, model: resolved.model, window: windowType, manual, expectedSettingsRevision: input.expectedSettingsRevision ?? null })).digest("hex");
   const liveStatus = statusOverride ?? await readTokenStatus();
   // Read after the awaited status refresh so concurrent requests observe a
   // claim committed by the request that resumed first.
@@ -568,8 +570,10 @@ async function executePrewarmRequest(
   }
   const prefix = resolved.target;
   const weeklyPrefix = `${prefix}Weekly`;
-  const windowId = `policy-5h-${Math.floor(Date.now() / (5 * 60 * 60 * 1000))}`;
-  const windowKey = `${prefix}:${windowId}`;
+  const windowId = windowType === "weekly"
+    ? `policy-weekly-${Math.floor(Date.now() / (168 * 60 * 60 * 1000))}`
+    : `policy-5h-${Math.floor(Date.now() / (5 * 60 * 60 * 1000))}`;
+  const windowKey = `${prefix}:${windowType}:${windowId}`;
   const previous = state.windows[windowKey];
   if (previous && (previous.status === "dispatching" || previous.status === "dispatched" || Date.now() - previous.attemptedAt < 30_000)) {
     return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "duplicate", timerConfirmed: false, claimId: previous.claimId, model: prefix, targetModel: resolved.model, error: "This quota window already has an active or completed prewarm claim." } });
@@ -587,15 +591,48 @@ async function executePrewarmRequest(
   const pools = Array.isArray((liveStatus as any).quotaPools) ? (liveStatus as any).quotaPools : [];
   const fivePool = pools.find((pool: any) => pool?.id === `${prefix}.5h` || pool?.id === `${prefix}.default` || (pool?.provider === (prefix === "opus" ? "anthropic" : prefix) && pool?.windowDurationMins === 300));
   const weeklyPool = pools.find((pool: any) => pool?.id === `${prefix}.weekly` || (pool?.provider === (prefix === "opus" ? "anthropic" : prefix) && pool?.windowDurationMins === 10080));
-  const fallbackTimestamp = Date.parse(String((liveStatus as any).lastSync ?? (liveStatus as any).directUsage?.lastMeasuredAt ?? ""));
+  const fallbackTimestamp = Date.parse(String((liveStatus as any).lastSync ?? (liveStatus as any).updatedAt ?? (liveStatus as any).directUsage?.lastMeasuredAt ?? ""));
   const fiveMeasuredAt = Date.parse(String(fivePool?.measuredAt ?? "")) || fallbackTimestamp;
   const weeklyMeasuredAt = Date.parse(String(weeklyPool?.measuredAt ?? "")) || fallbackTimestamp;
-  const isFreshMeasurement = (value: number) => Number.isFinite(value) && value <= Date.now() + 60_000 && Date.now() - value <= 5 * 60_000;
-  if (fiveHour === undefined || weekly === undefined || !isFreshMeasurement(fiveMeasuredAt) || !isFreshMeasurement(weeklyMeasuredAt)) {
-    return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires fresh, reported 5-hour and weekly quota data before pre-warm.` } });
+
+  if (windowType === "5h") {
+    if (fiveHour === undefined) {
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires reported 5-hour quota data before pre-warm.` } });
+    }
+    if (Number.isFinite(fiveMeasuredAt) && (fiveMeasuredAt > Date.now() + 60_000 || Date.now() - fiveMeasuredAt > 5 * 60_000)) {
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires fresh, reported 5-hour quota data before pre-warm.` } });
+    }
+    if (fiveHour < 99.95) {
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} quota is not 100% full (${fiveHour.toFixed(1)}%).` } });
+    }
+    const resetTimeStr = (liveStatus as any)[`${prefix}ResetTime`];
+    const resetDate = resetTimeStr ? new Date(resetTimeStr) : undefined;
+    const diffMs = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() - Date.now() : undefined;
+    if (diffMs !== undefined && diffMs > 0 && diffMs < 5 * 3600 * 1000 - 15 * 60 * 1000) {
+      const waitMin = Math.ceil(diffMs / 60000);
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} 5-hour quota timer is already active (${waitMin}m remaining). Pre-warm requires a full 5-hour window.` } });
+    }
+    if (weekly !== undefined && weekly <= 0.05) {
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota is exhausted.` } });
+    }
+  } else {
+    if (weekly === undefined) {
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires reported weekly quota data before pre-warm.` } });
+    }
+    if (Number.isFinite(weeklyMeasuredAt) && (weeklyMeasuredAt > Date.now() + 60_000 || Date.now() - weeklyMeasuredAt > 5 * 60_000)) {
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires fresh, reported weekly quota data before pre-warm.` } });
+    }
+    if (weekly < 99.95) {
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota is not 100% full (${weekly.toFixed(1)}%).` } });
+    }
+    const weeklyResetTimeStr = (liveStatus as any)[`${weeklyPrefix}ResetTime`];
+    const weeklyResetDate = weeklyResetTimeStr ? new Date(weeklyResetTimeStr) : undefined;
+    const weeklyDiffMs = weeklyResetDate && !Number.isNaN(weeklyResetDate.getTime()) ? weeklyResetDate.getTime() - Date.now() : undefined;
+    if (weeklyDiffMs !== undefined && weeklyDiffMs > 0 && weeklyDiffMs < 168 * 3600 * 1000 - 4 * 3600 * 1000) {
+      const waitHours = Math.ceil(weeklyDiffMs / 3600000);
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota timer is already active (${waitHours}h remaining). Pre-warm requires a full 168-hour window.` } });
+    }
   }
-  if (fiveHour < 99.95) return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} quota is not 100% full (${fiveHour.toFixed(1)}%).` } });
-  if (weekly <= 0.05) return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota is exhausted.` } });
   const claimId = crypto.createHash("sha256").update(windowKey).digest("hex").slice(0, 24);
   state.windows[windowKey] = { windowId, status: "dispatching", attemptedAt: Date.now(), claimId };
   writePrewarmState(statePath, state);

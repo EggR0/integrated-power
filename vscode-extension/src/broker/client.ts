@@ -86,6 +86,7 @@ export type PutQuotaSettingsInput = QuotaSettingsWrite;
 
 export interface PrewarmInput {
   model?: string;
+  window?: "5h" | "weekly";
   manual: boolean;
   idempotencyKey: string;
   expectedSettingsRevision?: number;

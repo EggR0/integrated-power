@@ -419,7 +419,11 @@ function render() {
         prewarmBtn.disabled = true;
         prewarmBtn.classList.add("loading");
         prewarmBtn.innerHTML = '<span class="text-full">⚡ Starting...</span><span class="text-medium">⚡ Starting...</span><span class="text-short">⚡ ...</span>';
-        vscode.postMessage({ type: "prewarm", model: prewarmBtn.dataset.prewarm });
+        vscode.postMessage({
+          type: "prewarm",
+          model: prewarmBtn.dataset.prewarm,
+          window: prewarmBtn.dataset.prewarmWindow || "5h",
+        });
         return;
       }
 
@@ -979,20 +983,22 @@ function renderCapacityMetric(metric, groupTitle = "") {
     : undefined;
   const isEligibleGroup = !groupTitle.toLowerCase().includes("api") && !groupTitle.toLowerCase().includes("cli");
   const prewarmTarget = isEligibleGroup ? targetFromGroup || inferredTarget : undefined;
-  const supportedTarget = prewarmTarget && IPQuota.PREWARM_TARGETS.find((target) => target.model === prewarmTarget);
-  const canPrewarm = metric.label === "5Hours" && Boolean(supportedTarget) && IPQuota.canTriggerPrewarm(metric);
+  const isSupportedWindow = metric.label === "5Hours" || metric.label === "Weekly";
+  const windowType = metric.label === "Weekly" ? "weekly" : "5h";
+  const supportedTarget = prewarmTarget && IPQuota.PREWARM_TARGETS.find((target) => target.model === prewarmTarget && (target.window === windowType || (!target.window && windowType === "5h")));
+  const canPrewarm = isSupportedWindow && Boolean(supportedTarget) && IPQuota.canTriggerPrewarm(metric);
   const disabledReason = metric.unavailable
     ? "쿼터 정보를 확인할 수 없습니다."
     : metric.isWeeklyExhausted
       ? "주간 쿼터 소진으로 프리웜을 실행할 수 없습니다."
       : metric.refreshFull && metric.refreshFull !== "· Ready"
-        ? `5시간 재충전 중입니다 (${metric.refreshFull}).`
-        : "5시간 쿼터가 100% Ready일 때 실행할 수 있습니다.";
+        ? (metric.label === "Weekly" ? `주간 재충전 중입니다 (${metric.refreshFull}).` : `5시간 재충전 중입니다 (${metric.refreshFull}).`)
+        : (metric.label === "Weekly" ? "일주일(168시간) 쿼터가 100%이고 시간이 꽉 차 있을 때 실행할 수 있습니다." : "5시간 쿼터가 100%이고 시간이 꽉 차 있을 때 실행할 수 있습니다.");
   const prewarmTitle = canPrewarm
-    ? "브로커에 프리웜 실행을 요청합니다. 실제 실행 여부와 원격 타이머 시작은 확인되지 않습니다."
+    ? `브로커에 ${metric.label === "Weekly" ? "주간(168시간)" : "5시간"} 프리웜 실행을 요청합니다.`
     : disabledReason;
-  const prewarmBtn = metric.label === "5Hours" && supportedTarget
-    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(supportedTarget.model)}" aria-label="${escapeAttr(`${supportedTarget.displayName} pre-warm${canPrewarm ? "" : ` disabled: ${disabledReason}`}`)}" title="${escapeAttr(prewarmTitle)}"${canPrewarm ? "" : " disabled"}><span class="text-full">⚡ Pre-warm</span><span class="text-medium">⚡ Pre-warm</span><span class="text-short">⚡ Pre</span></button>`
+  const prewarmBtn = isSupportedWindow && supportedTarget
+    ? `<button type="button" class="prewarm-btn" data-prewarm="${escapeAttr(supportedTarget.model)}" data-prewarm-window="${windowType}" aria-label="${escapeAttr(`${supportedTarget.displayName} pre-warm${canPrewarm ? "" : ` disabled: ${disabledReason}`}`)}" title="${escapeAttr(prewarmTitle)}"${canPrewarm ? "" : " disabled"}><span class="text-full">⚡ Pre-warm</span><span class="text-medium">⚡ Pre-warm</span><span class="text-short">⚡ Pre</span></button>`
     : "";
   const segments = metric.label === "Weekly" ? 7 : 5;
   const ticks = IPQuota.buildGaugeTickGradient(segments);

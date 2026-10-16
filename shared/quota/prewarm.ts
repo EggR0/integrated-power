@@ -86,19 +86,25 @@ export interface PrewarmTarget {
   model: string;
   displayName: string;
   prefix: string;
+  window?: "5h" | "weekly";
 }
 
 export const PREWARM_TARGETS: readonly PrewarmTarget[] = Object.freeze([
-  { id: "antigravity-gemini-5h", model: "antigravity", displayName: "Gemini 5Hours", prefix: "antigravity" },
-  { id: "codex-chatgpt-5h", model: "codex", displayName: "ChatGPT 5Hours", prefix: "codex" },
-  { id: "opus-claude-5h", model: "opus", displayName: "Claude 5Hours", prefix: "opus" },
-  { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude" },
+  { id: "antigravity-gemini-5h", model: "antigravity", displayName: "Gemini 5Hours", prefix: "antigravity", window: "5h" },
+  { id: "codex-chatgpt-5h", model: "codex", displayName: "ChatGPT 5Hours", prefix: "codex", window: "5h" },
+  { id: "opus-claude-5h", model: "opus", displayName: "Claude 5Hours", prefix: "opus", window: "5h" },
+  { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude", window: "5h" },
+  { id: "antigravity-gemini-weekly", model: "antigravity", displayName: "Gemini Weekly", prefix: "antigravity", window: "weekly" },
+  { id: "codex-chatgpt-weekly", model: "codex", displayName: "ChatGPT Weekly", prefix: "codex", window: "weekly" },
+  { id: "opus-claude-weekly", model: "opus", displayName: "Claude Weekly", prefix: "opus", window: "weekly" },
+  { id: "claude-weekly", model: "claude", displayName: "Claude Weekly", prefix: "claude", window: "weekly" },
 ]);
 
 export interface PrewarmResult {
   ok: boolean;
   targetId: string;
   model: string;
+  window?: "5h" | "weekly";
   tokensConsumed?: number;
   retainedPercentage?: number;
   timerStartedAt?: string;
@@ -107,9 +113,15 @@ export interface PrewarmResult {
   stopMethod: "cancel_tooltip" | "fallback_square" | "abort_controller" | "simulated";
 }
 
-/** Check if a given metric qualifies for pre-warming. */
+/** Check if a given metric qualifies for pre-warming (5-hour or Weekly, independently). */
 export function canTriggerPrewarm(metric: TokenMetric): boolean {
-  return metric.label === "5Hours" && metric.percentage !== undefined && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
+  if (metric.label === "5Hours") {
+    return metric.percentage !== undefined && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
+  }
+  if (metric.label === "Weekly") {
+    return metric.percentage !== undefined && metric.percentage >= 99.95 && Boolean(metric.canPrewarm);
+  }
+  return false;
 }
 
 /**

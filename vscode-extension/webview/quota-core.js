@@ -535,11 +535,13 @@ var IPQuota = (() => {
     const weeklyKnownForPrewarm = !pairedWeeklyPrefix || typeof weeklyExactForPrewarm === "number" && Number.isFinite(weeklyExactForPrewarm) && weeklyExactForPrewarm >= 0 && weeklyExactForPrewarm <= 100 || weeklyExactForPrewarm === void 0 && typeof weeklyLeftForPrewarm === "number" && typeof weeklyMaxForPrewarm === "number" && weeklyMaxForPrewarm > 0 && weeklyLeftForPrewarm >= 0 && weeklyLeftForPrewarm <= weeklyMaxForPrewarm;
     const is5HourAt100 = label === "5Hours" && percentage !== void 0 && percentage >= 99.95 && !isWeeklyExhausted;
     const is5HourReady = is5HourAt100 && weeklyKnownForPrewarm;
+    const isWeeklyAt100 = label === "Weekly" && percentage !== void 0 && percentage >= 99.95;
     const resetDate = effectiveResetTime ? new Date(effectiveResetTime) : void 0;
     const resetEpoch = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : void 0;
     const diffMs = resetEpoch !== void 0 ? resetEpoch - Date.now() : void 0;
     const countdown = formatRefreshCountdown(effectiveResetTime);
-    const is5HourActiveCountdown = label === "5Hours" && diffMs !== void 0 && diffMs > 0 && diffMs < 5 * 3600 * 1e3;
+    const is5HourActiveCountdown = label === "5Hours" && diffMs !== void 0 && diffMs > 0 && diffMs < 5 * 3600 * 1e3 - 15 * 60 * 1e3;
+    const isWeeklyActiveCountdown = label === "Weekly" && diffMs !== void 0 && diffMs > 0 && diffMs < 168 * 3600 * 1e3 - 4 * 3600 * 1e3;
     const isPrewarmed = false;
     let refreshFull = "";
     let refreshMedium = "";
@@ -552,15 +554,19 @@ var IPQuota = (() => {
       refreshShort = "\xB7 Ready";
       canPrewarm = true;
       isReady = true;
+    } else if (isWeeklyAt100 && !isWeeklyActiveCountdown) {
+      refreshFull = "\xB7 Ready";
+      refreshMedium = "\xB7 Ready";
+      refreshShort = "\xB7 Ready";
+      canPrewarm = true;
+      isReady = true;
     } else if (countdown) {
       refreshFull = countdown.full;
       refreshMedium = countdown.medium || countdown.short;
       refreshShort = countdown.short;
-      if (is5HourReady) {
-        canPrewarm = true;
-        isReady = true;
-      }
-    } else if (is5HourReady) {
+      canPrewarm = false;
+      isReady = false;
+    } else if (is5HourReady || isWeeklyAt100) {
       refreshFull = "\xB7 Ready";
       refreshMedium = "\xB7 Ready";
       refreshShort = "\xB7 Ready";
@@ -572,8 +578,10 @@ var IPQuota = (() => {
       tooltip = `${ariaLabel || label}: Reported ${subtextFull}; weekly quota is exhausted. Pre-warm and routing policy are blocked until fresh weekly quota data allows them.`;
     } else if (isWeeklyCapped) {
       tooltip = `${ariaLabel || label}: Reported ${subtextFull}; policy ceiling ${effectivePercentage?.toFixed(1)}% (${capReason}).`;
-    } else if (is5HourReady) {
+    } else if (label === "5Hours" && canPrewarm) {
       tooltip = `${ariaLabel || label}: Reported ${subtextFull} (Ready for policy-gated pre-warm). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+    } else if (label === "Weekly" && canPrewarm) {
+      tooltip = `${ariaLabel || label}: Reported ${subtextFull} (Ready for policy-gated weekly pre-warm). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     }
     const labelFull = label;
     const labelMedium = label;
@@ -901,13 +909,23 @@ var IPQuota = (() => {
     };
   }
   var PREWARM_TARGETS = Object.freeze([
-    { id: "antigravity-gemini-5h", model: "antigravity", displayName: "Gemini 5Hours", prefix: "antigravity" },
-    { id: "codex-chatgpt-5h", model: "codex", displayName: "ChatGPT 5Hours", prefix: "codex" },
-    { id: "opus-claude-5h", model: "opus", displayName: "Claude 5Hours", prefix: "opus" },
-    { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude" }
+    { id: "antigravity-gemini-5h", model: "antigravity", displayName: "Gemini 5Hours", prefix: "antigravity", window: "5h" },
+    { id: "codex-chatgpt-5h", model: "codex", displayName: "ChatGPT 5Hours", prefix: "codex", window: "5h" },
+    { id: "opus-claude-5h", model: "opus", displayName: "Claude 5Hours", prefix: "opus", window: "5h" },
+    { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude", window: "5h" },
+    { id: "antigravity-gemini-weekly", model: "antigravity", displayName: "Gemini Weekly", prefix: "antigravity", window: "weekly" },
+    { id: "codex-chatgpt-weekly", model: "codex", displayName: "ChatGPT Weekly", prefix: "codex", window: "weekly" },
+    { id: "opus-claude-weekly", model: "opus", displayName: "Claude Weekly", prefix: "opus", window: "weekly" },
+    { id: "claude-weekly", model: "claude", displayName: "Claude Weekly", prefix: "claude", window: "weekly" }
   ]);
   function canTriggerPrewarm(metric) {
-    return metric.label === "5Hours" && metric.percentage !== void 0 && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
+    if (metric.label === "5Hours") {
+      return metric.percentage !== void 0 && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
+    }
+    if (metric.label === "Weekly") {
+      return metric.percentage !== void 0 && metric.percentage >= 99.95 && Boolean(metric.canPrewarm);
+    }
+    return false;
   }
   function generateAntigravityStopScript() {
     return `(function() {

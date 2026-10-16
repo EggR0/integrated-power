@@ -309,7 +309,8 @@ document.title=JSON.stringify({results,disabledDispatches,dispatchedTargets,part
         assert(measured.outOfBounds.length === 0, `A visible dashboard element extends outside ${width}px: ${JSON.stringify(measured.outOfBounds)}`);
         assert(measured.controls >= 15, `The full dashboard fixture did not render at ${width}px: ${JSON.stringify(measured)}`);
         assert(measured.sections.some((title) => title.includes("Broker tasks")), `Broker controls did not render at ${width}px.`);
-        assert(JSON.stringify(measured.prewarm.map((button) => button.target).sort()) === JSON.stringify(["antigravity", "codex", "opus"]), `all three model actions must render at ${width}px`);
+        assert(JSON.stringify([...new Set(measured.prewarm.map((button) => button.target))].sort()) === JSON.stringify(["antigravity", "codex", "opus"]), `all three model actions must render at ${width}px`);
+        assert(measured.prewarm.length === 6, `both 5-hour and weekly prewarm actions must render for all three models at ${width}px`);
         assert(measured.prewarm.every((button) => button.disabled && button.title.length > 0), `non-Ready model actions must be disabled with a reason at ${width}px`);
         assert(measured.historySummary.includes("History (21)"), `collapsed terminal history must show its count at ${width}px: ${JSON.stringify(measured)}`);
         assert(measured.historyStages.short.visible && !measured.historyStages.medium.visible && !measured.historyStages.full.visible, `short history label must be the only visible stage at ${width}px: ${JSON.stringify(measured.historyStages)}`);
@@ -331,7 +332,7 @@ document.title=JSON.stringify({results,disabledDispatches,dispatchedTargets,part
       assert(mediumHistoryLabel.medium === "History (21) · 8/15" && mediumHistoryLabel.visible.medium && !mediumHistoryLabel.visible.full && !mediumHistoryLabel.visible.short, `medium panels must use the medium label: ${JSON.stringify(mediumHistoryLabel)}`);
       assert(fullHistoryLabel.short === "History (21)" && mediumHistoryLabel.short === "History (21)", "short label must retain the count while dates remain available in accessible text");
       assert(disabledDispatches === 0, "disabled prewarm actions must not dispatch to the IDE bridge");
-      assert(JSON.stringify(dispatchedTargets) === JSON.stringify(["antigravity", "codex", "opus"]), "enabled model actions must dispatch each canonical target through the IDE bridge");
+      assert(JSON.stringify([...new Set(dispatchedTargets)].sort()) === JSON.stringify(["antigravity", "codex", "opus"]), "enabled model actions must dispatch each canonical target through the IDE bridge");
       assert(partialGauge.length >= 6, `all provider windows must render an actual gauge overlay: ${JSON.stringify(partialGauge)}`);
       for (const [index, item] of partialGauge.entries()) {
         const expectedSegments = item.label.includes("Weekly") ? 7 : 5;

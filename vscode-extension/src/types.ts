@@ -226,7 +226,7 @@ export type WebviewToExtensionMessage =
   | { type: "showBroker" }
   | { type: "showOllama" }
   | { type: "showWebUI" }
-  | { type: "prewarm"; model?: string }
+  | { type: "prewarm"; model?: string; window?: "5h" | "weekly" }
   | { type: "setPrewarmMode"; mode: PrewarmMode; target?: string }
   | { type: "refreshBroker" }
   | { type: "createBrokerTask"; title: string; goal: string; originProvider: ProviderId; tags?: string[]; recommendedProvider?: ProviderId; rawInput?: string }

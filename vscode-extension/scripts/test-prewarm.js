@@ -91,19 +91,61 @@ assert.strictEqual(dormantMetric.canPrewarm, true);
 assert.strictEqual(dormantMetric.isPrewarmed, false);
 assert.strictEqual(shared.canTriggerPrewarm(dormantMetric), true);
 
-// A full provider quota with an active countdown less than 5h displays the countdown but remains Ready for prewarm.
-const fullMetric = shared.buildTokenMetric("5Hours", {
+// Pre-warm requires 100% quota AND a full time window.
+// When an active countdown is ticking down (less than 4h 45m remaining), the window is already in-progress
+// and is not eligible for prewarm.
+const activeCountdownMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 100,
   antigravityResetTime: resetIn(3),
   antigravityWeeklyPercentage: 100,
   antigravityWeeklyResetTime: resetIn(48),
 }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
 
-assert.strictEqual(fullMetric.isReady, true);
-assert.strictEqual(fullMetric.canPrewarm, true);
-assert.strictEqual(fullMetric.isPrewarmed, false);
-assert.match(fullMetric.refreshFull, /^· Refreshes in (?:2h 59m|3h 0m)$/);
-assert.match(fullMetric.refreshShort, /^· (?:2:59|3:00)$/);
+assert.strictEqual(activeCountdownMetric.isReady, false, "active countdown means window is already running");
+assert.strictEqual(activeCountdownMetric.canPrewarm, false, "prewarm not allowed while active countdown is running");
+assert.match(activeCountdownMetric.refreshFull, /^· Refreshes in (?:2h 59m|3h 0m)$/);
+assert.match(activeCountdownMetric.refreshShort, /^· (?:2:59|3:00)$/);
+
+// Top-of-window 100% idle state: Providers report resetTime = measuredAt + 5h.
+// Telemetry and polling delays result in ~4:59h remaining. This is an idle full window, NOT an active countdown.
+const idleTopOfWindow5hMetric = shared.buildTokenMetric("5Hours", {
+  antigravityPercentage: 100,
+  antigravityResetTime: resetIn(4.98), // 4h 58.8m
+  antigravityWeeklyPercentage: 100,
+  antigravityWeeklyResetTime: resetIn(48),
+}, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+
+assert.strictEqual(idleTopOfWindow5hMetric.isReady, true, "4:59h remaining must be recognized as full window Ready, not active countdown");
+assert.strictEqual(idleTopOfWindow5hMetric.canPrewarm, true, "prewarm must be allowed when window is full at 4:59h");
+assert.strictEqual(idleTopOfWindow5hMetric.refreshFull, "· Ready");
+assert.strictEqual(shared.canTriggerPrewarm(idleTopOfWindow5hMetric), true);
+
+// Weekly prewarm operates independently:
+// 1. Weekly at 100% with full time window (no active countdown) is Ready and can prewarm.
+const weeklyReadyMetric = shared.buildTokenMetric("Weekly", {
+  antigravityWeeklyPercentage: 100,
+}, "antigravityWeekly", "Gemini Weekly");
+assert.strictEqual(weeklyReadyMetric.isReady, true);
+assert.strictEqual(weeklyReadyMetric.canPrewarm, true);
+assert.strictEqual(shared.canTriggerPrewarm(weeklyReadyMetric), true);
+
+// 1b. Weekly at 100% with top-of-window reset (e.g. 167.5h remaining due to telemetry delay) is Ready and can prewarm.
+const weeklyTopMetric = shared.buildTokenMetric("Weekly", {
+  antigravityWeeklyPercentage: 100,
+  antigravityWeeklyResetTime: resetIn(167.5),
+}, "antigravityWeekly", "Gemini Weekly");
+assert.strictEqual(weeklyTopMetric.isReady, true, "167.5h remaining must be recognized as full weekly window Ready");
+assert.strictEqual(weeklyTopMetric.canPrewarm, true, "prewarm must be allowed when weekly window is full at 167.5h");
+assert.strictEqual(shared.canTriggerPrewarm(weeklyTopMetric), true);
+
+// 2. Weekly at 100% with active countdown (< 164h remaining) is NOT eligible for prewarm.
+const weeklyActiveCountdownMetric = shared.buildTokenMetric("Weekly", {
+  antigravityWeeklyPercentage: 100,
+  antigravityWeeklyResetTime: resetIn(150),
+}, "antigravityWeekly", "Gemini Weekly");
+assert.strictEqual(weeklyActiveCountdownMetric.isReady, false);
+assert.strictEqual(weeklyActiveCountdownMetric.canPrewarm, false);
+assert.strictEqual(shared.canTriggerPrewarm(weeklyActiveCountdownMetric), false);
 
 const activeMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 95,
