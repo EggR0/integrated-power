@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.4] - 2026-10-19
+
+### Fixed & Enhanced
+
+- **Pre-warm Transport Timeout Fix & Non-blocking Process Dispatch (`src/broker/client.ts`, `src/broker/server.ts`)**:
+  - Resolved false "timed out" UI error where the background pre-warm CLI ping actually executed successfully while the client timed out waiting for process completion.
+  - Implemented early spawn acknowledgement (300ms) in `spawnPrewarm`: once the process starts cleanly with an active PID, the broker immediately confirms dispatch to the client while the ping runs to completion in the background.
+  - Extended client HTTP request timeout from 5s to 15s for pre-warm and task classification requests.
+  - Added `stdio: ["ignore", "ignore", "ignore"]` to AGY CLI process spawning to prevent pipe buffering and hanging on Windows.
+
 ## [0.11.3] - 2026-10-19
 
 ### Fixed & Enhanced
