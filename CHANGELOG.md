@@ -13,6 +13,9 @@
   - Preserved independent per-target freshness verification (`fiveMeasuredAt > 5m`) in `executePrewarmRequest` so stale models are cleanly skipped while fresh 100% models (such as Claude Opus and Gemini) trigger pre-warm without false "missing reported data" skips.
 - **State Cache Normalization (`src/DashboardController.ts`)**:
   - Guaranteed `lastSync` and `updatedAt` timestamps are always injected into `token_status.json` on disk to ensure reliable synchronization between the IDE and background broker daemon.
+- **Pre-warm Transport Timeout Fix (`src/broker/client.ts`, `src/broker/server.ts`)**:
+  - Extended client HTTP request timeout from 5s to 15s for pre-warm and task classification endpoints to prevent false timeouts while the CLI dispatches.
+  - Added `stdio: ["ignore", "ignore", "ignore"]` to AGY CLI process spawning to prevent pipe buffering and hanging on Windows.
 
 ## [0.11.2] - 2026-10-17
 
