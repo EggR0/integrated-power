@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.3] - 2026-10-19
+
+### Fixed & Enhanced
+
+- **Always Express Time & Complete Removal of '· Ready' (`shared/quota/metric.ts`, `vscode-extension/webview/`, `control-center/`)**:
+  - Completely replaced the ambiguous `· Ready` wording across the sidebar and control-center with clear time expressions.
+  - When a window is fully charged and dormant, it now shows the full duration time (`· Refreshes in 5h 0m` / `· 5:00` for 5-hour, `· Refreshes in 168h 0m` / `· 168:00` for Weekly).
+  - Maintained underlying `canPrewarm` and `isReady` boolean arbitration logic without UI string dependencies.
+- **Harden Telemetry Cache Freshness & Pre-warm Availability (`src/broker/tokenScanner.ts`, `src/broker/server.ts`)**:
+  - Replaced brittle `pools.every` check with `pools.some` in `cachedStatusIsFresh` to prevent a single lagging provider from discarding valid, fresh quota telemetry for all providers.
+  - Preserved independent per-target freshness verification (`fiveMeasuredAt > 5m`) in `executePrewarmRequest` so stale models are cleanly skipped while fresh 100% models (such as Claude Opus and Gemini) trigger pre-warm without false "missing reported data" skips.
+- **State Cache Normalization (`src/DashboardController.ts`)**:
+  - Guaranteed `lastSync` and `updatedAt` timestamps are always injected into `token_status.json` on disk to ensure reliable synchronization between the IDE and background broker daemon.
+
 ## [0.11.2] - 2026-10-17
 
 ### Fixed & Enhanced
