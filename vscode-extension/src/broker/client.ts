@@ -173,7 +173,7 @@ export class BrokerClient {
 
   public async prewarm(input: PrewarmInput): Promise<PrewarmResult> {
     await this.requireCapability("quota.prewarm");
-    return this.request("POST", "/v1/tokens/prewarm", input, [409]);
+    return this.request("POST", "/v1/tokens/prewarm", input, [409], 15000);
   }
 
   /** Claims shared refill events without sending provider quota data; the broker reads its authoritative TokenManager snapshot. */
@@ -209,6 +209,8 @@ export class BrokerClient {
       "POST",
       `/v1/tasks/${encodeURIComponent(taskId)}/classify`,
       { expectedRevision, provider, mode, idempotencyKey },
+      [],
+      15000,
     );
   }
 
@@ -247,12 +249,12 @@ export class BrokerClient {
     }
   }
 
-  private async request<T>(method: "GET" | "POST", route: string, body?: unknown, acceptedStatusCodes: number[] = []): Promise<T> {
+  private async request<T>(method: "GET" | "POST", route: string, body?: unknown, acceptedStatusCodes: number[] = [], timeoutMs = 5000): Promise<T> {
     const port = this.portProvider();
     if (!port) throw new Error("Integrated Power broker is not started.");
     return new Promise<T>((resolve, reject) => {
       const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body), "utf8");
-      const request = http.request({ host: "127.0.0.1", port, method, path: route, timeout: 5000, headers: payload ? { "content-type": "application/json", "content-length": payload.length } : undefined }, (response) => {
+      const request = http.request({ host: "127.0.0.1", port, method, path: route, timeout: timeoutMs, headers: payload ? { "content-type": "application/json", "content-length": payload.length } : undefined }, (response) => {
         const chunks: Buffer[] = [];
         response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
         response.on("end", () => {

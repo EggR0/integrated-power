@@ -714,7 +714,7 @@ async function spawnPrewarm(target: "antigravity" | "opus" | "codex", model: str
         const agyBin = findExecutableOnPath(process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"])
           || (process.platform === "win32" && process.env.LOCALAPPDATA && fs.existsSync(path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe")) ? path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe") : undefined);
         if (!agyBin) return finish({ spawned: false, error: "Antigravity CLI was not found on PATH." });
-        const proc = cp.spawn(agyBin, ["-p", "1", "--model", model, "--effort", "low", "--disable-slash-commands", "--print-timeout", "3s"], { windowsHide: true, shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(agyBin) });
+        const proc = cp.spawn(agyBin, ["-p", "1", "--model", model, "--effort", "low", "--disable-slash-commands", "--print-timeout", "3s"], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true, shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(agyBin) });
         const timer = setTimeout(() => {
           try { if (!proc.killed) proc.kill(); } catch {}
           finish({ spawned: true });
