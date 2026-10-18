@@ -1033,7 +1033,15 @@ export class DashboardController implements vscode.Disposable {
       const stateRoot = resolveIntegratedPowerStateRoot();
       fs.mkdirSync(stateRoot, { recursive: true });
       const cachePath = path.join(stateRoot, "token_status.json");
-      fs.writeFileSync(cachePath, JSON.stringify(status, null, 2), "utf8");
+      const pools = status.quotaPools ?? [];
+      const latestPoolTime = pools.map((p) => Date.parse(p.measuredAt ?? "")).filter((t) => Number.isFinite(t) && t > 0);
+      const measuredIso = latestPoolTime.length > 0 ? new Date(Math.max(...latestPoolTime)).toISOString() : new Date().toISOString();
+      const payload = {
+        ...status,
+        lastSync: (status as any).lastSync || measuredIso,
+        updatedAt: (status as any).updatedAt || new Date().toISOString(),
+      };
+      fs.writeFileSync(cachePath, JSON.stringify(payload, null, 2), "utf8");
     } catch {
       // Non-blocking telemetry cache write
     }

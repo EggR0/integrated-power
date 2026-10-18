@@ -469,9 +469,9 @@ function renderTokens() {
         ? "쿼터 정보를 확인할 수 없습니다."
         : m.isWeeklyExhausted
           ? "주간 쿼터 소진으로 프리웜을 실행할 수 없습니다."
-          : m.refreshFull && m.refreshFull !== "· Ready"
-            ? `5시간 재충전 중입니다 (${m.refreshFull}).`
-            : "5시간 쿼터가 100% Ready일 때 실행할 수 있습니다.";
+          : !allowed && m.refreshFull
+            ? `재충전 중입니다 (${m.refreshFull}).`
+            : "쿼터가 100%이고 시간이 꽉 차 있을 때 실행할 수 있습니다.";
       prewarmButton.disabled = !allowed;
       prewarmButton.title = allowed
         ? "브로커에 프리웜 실행을 요청합니다. 실제 실행 여부와 원격 타이머 시작은 확인되지 않습니다."

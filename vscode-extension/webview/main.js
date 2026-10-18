@@ -861,7 +861,7 @@ function renderPrewarmInlineControl(target, label) {
   const currentMode = normalizePrewarmMode(modes[target] || (target === "antigravity" ? dashboardState.prewarmMode : "click"));
 
   return `
-    <div class="prewarm-inline-control" role="radiogroup" aria-label="${escapeAttr(label)} Pre-warm Mode" title="${escapeAttr(`${label} 5시간 프리웜 설정: 해당 창이 Ready일 때 요청합니다. 실제 타이머 시작은 제공자에서 별도로 확인해야 합니다.`)}">
+    <div class="prewarm-inline-control" role="radiogroup" aria-label="${escapeAttr(label)} Pre-warm Mode" title="${escapeAttr(`${label} 5시간 프리웜 설정: 100% 쿼터 및 시간 만료 시 요청합니다. 실제 타이머 시작은 제공자에서 별도로 확인해야 합니다.`)}">
       <span class="prewarm-icon" aria-hidden="true" title="${escapeAttr(`${label} Pre-warm`)}">⚡</span>
       <div class="prewarm-mode-options">
         <button type="button" class="prewarm-mode-btn ${currentMode === "click" ? "active" : ""}" data-target="${escapeAttr(target)}" data-set-prewarm-mode="click" title="${escapeAttr(`${label} Click: 수동 실행만 허용`)}">
@@ -991,7 +991,7 @@ function renderCapacityMetric(metric, groupTitle = "") {
     ? "쿼터 정보를 확인할 수 없습니다."
     : metric.isWeeklyExhausted
       ? "주간 쿼터 소진으로 프리웜을 실행할 수 없습니다."
-      : metric.refreshFull && metric.refreshFull !== "· Ready"
+      : !canPrewarm
         ? (metric.label === "Weekly" ? `주간 재충전 중입니다 (${metric.refreshFull}).` : `5시간 재충전 중입니다 (${metric.refreshFull}).`)
         : (metric.label === "Weekly" ? "일주일(168시간) 쿼터가 100%이고 시간이 꽉 차 있을 때 실행할 수 있습니다." : "5시간 쿼터가 100%이고 시간이 꽉 차 있을 때 실행할 수 있습니다.");
   const prewarmTitle = canPrewarm

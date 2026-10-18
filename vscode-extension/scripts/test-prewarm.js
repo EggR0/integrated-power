@@ -117,7 +117,7 @@ const idleTopOfWindow5hMetric = shared.buildTokenMetric("5Hours", {
 
 assert.strictEqual(idleTopOfWindow5hMetric.isReady, true, "4:59h remaining must be recognized as full window Ready, not active countdown");
 assert.strictEqual(idleTopOfWindow5hMetric.canPrewarm, true, "prewarm must be allowed when window is full at 4:59h");
-assert.strictEqual(idleTopOfWindow5hMetric.refreshFull, "· Ready");
+assert.match(idleTopOfWindow5hMetric.refreshFull, /^· Refreshes in 4h (?:58m|59m)$/);
 assert.strictEqual(shared.canTriggerPrewarm(idleTopOfWindow5hMetric), true);
 
 // Weekly prewarm operates independently:

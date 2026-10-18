@@ -549,29 +549,25 @@ var IPQuota = (() => {
     let canPrewarm = false;
     let isReady = false;
     if (is5HourReady && !is5HourActiveCountdown) {
-      refreshFull = "\xB7 Ready";
-      refreshMedium = "\xB7 Ready";
-      refreshShort = "\xB7 Ready";
       canPrewarm = true;
       isReady = true;
     } else if (isWeeklyAt100 && !isWeeklyActiveCountdown) {
-      refreshFull = "\xB7 Ready";
-      refreshMedium = "\xB7 Ready";
-      refreshShort = "\xB7 Ready";
       canPrewarm = true;
       isReady = true;
-    } else if (countdown) {
+    }
+    const isDormantPastTimer = canPrewarm && diffMs !== void 0 && diffMs <= 0;
+    if (countdown && !isDormantPastTimer) {
       refreshFull = countdown.full;
       refreshMedium = countdown.medium || countdown.short;
       refreshShort = countdown.short;
-      canPrewarm = false;
-      isReady = false;
-    } else if (is5HourReady || isWeeklyAt100) {
-      refreshFull = "\xB7 Ready";
-      refreshMedium = "\xB7 Ready";
-      refreshShort = "\xB7 Ready";
-      canPrewarm = true;
-      isReady = true;
+    } else if (label === "5Hours") {
+      refreshFull = "\xB7 Refreshes in 5h 0m";
+      refreshMedium = "\xB7 5h 0m";
+      refreshShort = "\xB7 5:00";
+    } else if (label === "Weekly") {
+      refreshFull = "\xB7 Refreshes in 168h 0m";
+      refreshMedium = "\xB7 168h 0m";
+      refreshShort = "\xB7 168:00";
     }
     let tooltip = percentage === void 0 ? `${ariaLabel || label}: quota percentage unavailable${hasAbsolute ? "; absolute token count is estimated or incomplete" : ""}.` : `${ariaLabel || label}: Reported ${subtextFull}${refreshFull ? ` ${refreshFull}` : ""}. Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     if (isWeeklyExhausted) {
@@ -579,9 +575,9 @@ var IPQuota = (() => {
     } else if (isWeeklyCapped) {
       tooltip = `${ariaLabel || label}: Reported ${subtextFull}; policy ceiling ${effectivePercentage?.toFixed(1)}% (${capReason}).`;
     } else if (label === "5Hours" && canPrewarm) {
-      tooltip = `${ariaLabel || label}: Reported ${subtextFull} (Ready for policy-gated pre-warm). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+      tooltip = `${ariaLabel || label}: Reported ${subtextFull} (${refreshFull ? refreshFull.replace(/^·\s*/, "") : "Pre-warm available"}). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     } else if (label === "Weekly" && canPrewarm) {
-      tooltip = `${ariaLabel || label}: Reported ${subtextFull} (Ready for policy-gated weekly pre-warm). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
+      tooltip = `${ariaLabel || label}: Reported ${subtextFull} (${refreshFull ? refreshFull.replace(/^·\s*/, "") : "Weekly pre-warm available"}). Healthy: over 35%. Caution: 15-35%. Limited: 15% or lower.`;
     }
     const labelFull = label;
     const labelMedium = label;

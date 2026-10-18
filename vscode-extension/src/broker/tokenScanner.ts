@@ -233,15 +233,21 @@ function mapTokenManagerStatus(status: TokenStatus): LiveTokenStatus {
 
 function cachedStatusIsFresh(value: unknown, nowMs: number, maxAgeMs: number): boolean {
   if (!value || typeof value !== "object") return false;
-  const lastSync = (value as { lastSync?: unknown }).lastSync;
-  if (typeof lastSync !== "string") return false;
-  const measuredAt = Date.parse(lastSync);
-  if (!Number.isFinite(measuredAt) || measuredAt > nowMs + 60_000 || nowMs - measuredAt > maxAgeMs) return false;
+  const rawLastSync = (value as { lastSync?: unknown }).lastSync ?? (value as { updatedAt?: unknown }).updatedAt;
   const allPools = (value as { quotaPools?: unknown }).quotaPools;
+  const poolTimestamps = Array.isArray(allPools)
+    ? allPools.map((p) => Date.parse(String(p?.measuredAt ?? ""))).filter((t) => Number.isFinite(t) && t > 0)
+    : [];
+  const measuredAt = typeof rawLastSync === "string" && Number.isFinite(Date.parse(rawLastSync))
+    ? Date.parse(rawLastSync)
+    : poolTimestamps.length > 0
+      ? Math.max(...poolTimestamps)
+      : NaN;
+  if (!Number.isFinite(measuredAt) || measuredAt > nowMs + 60_000 || nowMs - measuredAt > maxAgeMs) return false;
   if (!Array.isArray(allPools)) return false;
   const pools = allPools.filter((pool) => pool && typeof pool === "object" && (pool as { provider?: unknown }).provider !== "local");
   if (pools.length === 0) return false;
-  return pools.every((pool) => {
+  return pools.some((pool) => {
     if (!pool || typeof pool !== "object") return false;
     const poolMeasuredAt = Date.parse(String((pool as { measuredAt?: unknown }).measuredAt ?? ""));
     const percentage = quotaPercentageOrUndefined((pool as { remainingPercentage?: unknown }).remainingPercentage);
@@ -346,7 +352,7 @@ function mapCachedTokenStatus(data: any): LiveTokenStatus {
     codexTokensLeft: codex || !hasPoolSnapshot ? numberOrUndefined(data.codexTokensLeft) : undefined, codexMax: codex || !hasPoolSnapshot ? numberOrUndefined(data.codexMax) : undefined, codexWeeklyTokensLeft: codexWeekly || !hasPoolSnapshot ? numberOrUndefined(data.codexWeeklyTokensLeft) : undefined, codexWeeklyMax: codexWeekly || !hasPoolSnapshot ? numberOrUndefined(data.codexWeeklyMax) : undefined,
     codexEstimatedAbsolute: numberOrUndefined(data.codexEstimatedAbsolute), codexWeeklyEstimatedAbsolute: numberOrUndefined(data.codexWeeklyEstimatedAbsolute), codexStatus: stringOrUndefined(data.codexStatus),
     taskRouting: data.recommendedTaskWeight === "restricted" ? "critical" : data.recommendedTaskWeight === "degraded" ? "degraded" : "normal",
-    lastSync: data.lastSync,
+    lastSync: (data.lastSync as string) || (data.updatedAt as string) || latestMeasurementTimestamp(pools, usage?.lastMeasuredAt),
     errors: Array.isArray(data.errors) ? data.errors.filter((item: unknown): item is string => typeof item === "string") : undefined,
     quotaPools: pools,
     localComputeStatus: {

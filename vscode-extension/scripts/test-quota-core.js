@@ -731,11 +731,12 @@ test("future reset alone does not prove an active countdown for full quota", () 
   assert.strictEqual(readyNoTimer.isReady, true);
   assert.strictEqual(readyNoTimer.canPrewarm, true);
   assert.strictEqual(readyNoTimer.isPrewarmed, false);
-  assert.strictEqual(readyNoTimer.refreshFull, "· Ready");
-  assert.ok(readyNoTimer.tooltip.includes("Ready for policy-gated pre-warm"));
+  assert.strictEqual(readyNoTimer.refreshFull, "· Refreshes in 5h 0m");
+  assert.strictEqual(readyNoTimer.refreshShort, "· 5:00");
+  assert.ok(readyNoTimer.tooltip.includes("Refreshes in 5h 0m"));
   assert.ok(!readyNoTimer.tooltip.includes("Timer starts on first request"));
 
-  // Expired past reset time is treated as dormant Ready (phantom past timestamp eliminated)
+  // Expired past reset time is treated as dormant full window (phantom past timestamp eliminated, always express time)
   const pastReset = new Date(base - 3600e3).toISOString();
   const readyPastTimer = shared.buildTokenMetric("5Hours", {
     antigravityPercentage: 100,
@@ -744,7 +745,8 @@ test("future reset alone does not prove an active countdown for full quota", () 
   }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
   assert.strictEqual(readyPastTimer.isReady, true);
   assert.strictEqual(readyPastTimer.canPrewarm, true);
-  assert.strictEqual(readyPastTimer.refreshFull, "· Ready");
+  assert.strictEqual(readyPastTimer.refreshFull, "· Refreshes in 5h 0m");
+  assert.strictEqual(readyPastTimer.refreshShort, "· 5:00");
 
   // If reset time is active and strictly less than 5h, countdown is displayed and prewarm is not available (time not full)
   const active100Pct5h = shared.buildTokenMetric("5Hours", {
@@ -761,7 +763,7 @@ test("future reset alone does not prove an active countdown for full quota", () 
   assert.match(active100Pct5h.refreshShort, /^· (?:2:59|3:00)$/);
   assert.ok(active100Pct5h.tooltip.includes("Healthy: over 35%"));
 
-  // If reset time is 5h or more, dormant Ready is displayed
+  // If reset time is 5h or more, full window countdown is displayed
   const full5h = shared.buildTokenMetric("5Hours", {
     antigravityPercentage: 100,
     antigravityResetTime: new Date(Date.now() + 5.1 * 3600e3).toISOString(),
@@ -770,8 +772,8 @@ test("future reset alone does not prove an active countdown for full quota", () 
   }, "antigravity", "Gemini 5Hours", "antigravityWeekly");
   assert.strictEqual(full5h.isReady, true);
   assert.strictEqual(full5h.canPrewarm, true);
-  assert.strictEqual(full5h.refreshFull, "· Ready");
-  assert.strictEqual(full5h.refreshShort, "· Ready");
+  assert.match(full5h.refreshFull, /^· Refreshes in 5h (?:5m|6m)$/);
+  assert.match(full5h.refreshShort, /^· 5:0[56]$/);
 
   // Once tokens are consumed (< 99.95%), rolling countdown activates normally
   const active5h = shared.buildTokenMetric("5Hours", {
