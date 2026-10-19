@@ -586,11 +586,13 @@ async function executePrewarmRequest(
   if (!manual && (!settings.initialized || mode === "click")) {
     return { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: resolved.target, targetModel: resolved.model, error: "Automatic prewarm is not armed for this target." } };
   }
-  const fiveHour = quotaPercentageOrUndefined((liveStatus as any)[`${prefix}Percentage`]);
-  const weekly = quotaPercentageOrUndefined((liveStatus as any)[`${weeklyPrefix}Percentage`]);
   const pools = Array.isArray((liveStatus as any).quotaPools) ? (liveStatus as any).quotaPools : [];
   const fivePool = pools.find((pool: any) => pool?.id === `${prefix}.5h` || pool?.id === `${prefix}.default` || (pool?.provider === (prefix === "opus" ? "anthropic" : prefix) && pool?.windowDurationMins === 300));
   const weeklyPool = pools.find((pool: any) => pool?.id === `${prefix}.weekly` || (pool?.provider === (prefix === "opus" ? "anthropic" : prefix) && pool?.windowDurationMins === 10080));
+  const fiveHour = quotaPercentageOrUndefined((liveStatus as any)[`${prefix}Percentage`])
+    ?? (fivePool ? quotaPercentageOrUndefined(fivePool.remainingPercentage) : undefined);
+  const weekly = quotaPercentageOrUndefined((liveStatus as any)[`${weeklyPrefix}Percentage`])
+    ?? (weeklyPool ? quotaPercentageOrUndefined(weeklyPool.remainingPercentage) : undefined);
   const fallbackTimestamp = Date.parse(String((liveStatus as any).lastSync ?? (liveStatus as any).updatedAt ?? (liveStatus as any).directUsage?.lastMeasuredAt ?? ""));
   const fiveMeasuredAt = Date.parse(String(fivePool?.measuredAt ?? "")) || fallbackTimestamp;
   const weeklyMeasuredAt = Date.parse(String(weeklyPool?.measuredAt ?? "")) || fallbackTimestamp;
@@ -605,7 +607,7 @@ async function executePrewarmRequest(
     if (fiveHour < 99.95) {
       return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} quota is not 100% full (${fiveHour.toFixed(1)}%).` } });
     }
-    const resetTimeStr = (liveStatus as any)[`${prefix}ResetTime`];
+    const resetTimeStr = (liveStatus as any)[`${prefix}ResetTime`] || fivePool?.resetTime;
     const resetDate = resetTimeStr ? new Date(resetTimeStr) : undefined;
     const diffMs = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() - Date.now() : undefined;
     if (diffMs !== undefined && diffMs > 0 && diffMs < 5 * 3600 * 1000 - 15 * 60 * 1000) {
@@ -625,7 +627,7 @@ async function executePrewarmRequest(
     if (weekly < 99.95) {
       return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota is not 100% full (${weekly.toFixed(1)}%).` } });
     }
-    const weeklyResetTimeStr = (liveStatus as any)[`${weeklyPrefix}ResetTime`];
+    const weeklyResetTimeStr = (liveStatus as any)[`${weeklyPrefix}ResetTime`] || weeklyPool?.resetTime;
     const weeklyResetDate = weeklyResetTimeStr ? new Date(weeklyResetTimeStr) : undefined;
     const weeklyDiffMs = weeklyResetDate && !Number.isNaN(weeklyResetDate.getTime()) ? weeklyResetDate.getTime() - Date.now() : undefined;
     if (weeklyDiffMs !== undefined && weeklyDiffMs > 0 && weeklyDiffMs < 168 * 3600 * 1000 - 4 * 3600 * 1000) {

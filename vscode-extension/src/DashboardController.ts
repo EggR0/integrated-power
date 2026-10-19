@@ -1038,8 +1038,8 @@ export class DashboardController implements vscode.Disposable {
       const measuredIso = latestPoolTime.length > 0 ? new Date(Math.max(...latestPoolTime)).toISOString() : new Date().toISOString();
       const payload = {
         ...status,
-        lastSync: (status as any).lastSync || measuredIso,
-        updatedAt: (status as any).updatedAt || new Date().toISOString(),
+        lastSync: measuredIso,
+        updatedAt: new Date().toISOString(),
       };
       fs.writeFileSync(cachePath, JSON.stringify(payload, null, 2), "utf8");
     } catch {

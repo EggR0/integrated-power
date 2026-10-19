@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.5] - 2026-10-19
+
+### Fixed & Enhanced
+
+- **Resilient Pre-warm Quota Sourcing & Stale Timestamp Desync Fix (`src/DashboardController.ts`, `src/broker/tokenScanner.ts`, `src/broker/server.ts`)**:
+  - Fixed false "requires reported quota data" skip caused by stale `lastSync` timestamps in `token_status.json` invalidating cache files even when pool measurements were completely fresh.
+  - Updated `persistTokenStatusCache` to always derive `lastSync` from the latest pool measurement timestamp instead of reusing stale status properties.
+  - Enhanced `cachedStatusIsFresh` and `mapCachedTokenStatus` to take the maximum timestamp across all pools and top-level fields, preventing stale cache rejections.
+  - Added robust fallback in `executePrewarmRequest` to read quota percentages and reset times directly from `fivePool`/`weeklyPool` objects when top-level status properties are missing.
+
 ## [0.11.4] - 2026-10-19
 
 ### Fixed & Enhanced

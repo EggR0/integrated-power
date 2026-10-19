@@ -238,11 +238,11 @@ function cachedStatusIsFresh(value: unknown, nowMs: number, maxAgeMs: number): b
   const poolTimestamps = Array.isArray(allPools)
     ? allPools.map((p) => Date.parse(String(p?.measuredAt ?? ""))).filter((t) => Number.isFinite(t) && t > 0)
     : [];
-  const measuredAt = typeof rawLastSync === "string" && Number.isFinite(Date.parse(rawLastSync))
+  const rawTimestamp = typeof rawLastSync === "string" && Number.isFinite(Date.parse(rawLastSync))
     ? Date.parse(rawLastSync)
-    : poolTimestamps.length > 0
-      ? Math.max(...poolTimestamps)
-      : NaN;
+    : NaN;
+  const candidateTimestamps = [rawTimestamp, ...poolTimestamps].filter((t) => Number.isFinite(t) && t > 0);
+  const measuredAt = candidateTimestamps.length > 0 ? Math.max(...candidateTimestamps) : NaN;
   if (!Number.isFinite(measuredAt) || measuredAt > nowMs + 60_000 || nowMs - measuredAt > maxAgeMs) return false;
   if (!Array.isArray(allPools)) return false;
   const pools = allPools.filter((pool) => pool && typeof pool === "object" && (pool as { provider?: unknown }).provider !== "local");
@@ -352,7 +352,11 @@ function mapCachedTokenStatus(data: any): LiveTokenStatus {
     codexTokensLeft: codex || !hasPoolSnapshot ? numberOrUndefined(data.codexTokensLeft) : undefined, codexMax: codex || !hasPoolSnapshot ? numberOrUndefined(data.codexMax) : undefined, codexWeeklyTokensLeft: codexWeekly || !hasPoolSnapshot ? numberOrUndefined(data.codexWeeklyTokensLeft) : undefined, codexWeeklyMax: codexWeekly || !hasPoolSnapshot ? numberOrUndefined(data.codexWeeklyMax) : undefined,
     codexEstimatedAbsolute: numberOrUndefined(data.codexEstimatedAbsolute), codexWeeklyEstimatedAbsolute: numberOrUndefined(data.codexWeeklyEstimatedAbsolute), codexStatus: stringOrUndefined(data.codexStatus),
     taskRouting: data.recommendedTaskWeight === "restricted" ? "critical" : data.recommendedTaskWeight === "degraded" ? "degraded" : "normal",
-    lastSync: (data.lastSync as string) || (data.updatedAt as string) || latestMeasurementTimestamp(pools, usage?.lastMeasuredAt),
+    lastSync: (() => {
+      const poolLatest = latestMeasurementTimestamp(pools, usage?.lastMeasuredAt);
+      const candidates = [Date.parse(String(data.lastSync ?? "")), Date.parse(String(data.updatedAt ?? "")), Date.parse(poolLatest)].filter((t) => Number.isFinite(t) && t > 0);
+      return candidates.length > 0 ? new Date(Math.max(...candidates)).toISOString() : (data.lastSync as string) || poolLatest;
+    })(),
     errors: Array.isArray(data.errors) ? data.errors.filter((item: unknown): item is string => typeof item === "string") : undefined,
     quotaPools: pools,
     localComputeStatus: {
