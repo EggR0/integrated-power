@@ -3,7 +3,7 @@
   "publisher": "EggR0",
   "displayName": "Integrated Power",
   "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
-  "version": "0.11.5",
+  "version": "0.11.6",
   "author": {
     "name": "EggR0"
   },
@@ -165,6 +165,16 @@
           "default": "click",
           "description": "5-hour quota pre-warm automation mode for Google Gemini (Antigravity IDE)."
         },
+        "integratedPower.quota.prewarmModeArgon": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "default": "click",
+          "description": "Quota pre-warm automation mode for Gemini 4 Argon (Antigravity IDE)."
+        },
         "integratedPower.quota.prewarmModeClaude": {
           "type": "string",
           "enum": [
@@ -244,6 +254,11 @@
         "icon": "$(history)"
       },
       {
+        "command": "integratedPower.antigravity.repairAndRestart",
+        "title": "Antigravity IDE: Repair Conversation History & Restart",
+        "icon": "$(sync)"
+      },
+      {
         "command": "integratedPower.eggr.installOrUpdateOrchestrator",
         "title": "Integrated Power: Install or Update Integrated Orchestrator"
       },
@@ -299,6 +314,11 @@
         },
         {
           "command": "integratedPower.agentRuns.openRunsFile",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        },
+        {
+          "command": "integratedPower.antigravity.repairAndRestart",
           "when": "view == integratedPower.agentRunsDashboard",
           "group": "navigation"
         }

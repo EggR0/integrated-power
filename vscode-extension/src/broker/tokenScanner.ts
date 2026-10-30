@@ -37,6 +37,17 @@ export interface LiveTokenStatus {
   antigravityWeeklyMax?: number;
   antigravityEstimatedAbsolute?: number;
 
+  argonPercentage?: number;
+  argonResetTime?: string;
+  argonWeeklyPercentage?: number;
+  argonWeeklyResetTime?: string;
+  argonTokensLeft?: number;
+  argonMax?: number;
+  argonWeeklyTokensLeft?: number;
+  argonWeeklyMax?: number;
+  argonEstimatedAbsolute?: number;
+  argonWeeklyEstimatedAbsolute?: number;
+
   opusPercentage?: number;
   opusResetTime?: string;
   opusWeeklyPercentage?: number;
@@ -179,6 +190,16 @@ function mapTokenManagerStatus(status: TokenStatus): LiveTokenStatus {
     antigravityWeeklyTokensLeft: status.antigravityWeeklyTokensLeft,
     antigravityWeeklyMax: status.antigravityWeeklyMax,
     antigravityEstimatedAbsolute: status.antigravityEstimatedAbsolute,
+    argonPercentage: status.argonPercentage,
+    argonResetTime: status.argonResetTime,
+    argonWeeklyPercentage: status.argonWeeklyPercentage,
+    argonWeeklyResetTime: status.argonWeeklyResetTime,
+    argonTokensLeft: status.argonTokensLeft,
+    argonMax: status.argonMax,
+    argonWeeklyTokensLeft: status.argonWeeklyTokensLeft,
+    argonWeeklyMax: status.argonWeeklyMax,
+    argonEstimatedAbsolute: status.argonEstimatedAbsolute,
+    argonWeeklyEstimatedAbsolute: status.argonWeeklyEstimatedAbsolute,
     opusPercentage: status.opusPercentage,
     opusResetTime: status.opusResetTime,
     opusWeeklyPercentage: status.opusWeeklyPercentage,
@@ -325,9 +346,11 @@ function mapCachedTokenStatus(data: any): LiveTokenStatus {
   const pools = Array.isArray(data.quotaPools) ? data.quotaPools : [];
   const hasPoolSnapshot = Array.isArray(data.quotaPools);
   const first = (id: string, provider: string, weekly = false): any => pools.find((pool: any) =>
-    pool?.id === id || (pool?.provider === provider && Boolean(pool?.id?.includes("weekly")) === weekly));
+    pool?.id === id || (pool?.provider === provider && !String(pool?.id || "").startsWith("argon.") && Boolean(pool?.id?.includes("weekly")) === weekly));
   const antigravity = first("antigravity.default", "antigravity");
   const antigravityWeekly = first("antigravity.weekly", "antigravity", true);
+  const argon = pools.find((pool: any) => pool?.id === "argon.default" || pool?.id === "argon.5h");
+  const argonWeekly = pools.find((pool: any) => pool?.id === "argon.weekly");
   const opus = first("opus.default", "anthropic");
   const opusWeekly = first("opus.weekly", "anthropic", true);
   const codex = first("codex.5h", "codex");
@@ -343,6 +366,16 @@ function mapCachedTokenStatus(data: any): LiveTokenStatus {
     antigravityTokensLeft: antigravity || !hasPoolSnapshot ? numberOrUndefined(data.antigravityTokensLeft) : undefined, antigravityMax: antigravity || !hasPoolSnapshot ? numberOrUndefined(data.antigravityMax) : undefined,
     antigravityWeeklyTokensLeft: antigravityWeekly || !hasPoolSnapshot ? numberOrUndefined(data.antigravityWeeklyTokensLeft) : undefined, antigravityWeeklyMax: antigravityWeekly || !hasPoolSnapshot ? numberOrUndefined(data.antigravityWeeklyMax) : undefined,
     antigravityEstimatedAbsolute: numberOrUndefined(data.antigravityEstimatedAbsolute),
+    argonPercentage: argon ? quotaPercentageOrUndefined(argon.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.argonPercentage),
+    argonResetTime: argon ? argon.resetTime : hasPoolSnapshot ? undefined : data.argonResetTime,
+    argonWeeklyPercentage: argonWeekly ? quotaPercentageOrUndefined(argonWeekly.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.argonWeeklyPercentage),
+    argonWeeklyResetTime: argonWeekly ? argonWeekly.resetTime : hasPoolSnapshot ? undefined : data.argonWeeklyResetTime,
+    argonTokensLeft: argon || !hasPoolSnapshot ? numberOrUndefined(data.argonTokensLeft) : undefined,
+    argonMax: argon || !hasPoolSnapshot ? numberOrUndefined(data.argonMax) : undefined,
+    argonWeeklyTokensLeft: argonWeekly || !hasPoolSnapshot ? numberOrUndefined(data.argonWeeklyTokensLeft) : undefined,
+    argonWeeklyMax: argonWeekly || !hasPoolSnapshot ? numberOrUndefined(data.argonWeeklyMax) : undefined,
+    argonEstimatedAbsolute: numberOrUndefined(data.argonEstimatedAbsolute),
+    argonWeeklyEstimatedAbsolute: numberOrUndefined(data.argonWeeklyEstimatedAbsolute),
     opusPercentage: opus ? quotaPercentageOrUndefined(opus.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.opusPercentage), opusResetTime: opus ? opus.resetTime : hasPoolSnapshot ? undefined : data.opusResetTime,
     opusWeeklyPercentage: opusWeekly ? quotaPercentageOrUndefined(opusWeekly.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.opusWeeklyPercentage), opusWeeklyResetTime: opusWeekly ? opusWeekly.resetTime : hasPoolSnapshot ? undefined : data.opusWeeklyResetTime,
     opusTokensLeft: opus || !hasPoolSnapshot ? numberOrUndefined(data.opusTokensLeft) : undefined, opusMax: opus || !hasPoolSnapshot ? numberOrUndefined(data.opusMax) : undefined, opusWeeklyTokensLeft: opusWeekly || !hasPoolSnapshot ? numberOrUndefined(data.opusWeeklyTokensLeft) : undefined, opusWeeklyMax: opusWeekly || !hasPoolSnapshot ? numberOrUndefined(data.opusWeeklyMax) : undefined,

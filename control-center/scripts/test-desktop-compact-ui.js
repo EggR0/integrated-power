@@ -24,6 +24,7 @@ const capabilities = ["tasks.read", "tasks.write", "approvals.read", "tokens.rea
 const tokenStatus = {
   antigravityPercentage: 100, antigravityTokensLeft: 1000, antigravityMax: 1000, antigravityResetTime: "2020-01-01T00:00:00Z",
   antigravityWeeklyPercentage: 100, antigravityWeeklyTokensLeft: 10000, antigravityWeeklyMax: 10000, antigravityWeeklyResetTime: "2020-01-01T00:00:00Z",
+  argonWeeklyPercentage: 100, argonWeeklyResetTime: "2020-01-01T00:00:00Z",
   opusPercentage: 100, opusTokensLeft: 1000, opusMax: 1000, opusResetTime: "2020-01-01T00:00:00Z",
   opusWeeklyPercentage: 100,
   codexPercentage: 100, codexTokensLeft: 1000, codexMax: 1000, codexResetTime: "2020-01-01T00:00:00Z",
@@ -158,10 +159,10 @@ document.title=JSON.stringify({results,legacyToast,actionStates,codexCountdown,w
         assert(gauge.background.includes("linear-gradient") && (gauge.background.match(/rgba\(255, 255, 255, 0\.55\)/g) || []).length === (segments - 1) * 2, `desktop gauge ${index} computed gradient must retain the shared ${segments}-segment positions`);
       }
     }
-    assert.equal(actionStates.length, 3, `desktop must render a separate trigger button for each canonical model: ${JSON.stringify(actionStates)}`);
-    assert.deepEqual(actionStates.map((button) => button.model).sort(), ["antigravity", "codex", "opus"]);
+    assert.equal(actionStates.length, 4, `desktop must render a separate trigger button for each canonical model: ${JSON.stringify(actionStates)}`);
+    assert.deepEqual(actionStates.map((button) => button.model).sort(), ["antigravity", "argon", "codex", "opus"]);
     assert(actionStates.every((button) => !button.disabled && button.title.includes("확인되지 않습니다")), `Ready model action buttons must be enabled with truthful titles: ${JSON.stringify(actionStates)}`);
-    assert.deepEqual(prewarmRequests.map((request) => request.model).sort(), ["antigravity", "codex", "opus"], "mode selection must not trigger prewarm; each separate action button must call its model through the fake broker");
+    assert.deepEqual(prewarmRequests.map((request) => request.model).sort(), ["antigravity", "argon", "codex", "opus"], "mode selection must not trigger prewarm; each separate action button must call its model through the fake broker");
     assert(codexCountdown.includes("Ready"), `ChatGPT 5h countdown/status element must be restored: ${codexCountdown}`);
     assert.equal(wideLabels.length, 0, `provider controls and status labels must remain single-line at the normal 900px desktop viewport: ${JSON.stringify(wideLabels)}`);
     assert.equal(titleWordBreak, "keep-all", "Korean token heading must wrap between words, not split Korean words");

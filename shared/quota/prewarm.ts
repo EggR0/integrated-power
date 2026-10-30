@@ -59,6 +59,7 @@ export function normalizePrewarmMode(value: unknown): PrewarmMode {
 
 export interface ModelPrewarmModes {
   antigravity: PrewarmMode;
+  argon: PrewarmMode;
   opus: PrewarmMode;
   codex: PrewarmMode;
 }
@@ -66,6 +67,7 @@ export interface ModelPrewarmModes {
 export function defaultModelPrewarmModes(): ModelPrewarmModes {
   return {
     antigravity: "click",
+    argon: "click",
     opus: "click",
     codex: "click",
   };
@@ -76,6 +78,7 @@ export function normalizeModelPrewarmModes(raw: unknown, fallbackMode?: PrewarmM
   const safe = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return {
     antigravity: normalizePrewarmMode(safe.antigravity || safe.gemini || fallback),
+    argon: normalizePrewarmMode(safe.argon || fallback),
     opus: normalizePrewarmMode(safe.opus || safe.claude || fallback),
     codex: normalizePrewarmMode(safe.codex || safe.chatgpt || fallback),
   };
@@ -91,10 +94,12 @@ export interface PrewarmTarget {
 
 export const PREWARM_TARGETS: readonly PrewarmTarget[] = Object.freeze([
   { id: "antigravity-gemini-5h", model: "antigravity", displayName: "Gemini 5Hours", prefix: "antigravity", window: "5h" },
+  { id: "antigravity-argon-5h", model: "argon", displayName: "Argon 4 5Hours", prefix: "argon", window: "5h" },
   { id: "codex-chatgpt-5h", model: "codex", displayName: "ChatGPT 5Hours", prefix: "codex", window: "5h" },
   { id: "opus-claude-5h", model: "opus", displayName: "Claude 5Hours", prefix: "opus", window: "5h" },
   { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude", window: "5h" },
   { id: "antigravity-gemini-weekly", model: "antigravity", displayName: "Gemini Weekly", prefix: "antigravity", window: "weekly" },
+  { id: "antigravity-argon-weekly", model: "argon", displayName: "Argon 4 Weekly", prefix: "argon", window: "weekly" },
   { id: "codex-chatgpt-weekly", model: "codex", displayName: "ChatGPT Weekly", prefix: "codex", window: "weekly" },
   { id: "opus-claude-weekly", model: "opus", displayName: "Claude Weekly", prefix: "opus", window: "weekly" },
   { id: "claude-weekly", model: "claude", displayName: "Claude Weekly", prefix: "claude", window: "weekly" },

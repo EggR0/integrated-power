@@ -199,16 +199,22 @@ async function runAsyncTests() {
   const { getLowestAgyModel, resolveLowestModelFromList } = require("../out/broker/agyModelResolver");
   const { resolveLowestCodexModelFromList } = require("../out/broker/codexAppServer");
 
-  // Contract A: Arbitrary future Gemini model list adapts without code changes
+  // Contract A: Arbitrary future Gemini model list adapts without code changes and excludes Argon
   const futureGeminiList = [
+    { id: "gemini-4-argon-low", name: "Gemini 4 Argon (Low)" },
     { id: "gemini-9-ultra-high", name: "Gemini 9 Ultra (High)" },
     { id: "gemini-9-flash-low", name: "Gemini 9 Flash (Low)" },
     { id: "gemini-9-pro-medium", name: "Gemini 9 Pro (Medium)" },
   ];
   const resolvedFutureGemini = resolveLowestModelFromList(futureGeminiList, "gemini");
-  assert.strictEqual(resolvedFutureGemini.model, "gemini-9-flash-low", "Must resolve lowest flash tier from arbitrary future list");
+  assert.strictEqual(resolvedFutureGemini.model, "gemini-9-flash-low", "Must resolve lowest flash tier from arbitrary future list while excluding Argon");
   assert.strictEqual(resolvedFutureGemini.family, "gemini");
   assert.strictEqual(resolvedFutureGemini.effort, "low");
+
+  const resolvedFutureArgon = resolveLowestModelFromList(futureGeminiList, "argon");
+  assert.strictEqual(resolvedFutureArgon.model, "gemini-4-argon-low", "Must resolve Argon family model separately");
+  assert.strictEqual(resolvedFutureArgon.family, "argon");
+  assert.strictEqual(resolvedFutureArgon.effort, "low");
 
   // Contract B: Arbitrary future Claude model list adapts without code changes
   const futureClaudeList = [

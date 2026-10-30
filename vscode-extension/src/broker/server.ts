@@ -49,7 +49,7 @@ export interface BrokerServerHandle {
 export interface BrokerServerOptions {
   stateRoot?: string;
   tokenStatusReader?: () => Promise<LiveTokenStatus>;
-  prewarmDispatcher?: (target: "antigravity" | "opus" | "codex", model: string) => Promise<{ spawned: boolean; error?: string }>;
+  prewarmDispatcher?: (target: "antigravity" | "argon" | "opus" | "codex", model: string) => Promise<{ spawned: boolean; error?: string }>;
   autoSchedule?: boolean;
 }
 
@@ -523,10 +523,27 @@ export async function startBrokerServer(
     schedulerActive = true;
     void (async () => {
       try {
-        const status = await readTokenStatus();
-        for (const target of ["antigravity", "opus", "codex"] as const) {
-          if (settingsSnapshot.settings.prewarmModes[target] === "click") continue;
-          await executePrewarmRequest({ model: target, manual: false, idempotencyKey: crypto.randomUUID(), expectedSettingsRevision: settingsSnapshot.revision }, quotaSettingsStore, prewarmStatePath, readTokenStatus, dispatchPrewarm, status);
+        let forceRefreshForVerify = false;
+        if (!options.tokenStatusReader) {
+          try {
+            const arb = readPrewarmState(prewarmStatePath);
+            const bucketId = `policy-5h-${Math.floor(Date.now() / (5 * 60 * 60 * 1000))}`;
+            const weeklyBucketId = `policy-weekly-${Math.floor(Date.now() / (168 * 60 * 60 * 1000))}`;
+            for (const t of ["antigravity", "argon", "opus", "codex"] as const) {
+              if ((settingsSnapshot.settings.prewarmModes[t] ?? "click") === "click") continue;
+              const prev = arb.windows[`${t}:5h:${bucketId}`] || arb.windows[`${t}:weekly:${weeklyBucketId}`];
+              if (prev && prev.status === "dispatched" && Date.now() - prev.attemptedAt >= 60_000 && Date.now() - prev.attemptedAt < 180_000) {
+                forceRefreshForVerify = true;
+                break;
+              }
+            }
+          } catch {}
+        }
+        const status = forceRefreshForVerify ? await scanLiveTokenStatus({ force: true }) : await readTokenStatus();
+        for (const target of ["antigravity", "argon", "opus", "codex"] as const) {
+          if ((settingsSnapshot.settings.prewarmModes[target] ?? "click") === "click") continue;
+          const autoWindow = target === "argon" && (status as any).argonPercentage === undefined && (status as any).argonWeeklyPercentage !== undefined ? "weekly" : "5h";
+          await executePrewarmRequest({ model: target, window: autoWindow, manual: false, idempotencyKey: crypto.randomUUID(), expectedSettingsRevision: settingsSnapshot.revision }, quotaSettingsStore, prewarmStatePath, readTokenStatus, dispatchPrewarm, status);
         }
       } catch {
         // A failed collection is retryable on the next broker-owned poll.
@@ -557,9 +574,13 @@ async function executePrewarmRequest(
   const manual = input.manual !== false;
   const idempotencyKey = input.idempotencyKey?.trim() || `legacy-${crypto.randomUUID()}`;
   if (idempotencyKey.length > 128) return { httpStatus: 400, result: { ok: false, status: "failed", timerConfirmed: false, error: "idempotencyKey must not exceed 128 characters." } };
-  const windowType: "5h" | "weekly" = input.window === "weekly" ? "weekly" : "5h";
-  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ target: resolved.target, model: resolved.model, window: windowType, manual, expectedSettingsRevision: input.expectedSettingsRevision ?? null })).digest("hex");
   const liveStatus = statusOverride ?? await readTokenStatus();
+  const windowType: "5h" | "weekly" = input.window === "weekly"
+    ? "weekly"
+    : (!input.window && resolved.target === "argon" && (liveStatus as any).argonPercentage === undefined && (liveStatus as any).argonWeeklyPercentage !== undefined)
+      ? "weekly"
+      : "5h";
+  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ target: resolved.target, model: resolved.model, window: windowType, manual, expectedSettingsRevision: input.expectedSettingsRevision ?? null })).digest("hex");
   // Read after the awaited status refresh so concurrent requests observe a
   // claim committed by the request that resumed first.
   const state = readPrewarmState(statePath);
@@ -575,7 +596,8 @@ async function executePrewarmRequest(
     : `policy-5h-${Math.floor(Date.now() / (5 * 60 * 60 * 1000))}`;
   const windowKey = `${prefix}:${windowType}:${windowId}`;
   const previous = state.windows[windowKey];
-  if (previous && (previous.status === "dispatching" || previous.status === "dispatched" || Date.now() - previous.attemptedAt < 30_000)) {
+  const duplicateCooldownMs = manual ? 5_000 : 60_000;
+  if (previous && (previous.status === "dispatching" || (previous.status === "dispatched" && Date.now() - previous.attemptedAt < duplicateCooldownMs) || Date.now() - previous.attemptedAt < (manual ? 5_000 : 30_000))) {
     return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "duplicate", timerConfirmed: false, claimId: previous.claimId, model: prefix, targetModel: resolved.model, error: "This quota window already has an active or completed prewarm claim." } });
   }
   const settings = settingsStore.get();
@@ -596,6 +618,10 @@ async function executePrewarmRequest(
   const fallbackTimestamp = Date.parse(String((liveStatus as any).lastSync ?? (liveStatus as any).updatedAt ?? (liveStatus as any).directUsage?.lastMeasuredAt ?? ""));
   const fiveMeasuredAt = Date.parse(String(fivePool?.measuredAt ?? "")) || fallbackTimestamp;
   const weeklyMeasuredAt = Date.parse(String(weeklyPool?.measuredAt ?? "")) || fallbackTimestamp;
+  const targetMeasuredAt = windowType === "weekly" ? weeklyMeasuredAt : fiveMeasuredAt;
+  if (!manual && previous && previous.status === "dispatched" && Number.isFinite(targetMeasuredAt) && targetMeasuredAt < previous.attemptedAt + 5_000) {
+    return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "duplicate", timerConfirmed: false, claimId: previous.claimId, model: prefix, targetModel: resolved.model, error: "Waiting for post-dispatch quota measurement before re-evaluating window." } });
+  }
 
   if (windowType === "5h") {
     if (fiveHour === undefined) {
@@ -654,8 +680,9 @@ async function executePrewarmRequest(
   return final;
 }
 
-function resolvePrewarmTarget(model?: string): { target: "antigravity" | "opus" | "codex"; model: string } {
+function resolvePrewarmTarget(model?: string): { target: "antigravity" | "argon" | "opus" | "codex"; model: string } {
   const value = (model || "antigravity").toLowerCase();
+  if (value.includes("argon")) return { target: "argon", model: getLowestAgyModel("argon").model };
   if (value.includes("opus") || value.includes("claude")) return { target: "opus", model: getLowestAgyModel("claude").model };
   if (value.includes("codex") || value.includes("chatgpt")) return { target: "codex", model: getLowestCodexModel().model };
   return { target: "antigravity", model: getLowestAgyModel("gemini").model };
@@ -693,7 +720,7 @@ function rememberPrewarmResult(
   return outcome;
 }
 
-async function spawnPrewarm(target: "antigravity" | "opus" | "codex", model: string): Promise<{ spawned: boolean; error?: string }> {
+async function spawnPrewarm(target: "antigravity" | "argon" | "opus" | "codex", model: string): Promise<{ spawned: boolean; error?: string }> {
   return new Promise((resolve) => {
     let finished = false;
     const finish = (result: { spawned: boolean; error?: string }) => { if (finished) return; finished = true; resolve(result); };
@@ -718,20 +745,25 @@ async function spawnPrewarm(target: "antigravity" | "opus" | "codex", model: str
         });
       } else {
         const agyBin = findExecutableOnPath(process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"])
-          || (process.platform === "win32" && process.env.LOCALAPPDATA && fs.existsSync(path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe")) ? path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe") : undefined);
+          || (process.platform === "win32" && process.env.LOCALAPPDATA && fs.existsSync(path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe")) ? path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe") : undefined)
+          || (process.platform === "win32" && process.env.USERPROFILE && fs.existsSync(path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe")) ? path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe") : undefined);
         if (!agyBin) return finish({ spawned: false, error: "Antigravity CLI was not found on PATH." });
-        const proc = cp.spawn(agyBin, ["-p", "1", "--model", model, "--effort", "low", "--disable-slash-commands", "--print-timeout", "3s"], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true, shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(agyBin) });
+        const proc = cp.spawn(agyBin, ["-p", "1", "--model", model, "--effort", "low", "--disable-slash-commands", "--print-timeout", "25s"], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true, shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(agyBin), env: { ...process.env, AGY_ADC_AUTH: "0" } });
         const spawnTimer = setTimeout(() => {
           if (proc.pid) finish({ spawned: true });
         }, 300);
         const timer = setTimeout(() => {
           try { if (!proc.killed) proc.kill(); } catch {}
           finish({ spawned: true });
-        }, 8000);
+        }, 30000);
         proc.once("error", (error) => { clearTimeout(spawnTimer); clearTimeout(timer); finish({ spawned: false, error: error.message }); });
         proc.once("close", (code) => {
           clearTimeout(spawnTimer);
           clearTimeout(timer);
+          if (code === 0 || code === null) {
+            const refreshTimer = setTimeout(() => { void scanLiveTokenStatus({ force: true }).catch(() => {}); }, 1500);
+            refreshTimer.unref?.();
+          }
           finish(code === 0 || code === null ? { spawned: true } : { spawned: false, error: `AGY exited with code ${code}` });
         });
       }

@@ -680,6 +680,7 @@ export class DashboardController implements vscode.Disposable {
     const legacyMode = this.normalizeMode(quota.get<string>("prewarmMode", "click"));
     const prewarmModes = {
       antigravity: this.normalizeMode(quota.get<string>("prewarmModeGemini", legacyMode)),
+      argon: this.normalizeMode(quota.get<string>("prewarmModeArgon", legacyMode)),
       opus: this.normalizeMode(quota.get<string>("prewarmModeClaude", legacyMode)),
       codex: this.normalizeMode(quota.get<string>("prewarmModeChatGPT", legacyMode)),
     };
@@ -707,6 +708,7 @@ export class DashboardController implements vscode.Disposable {
     this.syncedQuotaSettingsFingerprint = this.quotaSettingsFingerprint(settings);
     this.currentPrewarmModes = {
       antigravity: this.normalizeMode(settings.prewarmModes?.antigravity ?? settings.prewarmMode),
+      argon: this.normalizeMode(settings.prewarmModes?.argon ?? settings.prewarmMode),
       opus: this.normalizeMode(settings.prewarmModes?.opus ?? settings.prewarmMode),
       codex: this.normalizeMode(settings.prewarmModes?.codex ?? settings.prewarmMode),
     };
@@ -728,6 +730,7 @@ export class DashboardController implements vscode.Disposable {
       if (current.pollIntervalMs !== pollInterval * 1000) await quota.update("pollInterval", pollInterval, vscode.ConfigurationTarget.Global);
       if (current.prewarmMode !== settings.prewarmMode) await quota.update("prewarmMode", settings.prewarmMode, vscode.ConfigurationTarget.Global);
       if (current.prewarmModes.antigravity !== settings.prewarmModes.antigravity) await quota.update("prewarmModeGemini", settings.prewarmModes.antigravity, vscode.ConfigurationTarget.Global);
+      if (settings.prewarmModes.argon && current.prewarmModes.argon !== settings.prewarmModes.argon) await quota.update("prewarmModeArgon", settings.prewarmModes.argon, vscode.ConfigurationTarget.Global);
       if (current.prewarmModes.opus !== settings.prewarmModes.opus) await quota.update("prewarmModeClaude", settings.prewarmModes.opus, vscode.ConfigurationTarget.Global);
       if (current.prewarmModes.codex !== settings.prewarmModes.codex) await quota.update("prewarmModeChatGPT", settings.prewarmModes.codex, vscode.ConfigurationTarget.Global);
       if (current.notifyOnFull !== settings.notifyOnFull) await notifications.update("notifyOnFullTokens", settings.notifyOnFull, vscode.ConfigurationTarget.Global);
@@ -1095,6 +1098,16 @@ export class DashboardController implements vscode.Disposable {
       ? this.sanitizeResetTime(current.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
       : undefined;
 
+    const argonPct = current.argonPercentage;
+    const argonReset = argonPct !== undefined
+      ? this.sanitizeResetTime(current.argonResetTime, argonPct, true)
+      : undefined;
+
+    const argonWeeklyPct = current.argonWeeklyPercentage;
+    const argonWeeklyReset = argonWeeklyPct !== undefined
+      ? this.sanitizeResetTime(current.argonWeeklyResetTime, argonWeeklyPct, false)
+      : undefined;
+
     const opusPct = current.opusPercentage;
     const opusReset = opusPct !== undefined
       ? this.sanitizeResetTime(current.opusResetTime, opusPct, true)
@@ -1128,6 +1141,18 @@ export class DashboardController implements vscode.Disposable {
       antigravityWeeklyResetTime: antigravityWeeklyReset,
       antigravityWeeklyTokensLeft: antigravityWeeklyPct !== undefined ? current.antigravityWeeklyTokensLeft : undefined,
       antigravityWeeklyMax: antigravityWeeklyPct !== undefined ? current.antigravityWeeklyMax : undefined,
+
+      argonPercentage: argonPct,
+      argonResetTime: argonReset,
+      argonEstimatedAbsolute: argonPct !== undefined ? current.argonEstimatedAbsolute : undefined,
+      argonTokensLeft: argonPct !== undefined ? current.argonTokensLeft : undefined,
+      argonMax: argonPct !== undefined ? current.argonMax : undefined,
+
+      argonWeeklyPercentage: argonWeeklyPct,
+      argonWeeklyResetTime: argonWeeklyReset,
+      argonWeeklyEstimatedAbsolute: argonWeeklyPct !== undefined ? current.argonWeeklyEstimatedAbsolute : undefined,
+      argonWeeklyTokensLeft: argonWeeklyPct !== undefined ? current.argonWeeklyTokensLeft : undefined,
+      argonWeeklyMax: argonWeeklyPct !== undefined ? current.argonWeeklyMax : undefined,
 
       opusPercentage: opusPct,
       opusResetTime: opusReset,
@@ -1172,6 +1197,8 @@ export class DashboardController implements vscode.Disposable {
     const exactPercentages = [
       status.antigravityPercentage,
       status.antigravityWeeklyPercentage,
+      status.argonPercentage,
+      status.argonWeeklyPercentage,
       status.opusPercentage,
       status.opusWeeklyPercentage,
       status.codexPercentage,
@@ -1420,15 +1447,22 @@ export class DashboardController implements vscode.Disposable {
     let weeklyPrefix = "antigravityWeekly";
     const agyGemini = getLowestAgyModel("gemini");
     let targetModel = agyGemini.model;
-    let cliModel = agyGemini.displayName;
+    let cliModel = agyGemini.cliModel;
     let label = windowType === "weekly" ? "Gemini Weekly" : "Gemini 5Hours";
 
-    if (raw.includes("opus") || raw.includes("claude")) {
+    if (raw.includes("argon")) {
+      prefix = "argon";
+      weeklyPrefix = "argonWeekly";
+      const agyArgon = getLowestAgyModel("argon");
+      targetModel = agyArgon.model;
+      cliModel = agyArgon.cliModel;
+      label = windowType === "weekly" ? "Argon 4 Weekly" : "Argon 4 5Hours";
+    } else if (raw.includes("opus") || raw.includes("claude")) {
       prefix = "opus";
       weeklyPrefix = "opusWeekly";
       const agyClaude = getLowestAgyModel("claude");
       targetModel = agyClaude.model;
-      cliModel = agyClaude.displayName;
+      cliModel = agyClaude.cliModel;
       label = windowType === "weekly" ? "Claude Weekly" : "Claude 5Hours";
     } else if (raw.includes("codex") || raw.includes("chatgpt")) {
       prefix = "codex";
@@ -1475,7 +1509,7 @@ export class DashboardController implements vscode.Disposable {
         return { eligible: false, reason: `${label} weekly quota is exhausted (${weeklyPct.toFixed(1)}% remaining). All 5-hour capacity is locked.`, prefix, targetModel, cliModel, label };
       }
 
-      const poolId = prefix === "antigravity" ? "antigravity.default" : prefix === "opus" ? "opus.default" : "codex.5h";
+      const poolId = prefix === "antigravity" ? "antigravity.default" : prefix === "argon" ? "argon.default" : prefix === "opus" ? "opus.default" : "codex.5h";
       const quotaPool = status.quotaPools?.find((pool) => pool.id === poolId);
       const measuredAt = Date.parse(quotaPool?.measuredAt ?? "") || Date.parse(fallbackTimestamp);
       if (Number.isFinite(measuredAt) && (Date.now() - measuredAt > 5 * 60_000 || measuredAt > Date.now() + 60_000)) {
@@ -1632,9 +1666,14 @@ export class DashboardController implements vscode.Disposable {
         }
       }
     } else {
-      // Gemini & Claude: Use agy CLI with verified lowest-tier model and print-timeout
-      const agyBin = path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe");
-      if (fs.existsSync(agyBin)) {
+      // Gemini, Argon & Claude: Use agy CLI with verified lowest-tier model and print-timeout
+      const agyCandidates = [
+        process.env.AGY_PATH,
+        path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe"),
+        process.env.USERPROFILE ? path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe") : "",
+      ].filter(Boolean) as string[];
+      const agyBin = agyCandidates.find((candidate) => fs.existsSync(candidate)) || agyCandidates[0];
+      if (agyBin && fs.existsSync(agyBin)) {
         try {
           await new Promise<void>((resolve) => {
             let settled = false;
@@ -1645,13 +1684,13 @@ export class DashboardController implements vscode.Disposable {
               }
             };
 
-            // Watchdog timer: 15 seconds to ensure agy finishes or cleanly exits without freezing UI
+            // Watchdog timer: 30 seconds to ensure agy finishes 1 turn cleanly without freezing UI
             const watchdog = setTimeout(() => {
               try {
                 proc.kill();
               } catch {}
               finish();
-            }, 15000);
+            }, 30000);
 
             const proc = cp.spawn(
               agyBin,
@@ -1662,11 +1701,12 @@ export class DashboardController implements vscode.Disposable {
                 check.cliModel,
                 "--disable-slash-commands",
                 "--print-timeout",
-                "1s",
+                "25s",
               ],
               {
                 windowsHide: true,
                 stdio: ["ignore", "ignore", "ignore"],
+                env: { ...process.env, AGY_ADC_AUTH: "0" },
               }
             );
 
@@ -1745,10 +1785,12 @@ export class DashboardController implements vscode.Disposable {
     const config = vscode.workspace.getConfiguration("integratedPower.quota");
     const globalMode = this.normalizeMode(config.get<string>("prewarmMode", "click"));
     const gemini = this.normalizeMode(config.get<string>("prewarmModeGemini", globalMode));
+    const argon = this.normalizeMode(config.get<string>("prewarmModeArgon", globalMode));
     const claude = this.normalizeMode(config.get<string>("prewarmModeClaude", globalMode));
     const chatgpt = this.normalizeMode(config.get<string>("prewarmModeChatGPT", globalMode));
     return {
       antigravity: gemini,
+      argon,
       opus: claude,
       codex: chatgpt,
     };
@@ -1773,7 +1815,9 @@ export class DashboardController implements vscode.Disposable {
     const targetKey = target?.toLowerCase();
     const nextModes = { ...this.currentPrewarmModes };
 
-    if (targetKey && (targetKey.includes("gemini") || targetKey.includes("antigravity"))) {
+    if (targetKey && targetKey.includes("argon")) {
+      nextModes.argon = validMode;
+    } else if (targetKey && (targetKey.includes("gemini") || targetKey.includes("antigravity"))) {
       nextModes.antigravity = validMode;
     } else if (targetKey && (targetKey.includes("claude") || targetKey.includes("opus"))) {
       nextModes.opus = validMode;
@@ -1782,6 +1826,7 @@ export class DashboardController implements vscode.Disposable {
     } else {
       Object.assign(nextModes, {
         antigravity: validMode,
+        argon: validMode,
         opus: validMode,
         codex: validMode,
       });
@@ -1791,6 +1836,7 @@ export class DashboardController implements vscode.Disposable {
       const settings = this.readLocalQuotaSettings();
       settings.prewarmModes = {
         antigravity: nextModes.antigravity,
+        argon: nextModes.argon,
         opus: nextModes.opus,
         codex: nextModes.codex,
       };
@@ -1814,7 +1860,9 @@ export class DashboardController implements vscode.Disposable {
 
     try {
       const config = vscode.workspace.getConfiguration("integratedPower.quota");
-      if (targetKey && (targetKey.includes("gemini") || targetKey.includes("antigravity"))) {
+      if (targetKey && targetKey.includes("argon")) {
+        await config.update("prewarmModeArgon", validMode, vscode.ConfigurationTarget.Global);
+      } else if (targetKey && (targetKey.includes("gemini") || targetKey.includes("antigravity"))) {
         await config.update("prewarmModeGemini", validMode, vscode.ConfigurationTarget.Global);
       } else if (targetKey && (targetKey.includes("claude") || targetKey.includes("opus"))) {
         await config.update("prewarmModeClaude", validMode, vscode.ConfigurationTarget.Global);
@@ -1823,6 +1871,7 @@ export class DashboardController implements vscode.Disposable {
       } else {
         await config.update("prewarmMode", validMode, vscode.ConfigurationTarget.Global);
         await config.update("prewarmModeGemini", validMode, vscode.ConfigurationTarget.Global);
+        await config.update("prewarmModeArgon", validMode, vscode.ConfigurationTarget.Global);
         await config.update("prewarmModeClaude", validMode, vscode.ConfigurationTarget.Global);
         await config.update("prewarmModeChatGPT", validMode, vscode.ConfigurationTarget.Global);
       }
@@ -1835,17 +1884,18 @@ export class DashboardController implements vscode.Disposable {
     if (!this.sharedQuotaSettingsCapabilityKnown || this.sharedQuotaSettingsSupported) return;
     if (!status) return;
 
-    const targets = ["antigravity", "opus", "codex"];
+    const targets = ["antigravity", "argon", "opus", "codex"];
     for (const target of targets) {
       const targetMode = this.currentPrewarmModes[target] || "click";
       if (targetMode === "click") {
         continue;
       }
 
-      const check = this.getPrewarmEligibility(target, "5h", status, false);
+      const windowType: "5h" | "weekly" = target === "argon" && status.argonPercentage === undefined && status.argonWeeklyPercentage !== undefined ? "weekly" : "5h";
+      const check = this.getPrewarmEligibility(target, windowType, status, false);
       if (check.eligible) {
         this.output.appendLine(`[prewarm] Auto-triggering pre-warm in mode '${targetMode}' for ${check.label}`);
-        await this.handlePrewarm(target, "5h", false);
+        await this.handlePrewarm(target, windowType, false);
 
         if (targetMode === "once") {
           this.output.appendLine(`[prewarm] 'Once Pre-warm' executed for ${check.label}. Reverting target mode to 'click'.`);

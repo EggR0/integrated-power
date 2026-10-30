@@ -73,6 +73,7 @@ var IPQuota = (() => {
   var K_CAPACITY_RATIOS = Object.freeze({
     opus: 4.5,
     antigravity: 5,
+    argon: 5,
     gemini: 5,
     codex: 4,
     claude: 4.5
@@ -663,6 +664,13 @@ var IPQuota = (() => {
       }
       if (g5) entries.push(g5);
       if (gw) entries.push(gw);
+      const aw = capacitySummaryEntry("Argon 4 Weekly", "Argon 4 Weekly", "Argon W", status.argonWeeklyPercentage, status.argonWeeklyTokensLeft, status.argonWeeklyMax);
+      const a5 = capacitySummaryEntry("Argon 4 5Hours", "Argon 4 5Hours", "Argon 5H", status.argonPercentage, status.argonTokensLeft, status.argonMax);
+      if (a5 && aw && typeof aw.percentage === "number") {
+        a5.percentage = calculateEffective5HourQuota(a5.percentage, aw.percentage, "argon").effectivePct;
+      }
+      if (a5) entries.push(a5);
+      if (aw) entries.push(aw);
     }
     if (isServiceActiveForSummary(status, "claude", filter)) {
       const cw = capacitySummaryEntry("Claude Weekly", "Claude Weekly", "Claude W", status.opusWeeklyPercentage, status.opusWeeklyTokensLeft, status.opusWeeklyMax);
@@ -891,6 +899,7 @@ var IPQuota = (() => {
   function defaultModelPrewarmModes() {
     return {
       antigravity: "click",
+      argon: "click",
       opus: "click",
       codex: "click"
     };
@@ -900,16 +909,19 @@ var IPQuota = (() => {
     const safe = raw && typeof raw === "object" ? raw : {};
     return {
       antigravity: normalizePrewarmMode(safe.antigravity || safe.gemini || fallback),
+      argon: normalizePrewarmMode(safe.argon || fallback),
       opus: normalizePrewarmMode(safe.opus || safe.claude || fallback),
       codex: normalizePrewarmMode(safe.codex || safe.chatgpt || fallback)
     };
   }
   var PREWARM_TARGETS = Object.freeze([
     { id: "antigravity-gemini-5h", model: "antigravity", displayName: "Gemini 5Hours", prefix: "antigravity", window: "5h" },
+    { id: "antigravity-argon-5h", model: "argon", displayName: "Argon 4 5Hours", prefix: "argon", window: "5h" },
     { id: "codex-chatgpt-5h", model: "codex", displayName: "ChatGPT 5Hours", prefix: "codex", window: "5h" },
     { id: "opus-claude-5h", model: "opus", displayName: "Claude 5Hours", prefix: "opus", window: "5h" },
     { id: "claude-5h", model: "claude", displayName: "Claude 5Hours", prefix: "claude", window: "5h" },
     { id: "antigravity-gemini-weekly", model: "antigravity", displayName: "Gemini Weekly", prefix: "antigravity", window: "weekly" },
+    { id: "antigravity-argon-weekly", model: "argon", displayName: "Argon 4 Weekly", prefix: "argon", window: "weekly" },
     { id: "codex-chatgpt-weekly", model: "codex", displayName: "ChatGPT Weekly", prefix: "codex", window: "weekly" },
     { id: "opus-claude-weekly", model: "opus", displayName: "Claude Weekly", prefix: "opus", window: "weekly" },
     { id: "claude-weekly", model: "claude", displayName: "Claude Weekly", prefix: "claude", window: "weekly" }
@@ -980,7 +992,7 @@ var IPQuota = (() => {
     pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
     notifyOnFull: true,
     prewarmMode: "click",
-    prewarmModes: Object.freeze({ antigravity: "click", opus: "click", codex: "click" }),
+    prewarmModes: Object.freeze({ antigravity: "click", argon: "click", opus: "click", codex: "click" }),
     notifications: QUOTA_NOTIFICATION_DEFAULTS
   });
   function clampPollInterval(value) {
@@ -997,6 +1009,7 @@ var IPQuota = (() => {
     const notifications = sourceNotifications && typeof sourceNotifications === "object" ? sourceNotifications : {};
     const prewarmModes = {
       antigravity: normalizePrewarmMode(modes.antigravity ?? legacyMode),
+      argon: normalizePrewarmMode(modes.argon ?? legacyMode),
       opus: normalizePrewarmMode(modes.opus ?? legacyMode),
       codex: normalizePrewarmMode(modes.codex ?? legacyMode)
     };

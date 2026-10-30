@@ -5,7 +5,7 @@ import * as path from "path";
 export interface AgyModelResolution {
   model: string;
   effort: string;
-  family: "gemini" | "claude";
+  family: "gemini" | "argon" | "claude";
   displayName: string;
   cliModel: string;
 }
@@ -19,6 +19,8 @@ function findAgyBinary(): string | undefined {
   if (process.platform === "win32") {
     const local = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe");
     if (local && fs.existsSync(local)) return local;
+    const userGemini = process.env.USERPROFILE && path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe");
+    if (userGemini && fs.existsSync(userGemini)) return userGemini;
   }
   const envPath = process.env.PATH || "";
   const exes = process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat"] : ["agy"];
@@ -42,6 +44,7 @@ function discoverAgyModels(): Array<{ id: string; name: string }> {
       timeout: 3000,
       encoding: "utf8",
       windowsHide: true,
+      env: { ...process.env, AGY_ADC_AUTH: "0" },
     });
     if (res.status === 0 && res.stdout) {
       const list: Array<{ id: string; name: string }> = [];
@@ -72,29 +75,44 @@ function discoverAgyModels(): Array<{ id: string; name: string }> {
  */
 export function resolveLowestModelFromList(
   models: Array<{ id: string; name: string }>,
-  family: "gemini" | "claude"
+  family: "gemini" | "argon" | "claude"
 ): AgyModelResolution | undefined {
   const keyword = family.toLowerCase();
-  const matches = models.filter((m) =>
-    m.id.toLowerCase().includes(keyword) || m.name.toLowerCase().includes(keyword)
-  );
+  const matches = models.filter((m) => {
+    const idLower = m.id.toLowerCase();
+    const nameLower = m.name.toLowerCase();
+    if (family === "gemini") {
+      return (idLower.includes("gemini") || nameLower.includes("gemini")) && !idLower.includes("argon") && !nameLower.includes("argon");
+    }
+    return idLower.includes(keyword) || nameLower.includes(keyword);
+  });
 
   if (matches.length === 0) return undefined;
 
-  // 1. Prefer lowest effort with flash (gemini) or sonnet/haiku (claude)
+  // 1. Prefer lowest effort with flash (gemini), argon (argon), or sonnet/haiku (claude)
   let picked = matches.find((m) => {
     const lower = `${m.id} ${m.name}`.toLowerCase();
-    return lower.includes("low") && (family === "gemini" ? lower.includes("flash") : (lower.includes("sonnet") || lower.includes("haiku")));
+    return lower.includes("low") && (
+      family === "gemini"
+        ? lower.includes("flash")
+        : family === "argon"
+          ? lower.includes("argon")
+          : (lower.includes("sonnet") || lower.includes("haiku"))
+    );
   });
   // 2. Prefer low effort
   if (!picked) {
     picked = matches.find((m) => `${m.id} ${m.name}`.toLowerCase().includes("low"));
   }
-  // 3. Prefer flash (gemini) or sonnet/haiku (claude)
+  // 3. Prefer flash (gemini), argon (argon), or sonnet/haiku (claude)
   if (!picked) {
     picked = matches.find((m) => {
       const lower = `${m.id} ${m.name}`.toLowerCase();
-      return family === "gemini" ? lower.includes("flash") : (lower.includes("sonnet") || lower.includes("haiku"));
+      return family === "gemini"
+        ? lower.includes("flash")
+        : family === "argon"
+          ? lower.includes("argon")
+          : (lower.includes("sonnet") || lower.includes("haiku"));
     });
   }
   // 4. Fallback to any model containing the family keyword
@@ -116,7 +134,7 @@ export function resolveLowestModelFromList(
  * selecting the lowest-tier / flash model, or falling back to any matching model in the family.
  */
 export function getLowestAgyModel(
-  family: "gemini" | "claude",
+  family: "gemini" | "argon" | "claude",
   modelsOverride?: Array<{ id: string; name: string }>
 ): AgyModelResolution {
   const models = modelsOverride || discoverAgyModels();
@@ -131,6 +149,15 @@ export function getLowestAgyModel(
       family: "gemini",
       displayName: "Gemini 3.8 Flash (Low)",
       cliModel: "gemini-3.8-flash-low",
+    };
+  }
+  if (family === "argon") {
+    return {
+      model: "gemini-4-argon-low",
+      effort: "low",
+      family: "argon",
+      displayName: "Gemini 4 Argon (Low)",
+      cliModel: "gemini-4-argon-low",
     };
   }
 

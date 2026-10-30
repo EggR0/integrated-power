@@ -18,7 +18,7 @@ export interface QuotaSettings {
   /** 5-hour quota pre-warm automation mode: click (manual), once (arm once), or always (continuous). */
   prewarmMode: PrewarmMode;
   /** Per-target extension used by the canonical broker settings API. */
-  prewarmModes: { antigravity: PrewarmMode; opus: PrewarmMode; codex: PrewarmMode };
+  prewarmModes: { antigravity: PrewarmMode; argon?: PrewarmMode; opus: PrewarmMode; codex: PrewarmMode };
   /** Existing per-target/per-window notification switches, keyed without the `notifications.` prefix. */
   notifications: Record<string, boolean>;
 }
@@ -42,7 +42,7 @@ export const QUOTA_SETTINGS_DEFAULTS: Readonly<QuotaSettings> = Object.freeze({
   pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
   notifyOnFull: true,
   prewarmMode: "click",
-  prewarmModes: Object.freeze({ antigravity: "click", opus: "click", codex: "click" }),
+  prewarmModes: Object.freeze({ antigravity: "click", argon: "click", opus: "click", codex: "click" }),
   notifications: QUOTA_NOTIFICATION_DEFAULTS,
 });
 
@@ -65,6 +65,7 @@ export function mergeQuotaSettings(partial: Partial<QuotaSettings> | null | unde
   const notifications = sourceNotifications && typeof sourceNotifications === "object" ? sourceNotifications as Record<string, unknown> : {};
   const prewarmModes = {
     antigravity: normalizePrewarmMode(modes.antigravity ?? legacyMode),
+    argon: normalizePrewarmMode(modes.argon ?? legacyMode),
     opus: normalizePrewarmMode(modes.opus ?? legacyMode),
     codex: normalizePrewarmMode(modes.codex ?? legacyMode),
   };

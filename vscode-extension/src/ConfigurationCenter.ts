@@ -91,30 +91,9 @@ export class ConfigurationCenter implements vscode.Disposable {
             isSection(message.section) ? message.section : undefined,
           );
           return;
-        case "forceSyncHistory": {
-          this.postBusy(true);
-          const syncResult = await AntigravityHistorySyncManager.forceSync(this.context);
-          if (syncResult.status === "ok") {
-            const restored = syncResult.restored_count ?? 0;
-            const valid = syncResult.valid_indexed ?? 0;
-            if (restored > 0) {
-              this.postResult(
-                "success",
-                `Antigravity 대화 기록 강제 동기화 완료: ${restored}개 세션 복원됨 (총 ${valid}개 유효 인덱싱). 사이드바 갱신을 위해 '창 새로고침(Reload Window)'을 권장합니다.`,
-              );
-            } else {
-              this.postResult(
-                "success",
-                `Antigravity 대화 기록 점검 완료: 모든 세션이 이미 정상 인덱싱되어 있습니다. (총 ${valid}개 유효 인덱싱)`,
-              );
-            }
-          } else {
-            this.postResult(
-              "error",
-              `대화 기록 강제 동기화 실패: ${syncResult.error ?? "알 수 없는 오류"}`,
-            );
-          }
-          this.postSnapshot(isSection(message.section) ? message.section : "overview");
+        case "forceSyncHistory":
+        case "repairAndRestartHistory": {
+          await AntigravityHistorySyncManager.repairAndRestart(this.context);
           return;
         }
         case "saveDashboard": {
@@ -680,7 +659,7 @@ export class ConfigurationCenter implements vscode.Disposable {
       </article>
       <div class="actions">
         <button type="button" data-action="refresh">상태 다시 확인</button>
-        <button type="button" class="secondary" id="btn-force-sync-overview" data-action="forceSyncHistory">대화 기록 강제 동기화</button>
+        <button type="button" class="secondary" id="btn-repair-restart-overview" data-action="repairAndRestartHistory">대화 복구 및 IDE 재시작</button>
       </div>
     </section>
 
@@ -820,10 +799,10 @@ export class ConfigurationCenter implements vscode.Disposable {
         </div>
 
         <div id="antigravity-sync-card" class="subform" style="margin-top: 22px;">
-          <h3>Antigravity IDE 대화 기록 동기화</h3>
-          <p class="hint">IDE 비정상 종료 시 SQLite 로컬 DB와 대조하여 사이드바 히스토리에서 누락된 대화 세션을 복원합니다.</p>
+          <h3>Antigravity IDE 대화 기록 복구 및 재시작</h3>
+          <p class="hint">안티그래비티 IDE가 완전히 종료된 후, 몇 초 뒤 자동으로 다시 시작되며 대화 기록이 안전하게 복구됩니다.</p>
           <div class="actions">
-            <button type="button" class="secondary" data-action="forceSyncHistory">대화 기록 강제 동기화 실행</button>
+            <button type="button" class="secondary" data-action="repairAndRestartHistory">대화 복구 및 IDE 재시작</button>
           </div>
         </div>
       </article>
@@ -1058,7 +1037,7 @@ export class ConfigurationCenter implements vscode.Disposable {
       byId("gemini-path").textContent = snapshot.paths.globalGemini;
 
       const isAg = snapshot.isAntigravityHost === true;
-      if (byId("btn-force-sync-overview")) byId("btn-force-sync-overview").classList.toggle("hidden", !isAg);
+      if (byId("btn-repair-restart-overview")) byId("btn-repair-restart-overview").classList.toggle("hidden", !isAg);
       if (byId("antigravity-sync-card")) byId("antigravity-sync-card").classList.toggle("hidden", !isAg);
 
       setChecked("show-antigravity", snapshot.dashboard.showAntigravity);

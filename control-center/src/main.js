@@ -62,6 +62,7 @@ const quotaSettings = mergeQuotaSettings({
   notifyOnFull: localStorage.getItem("ip_notify_full_tokens") !== "false",
   prewarmModes: {
     antigravity: localStorage.getItem("ip_prewarm_mode_antigravity") || localStorage.getItem("ip_prewarm_mode"),
+    argon: localStorage.getItem("ip_prewarm_mode_argon") || localStorage.getItem("ip_prewarm_mode"),
     opus: localStorage.getItem("ip_prewarm_mode_opus") || localStorage.getItem("ip_prewarm_mode"),
     codex: localStorage.getItem("ip_prewarm_mode_codex") || localStorage.getItem("ip_prewarm_mode"),
   },
@@ -69,11 +70,12 @@ const quotaSettings = mergeQuotaSettings({
 
 const prefixOf = {
   "gemini-5h": "antigravity", "gemini-weekly": "antigravityWeekly",
+  "argon-5h": "argon", "argon-weekly": "argonWeekly",
   "opus-5h": "opus", "opus-weekly": "opusWeekly",
   "codex-5h": "codex", "codex-weekly": "codexWeekly",
-  "antigravity": "antigravity", "opus": "opus", "codex": "codex",
+  "antigravity": "antigravity", "argon": "argon", "opus": "opus", "codex": "codex",
 };
-const prewarmModelByWindow = { "gemini-5h": "antigravity", "opus-5h": "opus", "codex-5h": "codex" };
+const prewarmModelByWindow = { "gemini-5h": "antigravity", "argon-5h": "argon", "argon-weekly": "argon", "opus-5h": "opus", "codex-5h": "codex" };
 
 const state = {
   capabilities: [],
@@ -437,6 +439,8 @@ function renderTokens() {
   const windows = {
     "gemini-5h": buildTokenMetric("5Hours", ts, "antigravity", "Gemini 5Hours", "antigravityWeekly"),
     "gemini-weekly": buildTokenMetric("Weekly", ts, "antigravityWeekly", "Gemini Weekly"),
+    "argon-5h": buildTokenMetric("5Hours", ts, "argon", "Argon 4 5Hours", "argonWeekly"),
+    "argon-weekly": buildTokenMetric("Weekly", ts, "argonWeekly", "Argon 4 Weekly"),
     "opus-5h": buildTokenMetric("5Hours", ts, "opus", "Claude 5Hours", "opusWeekly"),
     "opus-weekly": buildTokenMetric("Weekly", ts, "opusWeekly", "Claude Weekly"),
     "codex-5h": buildTokenMetric("5Hours", ts, "codex", "ChatGPT 5Hours", "codexWeekly"),
@@ -447,6 +451,10 @@ function renderTokens() {
   // bars, and reset stamps.
   const noDataText = state.tokenStatusError ? "쿼터 갱신 실패" : "쿼터 대기 중";
 
+  const argon5hRow = $("row-argon-5h");
+  if (argon5hRow) {
+    argon5hRow.style.display = windows["argon-5h"].unavailable ? "none" : "";
+  }
   for (const [id, m] of Object.entries(windows)) {
     const label = $(`label-${id}`);
     if (label) {
@@ -463,7 +471,8 @@ function renderTokens() {
     const prewarmButton = $(`prewarm-${id}`);
     if (prewarmButton) {
       const model = prewarmModelByWindow[id];
-      const target = PREWARM_TARGETS.find((candidate) => candidate.model === model);
+      const windowType = id.endsWith("-weekly") ? "weekly" : "5h";
+      const target = PREWARM_TARGETS.find((candidate) => candidate.model === model && (candidate.window === windowType || (!candidate.window && windowType === "5h")));
       const allowed = Boolean(target && canTriggerPrewarm(m));
       const reason = m.unavailable
         ? "쿼터 정보를 확인할 수 없습니다."
@@ -2061,6 +2070,7 @@ function renderPrewarmToolbar() {
 
   const targets = [
     { key: "antigravity", label: "Gemini" },
+    { key: "argon", label: "Argon 4" },
     { key: "opus", label: "Claude" },
     { key: "codex", label: "ChatGPT" },
   ];
@@ -2098,13 +2108,14 @@ function renderPrewarmToolbar() {
 }
 
 window.triggerPrewarmWindow = async function(windowId) {
-  const prefix = prefixOf[windowId] || windowId;
+  const prefix = prewarmModelByWindow[windowId] || prefixOf[windowId] || windowId;
   if (!prefix) return;
-  showToast(`${prefix} 5시간 윈도우 프리웜 요청 중...`);
+  const windowType = String(windowId).endsWith("-weekly") ? "weekly" : "5h";
+  showToast(`${prefix} ${windowType === "weekly" ? "주간(168시간)" : "5시간"} 윈도우 프리웜 요청 중...`);
   try {
     const res = await api("/v1/tokens/prewarm", {
       method: "POST",
-      body: JSON.stringify({ model: prefix, manual: true, idempotencyKey: crypto.randomUUID(), expectedSettingsRevision: state.quotaSettingsRevision }),
+      body: JSON.stringify({ model: prefix, window: windowType, manual: true, idempotencyKey: crypto.randomUUID(), expectedSettingsRevision: state.quotaSettingsRevision }),
     });
     if (res.status === "dispatched") showToast(`${prefix} 프리웜 요청을 브로커에 전달했습니다${res.timerConfirmed ? " (타이머 확인됨)" : " (타이머 시작은 확인되지 않음)"}.`);
     else if (res.status === "duplicate") showToast(`${prefix} 프리웜 요청은 이미 처리되었습니다.`);

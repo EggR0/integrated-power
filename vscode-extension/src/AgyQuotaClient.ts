@@ -59,6 +59,7 @@ export class AgyQuotaClient {
     const candidates = [
       process.env.AGY_PATH,
       process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'agy', 'bin', 'agy.exe'),
+      process.env.USERPROFILE && path.join(process.env.USERPROFILE, '.gemini', 'bin', 'agy.exe'),
     ].filter(Boolean) as string[];
     const found = candidates.find((candidate) => fs.existsSync(candidate));
     if (!found) {
@@ -174,9 +175,9 @@ export class AgyQuotaClient {
         timeout: 10000,
       });
       const match = output.match(/\d+\.\d+\.\d+/);
-      return match ? match[0] : '1.0.9';
+      return match ? match[0] : '1.4.11';
     } catch {
-      return '1.0.9';
+      return '1.4.11';
     }
   }
 

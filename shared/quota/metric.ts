@@ -405,6 +405,14 @@ export function calculateCapacitySummary(
     }
     if (g5) entries.push(g5);
     if (gw) entries.push(gw);
+
+    const aw = capacitySummaryEntry("Argon 4 Weekly", "Argon 4 Weekly", "Argon W", status.argonWeeklyPercentage, status.argonWeeklyTokensLeft, status.argonWeeklyMax);
+    const a5 = capacitySummaryEntry("Argon 4 5Hours", "Argon 4 5Hours", "Argon 5H", status.argonPercentage, status.argonTokensLeft, status.argonMax);
+    if (a5 && aw && typeof aw.percentage === "number") {
+      a5.percentage = calculateEffective5HourQuota(a5.percentage, aw.percentage, "argon").effectivePct;
+    }
+    if (a5) entries.push(a5);
+    if (aw) entries.push(aw);
   }
 
   if (isServiceActiveForSummary(status, "claude", filter)) {

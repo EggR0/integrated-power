@@ -265,6 +265,45 @@ async function main() {
     assert.strictEqual(merged.opusWeeklyTokensLeft, undefined, "stale absolute counts are cleared with the missing window");
     assert.strictEqual(merged.codexPercentage, undefined, "omitted provider windows remain unknown after a successful partial snapshot");
     console.log("Dashboard merge fixture passed: fresh partial windows cannot resurrect stale percentages or token counts");
+
+    const agyThreeGroupManager = new TokenManager(host);
+    agyThreeGroupManager.agyQuotaClient = {
+      fetchQuota: async () => ({
+        fetchedAt: Date.now(),
+        quota: {
+          groups: [
+            {
+              displayName: "Gemini Models",
+              buckets: [
+                { id: "gemini-5h", window: "5h", remainingFraction: 0.9996, resetTime: "2026-10-30T12:20:09Z" },
+                { id: "gemini-weekly", window: "weekly", remainingFraction: 0.2827, resetTime: "2026-10-31T08:03:54Z" },
+              ],
+            },
+            {
+              displayName: "Claude and GPT models",
+              buckets: [
+                { id: "3p-5h", window: "5h", remainingFraction: 1, resetTime: "2026-10-30T12:25:00Z" },
+                { id: "3p-weekly", window: "weekly", remainingFraction: 0.875, resetTime: "2026-11-06T07:25:00Z" },
+              ],
+            },
+            {
+              displayName: "Gemini 4 Argon",
+              buckets: [
+                { id: "gemini-argon-wtu-weekly", window: "weekly", remainingFraction: 0.9898, resetTime: "2026-11-06T07:21:48Z" },
+              ],
+            },
+          ],
+        },
+      }),
+    };
+    const parsedThreeGroups = await agyThreeGroupManager.fetchAntigravityQuota();
+    assert.strictEqual(Math.round(parsedThreeGroups.antigravityPercentage * 100) / 100, 99.96, "Gemini 5h bucket parsed from Gemini Models group");
+    assert.strictEqual(Math.round(parsedThreeGroups.antigravityWeeklyPercentage * 100) / 100, 28.27, "Gemini weekly bucket parsed from Gemini Models group");
+    assert.strictEqual(Math.round(parsedThreeGroups.argonWeeklyPercentage * 100) / 100, 98.98, "Argon weekly bucket parsed from Gemini 4 Argon group without colliding with Gemini Models");
+    assert.strictEqual(parsedThreeGroups.argonWeeklyResetTime, "2026-11-06T07:21:48Z", "Argon weekly reset time preserved");
+    assert.strictEqual(parsedThreeGroups.opusPercentage, 100, "Claude 5h bucket parsed from Claude and GPT models group");
+    assert.strictEqual(parsedThreeGroups.opusWeeklyPercentage, 87.5, "Claude weekly bucket parsed from Claude and GPT models group");
+    console.log("Antigravity 3-group quota parser passed: Gemini Models, Gemini 4 Argon, and Claude and GPT models tracked independently");
   } finally {
     Module._load = originalLoad;
     fs.rmSync(tempRoot, { recursive: true, force: true });

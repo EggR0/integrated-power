@@ -497,6 +497,8 @@ function renderTokenStatus(tokenStatus) {
   const status = tokenStatus || {};
   const antigravity = buildTokenMetric("5Hours", status, "antigravity", "Gemini 5Hours", "antigravityWeekly");
   const antigravityWeekly = buildTokenMetric("Weekly", status, "antigravityWeekly", "Gemini Weekly");
+  const argon = buildTokenMetric("5Hours", status, "argon", "Argon 4 5Hours", "argonWeekly");
+  const argonWeekly = buildTokenMetric("Weekly", status, "argonWeekly", "Argon 4 Weekly");
   const opus = buildTokenMetric("5Hours", status, "opus", "Claude 5Hours", "opusWeekly");
   const opusWeekly = buildTokenMetric("Weekly", status, "opusWeekly", "Claude Weekly");
   const codex = buildTokenMetric("5Hours", status, "codex", "ChatGPT 5Hours", "codexWeekly");
@@ -508,7 +510,8 @@ function renderTokenStatus(tokenStatus) {
 
   // Section 1: Antigravity IDE (Gemini + Claude)
   if (dashboardState.viewConfig?.showAntigravity !== false) {
-    const hasAntigravity = Boolean(antigravity?.percentage !== undefined || antigravityWeekly?.percentage !== undefined);
+    const hasAntigravity = Boolean(antigravity?.percentage !== undefined || antigravityWeekly?.percentage !== undefined || argon?.percentage !== undefined || argonWeekly?.percentage !== undefined);
+    const argonMetrics = argon?.percentage !== undefined ? [argon, argonWeekly] : [argonWeekly];
     sections.push(`
       <details class="token-section" data-section="antigravity" ${sectionStates.antigravity !== false ? "open" : ""}>
         <summary>
@@ -525,6 +528,7 @@ function renderTokenStatus(tokenStatus) {
         </summary>
         <div class="capacity-groups">
           ${renderCapacityGroup("Gemini", [antigravity, antigravityWeekly])}
+          ${renderCapacityGroup("Argon 4", argonMetrics, { full: "Gemini 4 Argon", medium: "Argon 4", short: "Argon" })}
           ${renderCapacityGroup("Claude", [opus, opusWeekly])}
         </div>
       </details>
@@ -849,7 +853,7 @@ function renderCapacitySummary(status) {
 function getPrewarmTargetForGroup(title) {
   const t = (title || "").toLowerCase().trim();
   if (t.includes("api") || t.includes("cli")) return undefined;
-  const model = t.includes("gemini") || t === "antigravity" ? "antigravity"
+  const model = t.includes("argon") ? "argon" : t.includes("gemini") || t === "antigravity" ? "antigravity"
     : t === "claude" || t.includes("opus") ? "opus"
     : t.includes("chatgpt") || t.includes("codex") || t === "openai" ? "codex"
     : undefined;
@@ -977,7 +981,7 @@ function renderCapacityGroup(title, metrics, titleVariants) {
 function renderCapacityMetric(metric, groupTitle = "") {
   const targetFromGroup = getPrewarmTargetForGroup(groupTitle);
   const combined = `${metric.ariaLabel || ""} ${metric.labelFull || ""} ${metric.label || ""}`.toLowerCase();
-  const inferredTarget = combined.includes("gemini") || combined.includes("antigravity") ? "antigravity"
+  const inferredTarget = combined.includes("argon") ? "argon" : combined.includes("gemini") || combined.includes("antigravity") ? "antigravity"
     : combined.includes("claude") || combined.includes("opus") ? "opus"
     : combined.includes("chatgpt") || combined.includes("codex") ? "codex"
     : undefined;

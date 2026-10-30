@@ -65,6 +65,12 @@ interface QuotaData {
   antigravityResetTime?: string;
   antigravityWeeklyPercentage?: number;
   antigravityWeeklyResetTime?: string;
+  argonPercentage?: number;
+  argonResetTime?: string;
+  argonWeeklyPercentage?: number;
+  argonWeeklyResetTime?: string;
+  argonEstimatedAbsolute?: number;
+  argonWeeklyEstimatedAbsolute?: number;
   opusPercentage?: number;
   opusResetTime?: string;
   opusWeeklyPercentage?: number;
@@ -368,6 +374,31 @@ export class TokenManager {
       tokenStatus.antigravityWeeklyResetTime = antigravityWeeklyReset;
     }
 
+    const argonPercentage = this.percentageValue(data, ["argonRemaining", "argonPercentage", "argonPercent"]);
+    const argonEstimated = this.numberValue(data, ["argonEstimated", "argonEstimatedAbsolute"]);
+    const argonReset = this.stringValue(data, ["argonReset", "argonResetTime"]);
+    const argonWeeklyPercentage = this.percentageValue(data, ["argonWeeklyRemaining", "argonWeeklyPercentage", "argonWeeklyPercent"]);
+    const argonWeeklyEstimated = this.numberValue(data, ["argonWeeklyEstimated", "argonWeeklyEstimatedAbsolute"]);
+    const argonWeeklyReset = this.stringValue(data, ["argonWeeklyReset", "argonWeeklyResetTime"]);
+    if (argonPercentage !== undefined) {
+      tokenStatus.argonPercentage = argonPercentage;
+    }
+    if (argonEstimated !== undefined) {
+      tokenStatus.argonEstimatedAbsolute = argonEstimated;
+    }
+    if (argonReset !== undefined) {
+      tokenStatus.argonResetTime = argonReset;
+    }
+    if (argonWeeklyPercentage !== undefined) {
+      tokenStatus.argonWeeklyPercentage = argonWeeklyPercentage;
+    }
+    if (argonWeeklyEstimated !== undefined) {
+      tokenStatus.argonWeeklyEstimatedAbsolute = argonWeeklyEstimated;
+    }
+    if (argonWeeklyReset !== undefined) {
+      tokenStatus.argonWeeklyResetTime = argonWeeklyReset;
+    }
+
     if (opusPercentage !== undefined) {
       tokenStatus.opusPercentage = opusPercentage;
     }
@@ -414,6 +445,12 @@ export class TokenManager {
       antigravityWeeklyPercentage: tokenStatus.antigravityWeeklyPercentage,
       antigravityWeeklyResetTime: tokenStatus.antigravityWeeklyResetTime,
       antigravityEstimatedAbsolute: tokenStatus.antigravityEstimatedAbsolute,
+      argonPercentage: tokenStatus.argonPercentage,
+      argonResetTime: tokenStatus.argonResetTime,
+      argonWeeklyPercentage: tokenStatus.argonWeeklyPercentage,
+      argonWeeklyResetTime: tokenStatus.argonWeeklyResetTime,
+      argonEstimatedAbsolute: tokenStatus.argonEstimatedAbsolute,
+      argonWeeklyEstimatedAbsolute: tokenStatus.argonWeeklyEstimatedAbsolute,
       opusPercentage: tokenStatus.opusPercentage,
       opusResetTime: tokenStatus.opusResetTime,
       opusWeeklyPercentage: tokenStatus.opusWeeklyPercentage,
@@ -457,6 +494,24 @@ export class TokenManager {
     }
     if (quotaData.antigravityEstimatedAbsolute !== undefined) {
       tokenStatus.antigravityEstimatedAbsolute = quotaData.antigravityEstimatedAbsolute;
+    }
+    if (quotaData.argonPercentage !== undefined) {
+      tokenStatus.argonPercentage = quotaData.argonPercentage;
+    }
+    if (quotaData.argonResetTime !== undefined) {
+      tokenStatus.argonResetTime = quotaData.argonResetTime;
+    }
+    if (quotaData.argonWeeklyPercentage !== undefined) {
+      tokenStatus.argonWeeklyPercentage = quotaData.argonWeeklyPercentage;
+    }
+    if (quotaData.argonWeeklyResetTime !== undefined) {
+      tokenStatus.argonWeeklyResetTime = quotaData.argonWeeklyResetTime;
+    }
+    if (quotaData.argonEstimatedAbsolute !== undefined) {
+      tokenStatus.argonEstimatedAbsolute = quotaData.argonEstimatedAbsolute;
+    }
+    if (quotaData.argonWeeklyEstimatedAbsolute !== undefined) {
+      tokenStatus.argonWeeklyEstimatedAbsolute = quotaData.argonWeeklyEstimatedAbsolute;
     }
     if (quotaData.opusPercentage !== undefined) {
       tokenStatus.opusPercentage = quotaData.opusPercentage;
@@ -616,6 +671,8 @@ export class TokenManager {
   private withFallbackQuota(fetched: QuotaData, fallback: QuotaData): QuotaData {
     const antigravityPct = fetched.antigravityPercentage ?? fallback.antigravityPercentage;
     const antigravityWeeklyPct = fetched.antigravityWeeklyPercentage ?? fallback.antigravityWeeklyPercentage;
+    const argonPct = fetched.argonPercentage ?? fallback.argonPercentage;
+    const argonWeeklyPct = fetched.argonWeeklyPercentage ?? fallback.argonWeeklyPercentage;
     const opusPct = fetched.opusPercentage ?? fallback.opusPercentage;
     const opusWeeklyPct = fetched.opusWeeklyPercentage ?? fallback.opusWeeklyPercentage;
     const codexPct = fetched.codexPercentage ?? fallback.codexPercentage;
@@ -634,6 +691,16 @@ export class TokenManager {
         ? this.sanitizeResetTime(fetched.antigravityWeeklyResetTime, antigravityWeeklyPct, false)
         : this.sanitizeResetTime(fetched.antigravityWeeklyResetTime ?? fallback.antigravityWeeklyResetTime, antigravityWeeklyPct, false),
       antigravityEstimatedAbsolute: fetched.antigravityEstimatedAbsolute ?? fallback.antigravityEstimatedAbsolute,
+      argonPercentage: argonPct,
+      argonResetTime: fetched.argonPercentage !== undefined
+        ? this.sanitizeResetTime(fetched.argonResetTime, argonPct, true)
+        : this.sanitizeResetTime(fetched.argonResetTime ?? fallback.argonResetTime, argonPct, true),
+      argonEstimatedAbsolute: fetched.argonEstimatedAbsolute ?? fallback.argonEstimatedAbsolute,
+      argonWeeklyPercentage: argonWeeklyPct,
+      argonWeeklyResetTime: fetched.argonWeeklyPercentage !== undefined
+        ? this.sanitizeResetTime(fetched.argonWeeklyResetTime, argonWeeklyPct, false)
+        : this.sanitizeResetTime(fetched.argonWeeklyResetTime ?? fallback.argonWeeklyResetTime, argonWeeklyPct, false),
+      argonWeeklyEstimatedAbsolute: fetched.argonWeeklyEstimatedAbsolute ?? fallback.argonWeeklyEstimatedAbsolute,
       opusPercentage: opusPct,
       opusResetTime: fetched.opusPercentage !== undefined
         ? this.sanitizeResetTime(fetched.opusResetTime, opusPct, true)
@@ -728,6 +795,10 @@ export class TokenManager {
           data.antigravityResetTime = antigravityQuota.antigravityResetTime;
           data.antigravityWeeklyPercentage = antigravityQuota.antigravityWeeklyPercentage;
           data.antigravityWeeklyResetTime = antigravityQuota.antigravityWeeklyResetTime;
+          data.argonPercentage = antigravityQuota.argonPercentage;
+          data.argonResetTime = antigravityQuota.argonResetTime;
+          data.argonWeeklyPercentage = antigravityQuota.argonWeeklyPercentage;
+          data.argonWeeklyResetTime = antigravityQuota.argonWeeklyResetTime;
           data.opusPercentage = antigravityQuota.opusPercentage;
           data.opusResetTime = antigravityQuota.opusResetTime;
           data.opusWeeklyPercentage = antigravityQuota.opusWeeklyPercentage;
@@ -747,6 +818,26 @@ export class TokenManager {
             provider: "antigravity",
             remainingPercentage: antigravityQuota.antigravityWeeklyPercentage,
             resetTime: antigravityQuota.antigravityWeeklyResetTime,
+            measuredAt: antigravityQuota.measuredAt,
+            windowDurationMins: 10080,
+            source: "provider-api",
+            confidence: "reported-quota"
+          });
+          if (antigravityQuota.argonPercentage !== undefined) data.quotaPools!.push({
+            id: "argon.default",
+            provider: "antigravity",
+            remainingPercentage: antigravityQuota.argonPercentage,
+            resetTime: antigravityQuota.argonResetTime,
+            measuredAt: antigravityQuota.measuredAt,
+            windowDurationMins: 300,
+            source: "provider-api",
+            confidence: "reported-quota"
+          });
+          if (antigravityQuota.argonWeeklyPercentage !== undefined) data.quotaPools!.push({
+            id: "argon.weekly",
+            provider: "antigravity",
+            remainingPercentage: antigravityQuota.argonWeeklyPercentage,
+            resetTime: antigravityQuota.argonWeeklyResetTime,
             measuredAt: antigravityQuota.measuredAt,
             windowDurationMins: 10080,
             source: "provider-api",
@@ -1737,6 +1828,10 @@ export class TokenManager {
       | "antigravityResetTime"
       | "antigravityWeeklyPercentage"
       | "antigravityWeeklyResetTime"
+      | "argonPercentage"
+      | "argonResetTime"
+      | "argonWeeklyPercentage"
+      | "argonWeeklyResetTime"
       | "opusPercentage"
       | "opusResetTime"
       | "opusWeeklyPercentage"
@@ -1748,12 +1843,16 @@ export class TokenManager {
     let antigravityResetTime: string | undefined;
     let antigravityWeeklyPercentage: number | undefined;
     let antigravityWeeklyResetTime: string | undefined;
+    let argonPercentage: number | undefined;
+    let argonResetTime: string | undefined;
+    let argonWeeklyPercentage: number | undefined;
+    let argonWeeklyResetTime: string | undefined;
     let opusPercentage: number | undefined;
     let opusResetTime: string | undefined;
     let opusWeeklyPercentage: number | undefined;
     let opusWeeklyResetTime: string | undefined;
     let measuredAt: string | undefined;
-    const bucketCandidates: Array<{ provider: "gemini" | "claude"; window: "5h" | "weekly"; percentage?: number; resetTime?: string; isPrimary?: boolean }> = [];
+    const bucketCandidates: Array<{ provider: "gemini" | "argon" | "claude"; window: "5h" | "weekly"; percentage?: number; resetTime?: string; isPrimary?: boolean }> = [];
 
     try {
       const result = await this.agyQuotaClient.fetchQuota();
@@ -1763,7 +1862,15 @@ export class TokenManager {
         for (const group of result.quota.groups) {
           const label = group.displayName || "";
           const isPrimaryGemini = label === "Gemini Models" || (label.includes("Gemini") && !label.includes("Argon"));
-          if (label.includes("Gemini")) {
+          const isArgon = label.includes("Argon");
+          if (isArgon) {
+            for (const bucket of group.buckets || []) {
+              const window = bucket.window;
+              const percentage = typeof bucket.remainingFraction === "number" && bucket.remainingFraction >= 0 && bucket.remainingFraction <= 1 ? bucket.remainingFraction * 100 : undefined;
+              if (window === "5h") bucketCandidates.push({ provider: "argon", window, percentage, resetTime: bucket.resetTime, isPrimary: true });
+              else if (window === "weekly" || window === "7d") bucketCandidates.push({ provider: "argon", window: "weekly", percentage, resetTime: bucket.resetTime, isPrimary: true });
+            }
+          } else if (label.includes("Gemini")) {
             for (const bucket of group.buckets || []) {
               const window = bucket.window;
               const percentage = typeof bucket.remainingFraction === "number" && bucket.remainingFraction >= 0 && bucket.remainingFraction <= 1 ? bucket.remainingFraction * 100 : undefined;
@@ -1787,7 +1894,7 @@ export class TokenManager {
       throw new Error(`Failed to fetch agy quota natively: ${this.errorMessage(error)}`);
     }
 
-    const oneUnambiguousValue = (provider: "gemini" | "claude", window: "5h" | "weekly") => {
+    const oneUnambiguousValue = (provider: "gemini" | "argon" | "claude", window: "5h" | "weekly") => {
       let candidates = bucketCandidates.filter((candidate) => candidate.provider === provider && candidate.window === window);
       if (!candidates.length) return undefined;
       const primary = candidates.filter((candidate) => candidate.isPrimary);
@@ -1800,12 +1907,18 @@ export class TokenManager {
     };
     const gemini5h = oneUnambiguousValue("gemini", "5h");
     const geminiWeekly = oneUnambiguousValue("gemini", "weekly");
+    const argon5h = oneUnambiguousValue("argon", "5h");
+    const argonWeekly = oneUnambiguousValue("argon", "weekly");
     const claude5h = oneUnambiguousValue("claude", "5h");
     const claudeWeekly = oneUnambiguousValue("claude", "weekly");
     antigravityPercentage = gemini5h?.percentage;
     antigravityResetTime = gemini5h?.resetTime;
     antigravityWeeklyPercentage = geminiWeekly?.percentage;
     antigravityWeeklyResetTime = geminiWeekly?.resetTime;
+    argonPercentage = argon5h?.percentage;
+    argonResetTime = argon5h?.resetTime;
+    argonWeeklyPercentage = argonWeekly?.percentage;
+    argonWeeklyResetTime = argonWeekly?.resetTime;
     opusPercentage = claude5h?.percentage;
     opusResetTime = claude5h?.resetTime;
     opusWeeklyPercentage = claudeWeekly?.percentage;
@@ -1816,6 +1929,10 @@ export class TokenManager {
       antigravityResetTime,
       antigravityWeeklyPercentage,
       antigravityWeeklyResetTime,
+      argonPercentage,
+      argonResetTime,
+      argonWeeklyPercentage,
+      argonWeeklyResetTime,
       opusPercentage,
       opusResetTime,
       opusWeeklyPercentage,

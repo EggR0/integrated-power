@@ -108,6 +108,7 @@ try {
   const getPrewarmTarget = webviewSandbox.getPrewarmTargetForGroup;
   assert(typeof getPrewarmTarget === "function", "getPrewarmTargetForGroup must be a function");
   assert(getPrewarmTarget("Gemini") === "antigravity", "Gemini must map to antigravity target");
+  assert(getPrewarmTarget("Argon 4") === "argon", "Argon 4 must map to argon target");
   assert(getPrewarmTarget("Claude") === "opus", "Claude must map to opus target");
   assert(getPrewarmTarget("ChatGPT") === "codex", "ChatGPT must map to codex target");
   assert(getPrewarmTarget("Claude (API & CLI)") === undefined, "Claude (API & CLI) must NOT have prewarm target");
@@ -264,7 +265,7 @@ disabledButtons.forEach(e=>e.click());
 const disabledDispatches=window.__posted.filter(message=>message.type==="prewarm").length;
 const readGauges=()=>[...document.querySelectorAll("#app .token-metric .progress-track")].map(track=>({label:track.getAttribute("aria-label"),group:track.closest(".capacity-group")?.querySelector(".text-full")?.textContent,segments:Number(track.querySelector(".progress-ticks")?.dataset.segments),trackWidth:track.getBoundingClientRect().width,trackClientWidth:track.clientWidth,tickWidth:track.querySelector(".progress-ticks")?.getBoundingClientRect().width,fillWidth:track.querySelector(".progress-fill")?.getBoundingClientRect().width,background:getComputedStyle(track.querySelector(".progress-ticks")).backgroundImage}));
 const partialGauge=readGauges();
-window.dispatchEvent(new MessageEvent("message",{data:{type:"state",state:{...${JSON.stringify(dashboardState)},tokenStatus:{antigravityPercentage:100,antigravityWeeklyPercentage:100,opusPercentage:100,opusWeeklyPercentage:100,codexPercentage:100,codexWeeklyPercentage:100}}}}));
+window.dispatchEvent(new MessageEvent("message",{data:{type:"state",state:{...${JSON.stringify(dashboardState)},tokenStatus:{antigravityPercentage:100,antigravityWeeklyPercentage:100,argonWeeklyPercentage:100,opusPercentage:100,opusWeeklyPercentage:100,codexPercentage:100,codexWeeklyPercentage:100}}}}));
 const readyButtons=[...document.querySelectorAll("#app button[data-prewarm]")];
 readyButtons.forEach(e=>e.click());
 const dispatchedTargets=window.__posted.filter(message=>message.type==="prewarm").map(message=>message.model).sort();
@@ -309,8 +310,8 @@ document.title=JSON.stringify({results,disabledDispatches,dispatchedTargets,part
         assert(measured.outOfBounds.length === 0, `A visible dashboard element extends outside ${width}px: ${JSON.stringify(measured.outOfBounds)}`);
         assert(measured.controls >= 15, `The full dashboard fixture did not render at ${width}px: ${JSON.stringify(measured)}`);
         assert(measured.sections.some((title) => title.includes("Broker tasks")), `Broker controls did not render at ${width}px.`);
-        assert(JSON.stringify([...new Set(measured.prewarm.map((button) => button.target))].sort()) === JSON.stringify(["antigravity", "codex", "opus"]), `all three model actions must render at ${width}px`);
-        assert(measured.prewarm.length === 6, `both 5-hour and weekly prewarm actions must render for all three models at ${width}px`);
+        assert(JSON.stringify([...new Set(measured.prewarm.map((button) => button.target))].sort()) === JSON.stringify(["antigravity", "argon", "codex", "opus"]), `all four model actions must render at ${width}px`);
+        assert(measured.prewarm.length === 7, `prewarm actions must render for all four models (including Argon 4 weekly) at ${width}px`);
         assert(measured.prewarm.every((button) => button.disabled && button.title.length > 0), `non-Ready model actions must be disabled with a reason at ${width}px`);
         assert(measured.historySummary.includes("History (21)"), `collapsed terminal history must show its count at ${width}px: ${JSON.stringify(measured)}`);
         assert(measured.historyStages.short.visible && !measured.historyStages.medium.visible && !measured.historyStages.full.visible, `short history label must be the only visible stage at ${width}px: ${JSON.stringify(measured.historyStages)}`);
@@ -332,7 +333,7 @@ document.title=JSON.stringify({results,disabledDispatches,dispatchedTargets,part
       assert(mediumHistoryLabel.medium === "History (21) · 8/15" && mediumHistoryLabel.visible.medium && !mediumHistoryLabel.visible.full && !mediumHistoryLabel.visible.short, `medium panels must use the medium label: ${JSON.stringify(mediumHistoryLabel)}`);
       assert(fullHistoryLabel.short === "History (21)" && mediumHistoryLabel.short === "History (21)", "short label must retain the count while dates remain available in accessible text");
       assert(disabledDispatches === 0, "disabled prewarm actions must not dispatch to the IDE bridge");
-      assert(JSON.stringify([...new Set(dispatchedTargets)].sort()) === JSON.stringify(["antigravity", "codex", "opus"]), "enabled model actions must dispatch each canonical target through the IDE bridge");
+      assert(JSON.stringify([...new Set(dispatchedTargets)].sort()) === JSON.stringify(["antigravity", "argon", "codex", "opus"]), "enabled model actions must dispatch each canonical target through the IDE bridge");
       assert(partialGauge.length >= 6, `all provider windows must render an actual gauge overlay: ${JSON.stringify(partialGauge)}`);
       for (const [index, item] of partialGauge.entries()) {
         const expectedSegments = item.label.includes("Weekly") ? 7 : 5;

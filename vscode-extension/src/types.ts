@@ -154,6 +154,16 @@ export interface TokenStatus {
   antigravityWeeklyMax?: number;
   antigravityWeeklyPercentage?: number;
   antigravityWeeklyResetTime?: string;
+  argonTokensLeft?: number;
+  argonMax?: number;
+  argonPercentage?: number;
+  argonEstimatedAbsolute?: number;
+  argonResetTime?: string;
+  argonWeeklyTokensLeft?: number;
+  argonWeeklyMax?: number;
+  argonWeeklyPercentage?: number;
+  argonWeeklyEstimatedAbsolute?: number;
+  argonWeeklyResetTime?: string;
   opusTokensLeft?: number;
   opusMax?: number;
   opusPercentage?: number;

@@ -6,7 +6,7 @@ export interface QuotaSettings {
   pollIntervalMs: number;
   notifyOnFull: boolean;
   prewarmMode: "click" | "once" | "always";
-  prewarmModes: { antigravity: "click" | "once" | "always"; opus: "click" | "once" | "always"; codex: "click" | "once" | "always" };
+  prewarmModes: { antigravity: "click" | "once" | "always"; argon?: "click" | "once" | "always"; opus: "click" | "once" | "always"; codex: "click" | "once" | "always" };
   notifications: Record<string, boolean>;
 }
 
@@ -69,7 +69,7 @@ export class QuotaSettingsStore {
       prewarmModes: incoming.prewarmModes
         ? { ...stored.settings.prewarmModes, ...incoming.prewarmModes }
         : legacyMode
-          ? { antigravity: legacyMode, opus: legacyMode, codex: legacyMode }
+          ? { antigravity: legacyMode, argon: legacyMode, opus: legacyMode, codex: legacyMode }
           : stored.settings.prewarmModes,
       notifications: { ...stored.settings.notifications, ...incoming.notifications },
     });
