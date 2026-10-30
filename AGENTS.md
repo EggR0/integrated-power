@@ -1,5 +1,11 @@
 # Integrated Power implementation contract
 
+## Pre-Task Documentation Search (필수 선행 원칙)
+모든 작업(코드 수정, 빌드, 배포, 릴리스, 리팩토링, 디버깅 등)을 시작하기 전, 에이전트는 반드시 `docs/` 디렉터리에 관련 명세서, 아키텍처 문서, 릴리스/배포 가이드가 이미 존재하는지 먼저 검색하고 숙지한 후 작업을 수행해야 한다.
+- 예: 배포/릴리스 작업 시 `docs/distribution/release-and-deployment-guide.ko.md` 필수 확인 및 준수 (태그 생성, 릴리스 에셋 첨부 등 절차 생략 금지)
+- 예: UI 수정 시 `docs/reference/compact-ui-overflow-prevention.ko.md` 필수 확인
+- 기존 문서에 명시된 워크플로, 파이프라인, 설계 규칙을 임의로 생략하거나 다른 방식으로 우회하지 않는다.
+
 This repository follows `docs/reference/multi-ai-broker.ko.md`,
 `docs/reference/compact-ui-overflow-prevention.ko.md`, and the
 Integrated Power plan. Before changing code, the implementation agent must
