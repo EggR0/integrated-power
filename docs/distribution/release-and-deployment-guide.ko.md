@@ -138,10 +138,12 @@ git push origin main
 GitHub CLI(`gh`)를 사용하여 릴리스 노트와 VSIX 파일을 첨부한 Release를 발행합니다:
 
 ```powershell
-gh release create v0.9.22 .\vscode-extension\integrated-power-0.9.22.vsix `
-  --title "Integrated Power 0.9.22" `
-  --notes-file ".\reports\<release-notes-file>.md"
+gh release create v0.11.6 .\vscode-extension\integrated-power-0.11.6.vsix `
+  --title "v0.11.6 - 3-Group Quota Separation, Argon 4 Support & History Recovery" `
+  --notes "### Changes in v0.11.6`n- 3-Group Cloud Code Quota Separation`n- Gemini 4 Argon Integration`n- Antigravity History Recovery"
 ```
+
+> 💡 **중요**: `git push origin main`만으로는 GitHub Releases 및 Open VSX 배포가 트리거되지 않습니다. `.github/workflows/publish-openvsx.yml`은 `on: release: types: [published]` 또는 `on: push: tags: ['v*']` 이벤트로만 실행되므로, 반드시 **버전 태그 생성(`git tag vX.Y.Z`) 및 푸시(`git push origin vX.Y.Z`)**와 **GitHub Release 생성(`gh release create`)** 단계를 수행해야 공식 릴리스 등록과 Open VSX 마켓플레이스 배포가 완료됩니다.
 
 ---
 
