@@ -13,6 +13,7 @@ import { resolvePlatformStateRoot } from "../platformPaths";
 import { findExecutableOnPath } from "../executable";
 
 let cachedSnapshot: EcosystemSnapshot | undefined;
+let cachedStateRoot = "";
 let lastScanTime = 0;
 const CACHE_TTL_MS = 15000;
 
@@ -99,14 +100,15 @@ export async function scanEcosystem(
   config?: HubConfig,
   forceRefresh?: boolean,
   customPlatform?: NodeJS.Platform,
-  customEnv?: NodeJS.ProcessEnv
+  customEnv?: NodeJS.ProcessEnv,
+  customStateRoot?: string
 ): Promise<EcosystemSnapshot> {
   const platform = customPlatform || process.platform;
   const env = customEnv || process.env;
   const homedir = os.homedir();
-  const stateRoot = resolvePlatformStateRoot(undefined, platform, env, homedir);
+  const stateRoot = resolvePlatformStateRoot(customStateRoot, platform, env, homedir);
 
-  if (!forceRefresh && cachedSnapshot && (Date.now() - lastScanTime < CACHE_TTL_MS)) {
+  if (!forceRefresh && cachedSnapshot && cachedStateRoot === stateRoot && (Date.now() - lastScanTime < CACHE_TTL_MS)) {
     return cachedSnapshot;
   }
 
@@ -129,6 +131,7 @@ export async function scanEcosystem(
           activeTodoFilePath: parsed.activeTodoFilePath || path.join(stateRoot, "Todo.md"),
         };
         cachedSnapshot = snapshot;
+        cachedStateRoot = stateRoot;
         lastScanTime = Date.now();
         return snapshot;
       }
@@ -414,7 +417,11 @@ export async function scanEcosystem(
     vaults.push(inspectVault(norm, "user_config"));
   }
 
-  if (fs.existsSync(obsidianConfigPath)) {
+  const hostCanonicalStateRoot = resolvePlatformStateRoot(undefined, process.platform, { LOCALAPPDATA: process.env.LOCALAPPDATA, XDG_DATA_HOME: process.env.XDG_DATA_HOME }, os.homedir());
+  const isIsolatedStateRoot = Boolean(customStateRoot && path.resolve(stateRoot) !== path.resolve(hostCanonicalStateRoot));
+  const hasIsolatedAppData = Boolean(customEnv?.APPDATA && customEnv.APPDATA !== process.env.APPDATA);
+
+  if ((!isIsolatedStateRoot || hasIsolatedAppData) && fs.existsSync(obsidianConfigPath)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(obsidianConfigPath, "utf8"));
       if (parsed?.vaults && typeof parsed.vaults === "object") {
@@ -502,6 +509,7 @@ export async function scanEcosystem(
   };
 
   cachedSnapshot = snapshot;
+  cachedStateRoot = stateRoot;
   lastScanTime = Date.now();
   return snapshot;
 }

@@ -508,6 +508,70 @@ function renderTokenStatus(tokenStatus) {
 
   const sections = [];
 
+  // Section 0: Multi-Account & GCP Projects Banner
+  const accounts = status.accounts || {};
+  const gcpProjects = status.gcpProjects || {};
+  const accountEntries = Object.entries(accounts);
+  const gcpEntries = Object.entries(gcpProjects);
+
+  if (accountEntries.length > 0 || gcpEntries.length > 0) {
+    sections.push(`
+      <details class="token-section multi-account-section" data-section="multi-account" ${sectionStates["multi-account"] !== false ? "open" : ""}>
+        <summary>
+          <span class="section-title">
+            <span class="text-full">Accounts & GCP Projects (멀티 계정/프로젝트)</span>
+            <span class="text-medium">Accounts (${accountEntries.length + gcpEntries.length})</span>
+            <span class="text-short">Accounts</span>
+          </span>
+          <span class="status-pill status-ok">
+            <span class="text-full">${escapeHtml(status.activeAccountEmail || "Connected")}</span>
+            <span class="text-medium">${escapeHtml(status.activeAccountEmail || "Connected")}</span>
+            <span class="text-short">Multi</span>
+          </span>
+        </summary>
+        <div class="capacity-groups" style="display: flex; flex-direction: column; gap: 8px; padding: 8px 0;">
+          ${accountEntries.map(([email, acc]) => {
+            const isIde = acc.isIdeActive;
+            const hasErr = Boolean(acc.error);
+            const badgeClass = hasErr ? "status-warning" : isIde ? "status-ok" : "status-neutral";
+            const badgeText = hasErr ? "재로그인 필요" : isIde ? "IDE 활성" : "연결됨";
+            return `
+              <div class="account-card" style="padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); font-size: 11px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <span style="font-weight: 600; color: var(--text-primary);">${isIde ? "👤 " : ""}${escapeHtml(email)}</span>
+                  <span class="status-pill ${badgeClass}" style="font-size: 9px; padding: 2px 6px;">${badgeText}</span>
+                </div>
+                ${hasErr ? `<div style="color: #f59e0b; font-size: 10px;">⚠️ ${escapeHtml(acc.error)}</div>` : `
+                  <div style="display: flex; gap: 12px; color: var(--text-secondary); font-size: 10px;">
+                    <span>Gemini 5h: <strong>${acc.antigravityPercentage != null ? acc.antigravityPercentage.toFixed(1) + "%" : "N/A"}</strong></span>
+                    <span>Argon 주간: <strong>${acc.argonWeeklyPercentage != null ? acc.argonWeeklyPercentage.toFixed(1) + "%" : "N/A"}</strong></span>
+                    <span>Claude: <strong>${acc.opusPercentage != null ? acc.opusPercentage.toFixed(1) + "%" : "N/A"}</strong></span>
+                  </div>
+                `}
+              </div>
+            `;
+          }).join("")}
+          ${gcpEntries.map(([projId, proj]) => {
+            const isEnabled = proj.vertexAiStatus === "enabled";
+            return `
+              <div class="account-card gcp-card" style="padding: 8px 10px; border-radius: 6px; background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.2); font-size: 11px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <span style="font-weight: 600; color: #60a5fa;">☁️ ${escapeHtml(proj.label || projId)}</span>
+                  <span class="status-pill ${isEnabled ? "status-ok" : "status-neutral"}" style="font-size: 9px; padding: 2px 6px;">Vertex AI ${isEnabled ? "ENABLED" : "OFF"}</span>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; color: var(--text-secondary); font-size: 10px;">
+                  <span>프로젝트: <code>${escapeHtml(projId)}</code></span>
+                  <span>인증: <strong>ADC (${escapeHtml(proj.accountEmail || "gcloud")})</strong></span>
+                  <span>지원: <strong>Argon High / Flash / Pro</strong></span>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </details>
+    `);
+  }
+
   // Section 1: Antigravity IDE (Gemini + Claude)
   if (dashboardState.viewConfig?.showAntigravity !== false) {
     const hasAntigravity = Boolean(antigravity?.percentage !== undefined || antigravityWeekly?.percentage !== undefined || argon?.percentage !== undefined || argonWeekly?.percentage !== undefined);

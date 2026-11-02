@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.12.0] - 2026-11-03
+
+### Added & Enhanced
+
+- **Apple Smoked Titanium Liquid Glass Design System**:
+  - Full UI overhaul with deep metallic smoked titanium gradients (`#14171a`, `#1a1d21`), specular borders, 20px frosted backdrop-filter blur, and SF Pro typography.
+  - Dynamic 4-ring activity and progress indicators responsive to active account selection.
+  - Rigorous compact desktop layout verified across 120px, 160px, 199px, and 900px viewports with zero overflow.
+- **Multi-Account Quota Separation (`yip1004` & `eggr.0000`)**:
+  - Resolved single-key Windows Credential Manager overwrite (`gemini:antigravity`) by introducing isolated target keys (`gemini:antigravity:<email>`).
+  - Implemented multi-account discovery scanner preserving IDE active session (`state.vscdb`) and external accounts simultaneously.
+  - Segmented interactive pills in IPCC Desktop UI and multi-account cards in IDE Webview.
+- **Google Cloud Project ADC (`agya` / Vertex AI) Integration**:
+  - Native integration with Google Application Default Credentials (`%APPDATA%\gcloud\application_default_credentials.json`).
+  - Active monitoring of `project-cd8f7986-520d-4fbc-85f` with `aiplatform.googleapis.com` health check.
+- **Argon 4 Subagent Guard Policy**:
+  - Strict model guard prohibiting Argon 4 weekly quota consumption by background subagents.
+
+
 ## [0.11.5] - 2026-10-19
 
 ### Fixed & Enhanced

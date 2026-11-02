@@ -13,6 +13,8 @@ import type {
   UsageConfidence,
   GpuStatus,
   UsageWindowSummary,
+  AccountQuotaInfo,
+  GcpProjectQuotaInfo,
 } from "./types";
 import { AgyQuotaClient, AgyNotInstalledError, AgyNotAuthenticatedError } from "./AgyQuotaClient";
 import matter from "gray-matter";
@@ -61,6 +63,9 @@ interface QuotaData {
   quotaPools?: QuotaPoolStatus[];
   localComputeStatus?: LocalComputeStatus;
   claudeDirectUsage?: ClaudeDirectUsageStatus;
+  activeAccountEmail?: string;
+  accounts?: Record<string, AccountQuotaInfo>;
+  gcpProjects?: Record<string, GcpProjectQuotaInfo>;
   antigravityPercentage?: number;
   antigravityResetTime?: string;
   antigravityWeeklyPercentage?: number;
@@ -471,6 +476,15 @@ export class TokenManager {
   }
 
   private applyQuotaData(tokenStatus: TokenStatus, quotaData: QuotaData): void {
+    if (quotaData.activeAccountEmail !== undefined) {
+      tokenStatus.activeAccountEmail = quotaData.activeAccountEmail;
+    }
+    if (quotaData.accounts !== undefined) {
+      tokenStatus.accounts = quotaData.accounts;
+    }
+    if (quotaData.gcpProjects !== undefined) {
+      tokenStatus.gcpProjects = quotaData.gcpProjects;
+    }
     if (quotaData.quotaPools) {
       tokenStatus.quotaPools = quotaData.quotaPools;
     }
@@ -679,6 +693,9 @@ export class TokenManager {
     const codexWeeklyPct = fetched.codexWeeklyPercentage ?? fallback.codexWeeklyPercentage;
 
     return {
+      activeAccountEmail: fetched.activeAccountEmail ?? fallback.activeAccountEmail,
+      accounts: fetched.accounts ?? fallback.accounts,
+      gcpProjects: fetched.gcpProjects ?? fallback.gcpProjects,
       quotaPools: fetched.quotaPools ?? fallback.quotaPools,
       localComputeStatus: fetched.localComputeStatus ?? fallback.localComputeStatus,
       claudeDirectUsage: fetched.claudeDirectUsage ?? fallback.claudeDirectUsage,
@@ -803,6 +820,9 @@ export class TokenManager {
           data.opusResetTime = antigravityQuota.opusResetTime;
           data.opusWeeklyPercentage = antigravityQuota.opusWeeklyPercentage;
           data.opusWeeklyResetTime = antigravityQuota.opusWeeklyResetTime;
+          data.activeAccountEmail = antigravityQuota.activeAccountEmail;
+          data.accounts = antigravityQuota.accounts;
+          data.gcpProjects = antigravityQuota.gcpProjects;
           if (antigravityQuota.antigravityPercentage !== undefined) data.quotaPools!.push({
             id: "antigravity.default",
             provider: "antigravity",
@@ -1836,6 +1856,9 @@ export class TokenManager {
       | "opusResetTime"
       | "opusWeeklyPercentage"
       | "opusWeeklyResetTime"
+      | "activeAccountEmail"
+      | "accounts"
+      | "gcpProjects"
       | "measuredAt"
     >
   > {
@@ -1852,10 +1875,12 @@ export class TokenManager {
     let opusWeeklyPercentage: number | undefined;
     let opusWeeklyResetTime: string | undefined;
     let measuredAt: string | undefined;
+    let quotaResult: any;
     const bucketCandidates: Array<{ provider: "gemini" | "argon" | "claude"; window: "5h" | "weekly"; percentage?: number; resetTime?: string; isPrimary?: boolean }> = [];
 
     try {
       const result = await this.agyQuotaClient.fetchQuota();
+      quotaResult = result;
       measuredAt = new Date(result.fetchedAt).toISOString();
 
       if (Array.isArray(result.quota?.groups)) {
@@ -1937,6 +1962,9 @@ export class TokenManager {
       opusResetTime,
       opusWeeklyPercentage,
       opusWeeklyResetTime,
+      activeAccountEmail: quotaResult?.multiAccountResult?.primaryAccount,
+      accounts: quotaResult?.multiAccountResult?.accounts,
+      gcpProjects: quotaResult?.multiAccountResult?.gcpProjects,
       measuredAt,
     };
   }

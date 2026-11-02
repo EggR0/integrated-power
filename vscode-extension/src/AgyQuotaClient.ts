@@ -3,6 +3,7 @@ import * as https from 'https';
 import * as path from 'path';
 import * as cp from 'child_process';
 import { createHash } from 'crypto';
+import type { AccountQuotaInfo, GcpProjectQuotaInfo, QuotaPoolStatus } from './types';
 
 const API_BASE = 'https://daily-cloudcode-pa.googleapis.com/v1internal';
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -14,6 +15,17 @@ export interface QuotaToken {
 }
 
 export interface QuotaResult {
+  quota: any;
+  token: QuotaToken;
+  account: string;
+  fetchedAt: number;
+  multiAccountResult?: MultiAccountQuotaResult;
+}
+
+export interface MultiAccountQuotaResult {
+  primaryAccount: string;
+  accounts: Record<string, AccountQuotaInfo>;
+  gcpProjects: Record<string, GcpProjectQuotaInfo>;
   quota: any;
   token: QuotaToken;
   account: string;
@@ -35,7 +47,7 @@ export class AgyNotAuthenticatedError extends Error {
 }
 
 export class AgyQuotaClient {
-  private static inMemoryCachedToken?: { token: QuotaToken; credentialKey: string };
+  private static inMemoryCachedTokens: Map<string, { token: QuotaToken; credentialKey: string }> = new Map();
   private extensionPath: string;
 
   constructor(extensionPath: string = __dirname) {
@@ -68,11 +80,11 @@ export class AgyQuotaClient {
     return found;
   }
 
-  private async readCredential(): Promise<any> {
+  public async readCredential(target: string = 'gemini:antigravity'): Promise<any> {
     const script = path.join(this.extensionPath, 'scripts', 'read-agy-credential.ps1');
     const stdout = await this.execFileAsync(
       'cmd.exe',
-      ['/c', 'chcp', '65001', '>nul', '&&', 'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+      ['/c', 'chcp', '65001', '>nul', '&&', 'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Target', target],
       { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 15000 }
     );
     const credential = JSON.parse(stdout.replace(/^\uFEFF/, ''));
@@ -80,6 +92,30 @@ export class AgyQuotaClient {
       throw new AgyNotAuthenticatedError('The agy credential does not contain a token. Sign in to agy again.');
     }
     return credential;
+  }
+
+  public async readAllCredentials(): Promise<{ accounts: Record<string, any>; gcpProjects: Record<string, any>; activeIdeAccount?: string }> {
+    const script = path.join(this.extensionPath, 'scripts', 'read-all-credentials.ps1');
+    try {
+      const stdout = await this.execFileAsync(
+        'cmd.exe',
+        ['/c', 'chcp', '65001', '>nul', '&&', 'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+        { windowsHide: true, maxBuffer: 2 * 1024 * 1024, timeout: 15000 }
+      );
+      return JSON.parse(stdout.replace(/^\uFEFF/, ''));
+    } catch {
+      try {
+        const cred = await this.readCredential('gemini:antigravity');
+        const email = cred.id_token_email || 'default';
+        return {
+          accounts: { [email]: cred },
+          gcpProjects: {},
+          activeIdeAccount: email,
+        };
+      } catch {
+        return { accounts: {}, gcpProjects: {} };
+      }
+    }
   }
 
   private expiryEpoch(value: any): number {
@@ -175,32 +211,253 @@ export class AgyQuotaClient {
         timeout: 10000,
       });
       const match = output.match(/\d+\.\d+\.\d+/);
-      return match ? match[0] : '1.4.11';
+      return match ? match[0] : '1.4.12';
     } catch {
-      return '1.4.11';
+      return '1.4.12';
     }
   }
 
-  public async fetchQuota(cachedToken?: any): Promise<QuotaResult> {
-    void cachedToken;
+  public async fetchMultiAccountQuota(): Promise<MultiAccountQuotaResult> {
     const agyPath = this.findAgy();
-    // Read the current credential identity on every quota fetch. Access-token
-    // reuse is safe only when it belongs to this same credential; the digest is
-    // internal and is never exposed in logs or telemetry.
-    const credential = await this.readCredential();
+    const version = await this.agyVersion(agyPath);
+    const userAgent = `antigravity/cli/${version} windows/amd64`;
+
+    const allCreds = await this.readAllCredentials();
+    const accountsMap: Record<string, AccountQuotaInfo> = {};
+    const gcpProjectsMap: Record<string, GcpProjectQuotaInfo> = {};
+
+    let primaryAccount = allCreds.activeIdeAccount || '';
+    let primaryQuotaResult: { quota: any; token: QuotaToken; account: string } | undefined;
+
+    // 1. Process each discovered user account
+    for (const [email, credData] of Object.entries(allCreds.accounts)) {
+      const isIdeActive = email === allCreds.activeIdeAccount;
+      let token: QuotaToken | undefined;
+
+      try {
+        if (credData.token) {
+          const rawToken = credData.token;
+          const identity = String(rawToken.refresh_token || rawToken.access_token || '');
+          const credKey = createHash('sha256').update(identity).digest('hex');
+          const cached = AgyQuotaClient.inMemoryCachedTokens.get(email);
+          if (cached && cached.credentialKey === credKey && this.tokenIsValid(cached.token)) {
+            token = cached.token;
+          }
+          if (!token) {
+            if (this.tokenIsValid(rawToken)) {
+              token = {
+                access_token: rawToken.access_token,
+                expiry: this.expiryEpoch(rawToken.expiry),
+              };
+            } else if (rawToken.refresh_token) {
+              token = await this.refreshAccessToken(rawToken.refresh_token, agyPath);
+            }
+          }
+          if (token) {
+            AgyQuotaClient.inMemoryCachedTokens.set(email, { token, credentialKey: credKey });
+          }
+        }
+
+        if (!token) {
+          accountsMap[email] = {
+            email,
+            isIdeActive,
+            source: credData.source,
+            error: isIdeActive ? 'IDE 활성 계정의 토큰이 덮어써졌습니다. 재로그인 필요.' : '유효한 인증 토큰 없음',
+            fetchedAt: Date.now(),
+          };
+          continue;
+        }
+
+        const headers = {
+          Authorization: `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'User-Agent': userAgent,
+        };
+
+        const accountRes = await this.requestJson(`${API_BASE}:loadCodeAssist`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
+        });
+
+        if (!accountRes.cloudaicompanionProject) {
+          throw new Error('Cloud Code did not return a quota project.');
+        }
+
+        const quotaRes = await this.requestJson(`${API_BASE}:retrieveUserQuotaSummary`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ project: accountRes.cloudaicompanionProject }),
+        });
+
+        if (!Array.isArray(quotaRes.groups)) {
+          throw new Error('The quota response does not contain groups.');
+        }
+
+        // Extract bucket percentages
+        let gemini5h: number | undefined;
+        let gemini5hReset: string | undefined;
+        let geminiWeekly: number | undefined;
+        let geminiWeeklyReset: string | undefined;
+        let argon5h: number | undefined;
+        let argon5hReset: string | undefined;
+        let argonWeekly: number | undefined;
+        let argonWeeklyReset: string | undefined;
+        let opus5h: number | undefined;
+        let opus5hReset: string | undefined;
+        let opusWeekly: number | undefined;
+        let opusWeeklyReset: string | undefined;
+
+        for (const group of quotaRes.groups) {
+          const label = group.displayName || '';
+          const isArgon = label.includes('Argon');
+          const isGemini = !isArgon && label.includes('Gemini');
+          const isClaude = label.includes('Claude') || label.includes('Opus');
+
+          for (const bucket of group.buckets || []) {
+            const pct = typeof bucket.remainingFraction === 'number' && bucket.remainingFraction >= 0 && bucket.remainingFraction <= 1
+              ? bucket.remainingFraction * 100
+              : undefined;
+            if (bucket.window === '5h') {
+              if (isArgon && argon5h === undefined) { argon5h = pct; argon5hReset = bucket.resetTime; }
+              else if (isGemini && gemini5h === undefined) { gemini5h = pct; gemini5hReset = bucket.resetTime; }
+              else if (isClaude && opus5h === undefined) { opus5h = pct; opus5hReset = bucket.resetTime; }
+            } else if (bucket.window === 'weekly' || bucket.window === '7d') {
+              if (isArgon && argonWeekly === undefined) { argonWeekly = pct; argonWeeklyReset = bucket.resetTime; }
+              else if (isGemini && geminiWeekly === undefined) { geminiWeekly = pct; geminiWeeklyReset = bucket.resetTime; }
+              else if (isClaude && opusWeekly === undefined) { opusWeekly = pct; opusWeeklyReset = bucket.resetTime; }
+            }
+          }
+        }
+
+        const tierName = accountRes.paidTier?.name || accountRes.currentTier?.name || 'Standard';
+        accountsMap[email] = {
+          email,
+          isIdeActive,
+          tierName,
+          source: credData.source,
+          antigravityPercentage: gemini5h,
+          antigravityResetTime: gemini5hReset,
+          antigravityWeeklyPercentage: geminiWeekly,
+          antigravityWeeklyResetTime: geminiWeeklyReset,
+          argonPercentage: argon5h,
+          argonResetTime: argon5hReset,
+          argonWeeklyPercentage: argonWeekly,
+          argonWeeklyResetTime: argonWeeklyReset,
+          opusPercentage: opus5h,
+          opusResetTime: opus5hReset,
+          opusWeeklyPercentage: opusWeekly,
+          opusWeeklyResetTime: opusWeeklyReset,
+          fetchedAt: Date.now(),
+        };
+
+        if (!primaryQuotaResult || isIdeActive) {
+          primaryAccount = email;
+          primaryQuotaResult = {
+            quota: quotaRes,
+            token,
+            account: tierName,
+          };
+        }
+      } catch (err: any) {
+        accountsMap[email] = {
+          email,
+          isIdeActive,
+          source: credData.source,
+          error: err instanceof Error ? err.message : String(err),
+          fetchedAt: Date.now(),
+        };
+      }
+    }
+
+    // 2. Process agya / GCP Projects (Vertex AI via ADC)
+    for (const [projId, projData] of Object.entries(allCreds.gcpProjects)) {
+      try {
+        if (projData.client_id && projData.refresh_token) {
+          const form = new URLSearchParams({
+            client_id: projData.client_id,
+            client_secret: projData.client_secret || '',
+            refresh_token: projData.refresh_token,
+            grant_type: 'refresh_token',
+          }).toString();
+
+          const tokenRes = await this.requestJson(OAUTH_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Content-Length': String(Buffer.byteLength(form)),
+            },
+            body: form,
+          });
+
+          if (tokenRes.access_token) {
+            const su = await this.requestJson(`https://serviceusage.googleapis.com/v1/projects/${projId}/services/aiplatform.googleapis.com`, {
+              headers: {
+                Authorization: `Bearer ${tokenRes.access_token}`,
+                'x-goog-user-project': projId,
+                Accept: 'application/json',
+              },
+            });
+
+            gcpProjectsMap[projId] = {
+              projectId: projId,
+              label: projData.label || 'agya (Vertex AI)',
+              vertexAiStatus: su.state === 'ENABLED' ? 'enabled' : 'disabled',
+              models: projData.models || ['gemini-4-argon-high', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+              authType: 'adc',
+              accountEmail: allCreds.activeIdeAccount || 'ADC User',
+              fetchedAt: Date.now(),
+            };
+          }
+        }
+      } catch (err: any) {
+        gcpProjectsMap[projId] = {
+          projectId: projId,
+          label: projData.label || 'agya (Vertex AI)',
+          vertexAiStatus: 'unknown',
+          error: err instanceof Error ? err.message : String(err),
+          fetchedAt: Date.now(),
+        };
+      }
+    }
+
+    if (!primaryQuotaResult) {
+      // If none succeeded, try single fallback
+      const fallbackResult = await this.fetchSingleFallback();
+      return {
+        primaryAccount: primaryAccount || 'default',
+        accounts: accountsMap,
+        gcpProjects: gcpProjectsMap,
+        quota: fallbackResult.quota,
+        token: fallbackResult.token,
+        account: fallbackResult.account,
+        fetchedAt: fallbackResult.fetchedAt,
+      };
+    }
+
+    return {
+      primaryAccount,
+      accounts: accountsMap,
+      gcpProjects: gcpProjectsMap,
+      quota: primaryQuotaResult.quota,
+      token: primaryQuotaResult.token,
+      account: primaryQuotaResult.account,
+      fetchedAt: Date.now(),
+    };
+  }
+
+  private async fetchSingleFallback(): Promise<QuotaResult> {
+    const agyPath = this.findAgy();
+    const credential = await this.readCredential('gemini:antigravity');
     const identityMaterial = String(credential.token.refresh_token || credential.token.access_token || '');
     if (!identityMaterial) throw new AgyNotAuthenticatedError('The agy credential has no account token. Sign in to agy again.');
     const credentialKey = createHash('sha256').update(identityMaterial).digest('hex');
     let token: QuotaToken | undefined;
-    if (!token && AgyQuotaClient.inMemoryCachedToken?.credentialKey === credentialKey && this.tokenIsValid(AgyQuotaClient.inMemoryCachedToken.token)) {
-      token = AgyQuotaClient.inMemoryCachedToken.token;
-    }
-    if (!token) {
-      if (this.tokenIsValid(credential.token)) token = credential.token;
-      else token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
-    }
+    if (this.tokenIsValid(credential.token)) token = credential.token;
+    else token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
     if (!token) throw new AgyNotAuthenticatedError('The agy credential could not provide a valid account token. Sign in to agy again.');
-    AgyQuotaClient.inMemoryCachedToken = { token, credentialKey };
 
     const version = await this.agyVersion(agyPath);
     const userAgent = `antigravity/cli/${version} windows/amd64`;
@@ -211,19 +468,11 @@ export class AgyQuotaClient {
       'User-Agent': userAgent,
     };
 
-    let account: any;
-    try {
-      account = await this.requestJson(`${API_BASE}:loadCodeAssist`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
-      });
-    } catch (err: any) {
-      if (String(err?.message || "").includes("401")) {
-        AgyQuotaClient.inMemoryCachedToken = undefined;
-      }
-      throw err;
-    }
+    const account = await this.requestJson(`${API_BASE}:loadCodeAssist`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
+    });
     if (!account.cloudaicompanionProject) {
       throw new Error('Cloud Code did not return a quota project.');
     }
@@ -233,9 +482,6 @@ export class AgyQuotaClient {
       headers,
       body: JSON.stringify({ project: account.cloudaicompanionProject }),
     });
-    if (!Array.isArray(quota.groups)) {
-      throw new Error('The quota response does not contain groups.');
-    }
 
     return {
       quota,
@@ -243,5 +489,21 @@ export class AgyQuotaClient {
       account: account.paidTier?.name || account.currentTier?.name || '',
       fetchedAt: Date.now(),
     };
+  }
+
+  public async fetchQuota(cachedToken?: any): Promise<QuotaResult> {
+    void cachedToken;
+    try {
+      const multi = await this.fetchMultiAccountQuota();
+      return {
+        quota: multi.quota,
+        token: multi.token,
+        account: multi.account,
+        fetchedAt: multi.fetchedAt,
+        multiAccountResult: multi,
+      };
+    } catch {
+      return this.fetchSingleFallback();
+    }
   }
 }

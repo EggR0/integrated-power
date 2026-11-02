@@ -139,7 +139,7 @@ export class HubController {
 
   public async getOverview(forceRefresh?: boolean): Promise<HubOverviewSnapshot> {
     const config = this.configStore.getConfig();
-    const ecosystem = await scanEcosystem(config, forceRefresh);
+    const ecosystem = await scanEcosystem(config, forceRefresh, undefined, undefined, this.stateRoot);
     this.lastEcosystem = ecosystem;
 
     const activeTodoPath = config.customTodoFilePath

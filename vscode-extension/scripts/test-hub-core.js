@@ -27,7 +27,25 @@ async function run() {
   console.log("=== Leaf Alpha-3: Hub Core Integration Tests ===");
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "ip-hub-test-"));
-  console.log(`Using isolated state root: ${tempDir}`);
+  const stateDir = path.join(tempDir, "state");
+  fs.mkdirSync(stateDir, { recursive: true });
+  console.log(`Using isolated state root: ${stateDir}`);
+
+  const origEnv = {
+    INTEGRATED_POWER_STATE_ROOT: process.env.INTEGRATED_POWER_STATE_ROOT,
+    INTEGRATED_POWER_STATE_DIR: process.env.INTEGRATED_POWER_STATE_DIR,
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
+    APPDATA: process.env.APPDATA,
+    USERPROFILE: process.env.USERPROFILE,
+    HOME: process.env.HOME,
+  };
+
+  process.env.INTEGRATED_POWER_STATE_ROOT = stateDir;
+  process.env.INTEGRATED_POWER_STATE_DIR = stateDir;
+  process.env.LOCALAPPDATA = path.join(tempDir, "localappdata");
+  process.env.APPDATA = path.join(tempDir, "appdata");
+  process.env.USERPROFILE = tempDir;
+  process.env.HOME = tempDir;
 
   const mockAdapters = [
     {
@@ -88,7 +106,7 @@ async function run() {
   };
 
   const server = await startBrokerServer(broker, 0, {
-    stateRoot: tempDir,
+    stateRoot: stateDir,
     autoSchedule: false,
     tokenStatusReader: async () => liveQuota,
   });
@@ -116,6 +134,7 @@ async function run() {
     assert.strictEqual(overview.schemaVersion, 1, "Overview schemaVersion must be 1");
     assert.ok(overview.config, "Overview must have config");
     assert.ok(overview.ecosystem, "Overview must have ecosystem");
+    assert.ok(path.resolve(overview.ecosystem.activeTodoFilePath).startsWith(path.resolve(tempDir)), "activeTodoFilePath must stay inside isolated tempDir: " + overview.ecosystem.activeTodoFilePath);
     assert.ok(Array.isArray(overview.todos), "Overview must have todos array");
     assert.ok(Array.isArray(overview.playbooks), "Overview must have playbooks array");
 
@@ -458,8 +477,17 @@ async function run() {
 
     console.log("\n=== ALL 10 TEST SUITES PASSED SUCCESSFULLY (100%) ===");
   } finally {
-    await server.close();
-    console.log("Broker server closed cleanly.");
+    for (const [key, val] of Object.entries(origEnv)) {
+      if (val === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = val;
+      }
+    }
+    if (server) {
+      await server.close();
+      console.log("Broker server closed cleanly.");
+    }
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {

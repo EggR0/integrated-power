@@ -35,6 +35,9 @@ export function resolvePlatformStateRoot(
   if (env.INTEGRATED_POWER_STATE_ROOT?.trim()) {
     return p.resolve(env.INTEGRATED_POWER_STATE_ROOT.trim());
   }
+  if (env.INTEGRATED_POWER_STATE_DIR?.trim()) {
+    return p.resolve(env.INTEGRATED_POWER_STATE_DIR.trim());
+  }
 
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA || p.join(homedir, "AppData", "Local");

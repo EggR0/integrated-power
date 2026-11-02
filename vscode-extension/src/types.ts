@@ -139,11 +139,52 @@ export interface RunSummary {
 export type ParsedRun = RunSummary;
 export type ParsedArtifact = ArtifactRef;
 
+export interface AccountQuotaInfo {
+  email: string;
+  isIdeActive?: boolean;
+  tierName?: string;
+  source?: string;
+  antigravityPercentage?: number;
+  antigravityResetTime?: string;
+  antigravityWeeklyPercentage?: number;
+  antigravityWeeklyResetTime?: string;
+  argonPercentage?: number;
+  argonResetTime?: string;
+  argonWeeklyPercentage?: number;
+  argonWeeklyResetTime?: string;
+  opusPercentage?: number;
+  opusResetTime?: string;
+  opusWeeklyPercentage?: number;
+  opusWeeklyResetTime?: string;
+  quotaPools?: QuotaPoolStatus[];
+  fetchedAt?: number;
+  error?: string;
+}
+
+export interface GcpProjectQuotaInfo {
+  projectId: string;
+  label?: string;
+  vertexAiStatus?: "enabled" | "disabled" | "unknown";
+  models?: string[];
+  authType?: "adc" | "service_account" | "api_key";
+  accountEmail?: string;
+  rpmQuota?: string;
+  tpmQuota?: string;
+  dailyRequestsLeft?: number;
+  fetchedAt?: number;
+  error?: string;
+}
+
 export interface TokenStatus {
   quotaPools?: QuotaPoolStatus[];
   localComputeStatus?: LocalComputeStatus;
   claudeDirectUsage?: ClaudeDirectUsageStatus;
-  
+
+  // Multi-account and GCP project fields
+  activeAccountEmail?: string;
+  accounts?: Record<string, AccountQuotaInfo>;
+  gcpProjects?: Record<string, GcpProjectQuotaInfo>;
+
   // Legacy fields
   antigravityTokensLeft?: number;
   antigravityMax?: number;

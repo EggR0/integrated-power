@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { TokenManager, createHeadlessTokenManagerHost } from "../TokenManager";
-import type { TokenStatus } from "../types";
+import type { TokenStatus, AccountQuotaInfo, GcpProjectQuotaInfo } from "../types";
 import { resolveIntegratedPowerStateRoot } from "../storagePath";
 
 export interface GpuStatus {
@@ -27,6 +27,10 @@ export interface QuotaPoolInfo {
 }
 
 export interface LiveTokenStatus {
+  activeAccountEmail?: string;
+  accounts?: Record<string, AccountQuotaInfo>;
+  gcpProjects?: Record<string, GcpProjectQuotaInfo>;
+
   antigravityPercentage?: number;
   antigravityResetTime?: string;
   antigravityWeeklyPercentage?: number;
@@ -221,6 +225,9 @@ function mapTokenManagerStatus(status: TokenStatus): LiveTokenStatus {
     codexEstimatedAbsolute: status.codexEstimatedAbsolute,
     codexWeeklyEstimatedAbsolute: status.codexWeeklyEstimatedAbsolute,
     codexStatus: status.codexStatus,
+    activeAccountEmail: status.activeAccountEmail,
+    accounts: status.accounts,
+    gcpProjects: status.gcpProjects,
     taskRouting: status.recommendedTaskWeight === "restricted" || status.recommendedTaskWeight === "degraded" || (status.codexPercentage !== undefined && status.codexPercentage < 20) || (status.antigravityPercentage !== undefined && status.antigravityPercentage < 20) ? "degraded" : "normal",
     lastSync: latestMeasurementTimestamp(quotaPools, usage?.lastMeasuredAt),
     errors: status.errors,
@@ -384,6 +391,9 @@ function mapCachedTokenStatus(data: any): LiveTokenStatus {
     codexWeeklyPercentage: codexWeekly ? quotaPercentageOrUndefined(codexWeekly.remainingPercentage) : hasPoolSnapshot ? undefined : quotaPercentageOrUndefined(data.codexWeeklyPercentage), codexWeeklyResetTime: codexWeekly ? codexWeekly.resetTime : hasPoolSnapshot ? undefined : data.codexWeeklyResetTime,
     codexTokensLeft: codex || !hasPoolSnapshot ? numberOrUndefined(data.codexTokensLeft) : undefined, codexMax: codex || !hasPoolSnapshot ? numberOrUndefined(data.codexMax) : undefined, codexWeeklyTokensLeft: codexWeekly || !hasPoolSnapshot ? numberOrUndefined(data.codexWeeklyTokensLeft) : undefined, codexWeeklyMax: codexWeekly || !hasPoolSnapshot ? numberOrUndefined(data.codexWeeklyMax) : undefined,
     codexEstimatedAbsolute: numberOrUndefined(data.codexEstimatedAbsolute), codexWeeklyEstimatedAbsolute: numberOrUndefined(data.codexWeeklyEstimatedAbsolute), codexStatus: stringOrUndefined(data.codexStatus),
+    activeAccountEmail: data.activeAccountEmail,
+    accounts: data.accounts,
+    gcpProjects: data.gcpProjects,
     taskRouting: data.recommendedTaskWeight === "restricted" ? "critical" : data.recommendedTaskWeight === "degraded" ? "degraded" : "normal",
     lastSync: (() => {
       const poolLatest = latestMeasurementTimestamp(pools, usage?.lastMeasuredAt);
