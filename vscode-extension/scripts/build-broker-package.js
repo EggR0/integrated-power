@@ -37,6 +37,26 @@ Promise.all([
     target: "es2020",
     sourcemap: false,
   }),
+  esbuild.build({
+    absWorkingDir: path.resolve(extensionRoot, ".."),
+    entryPoints: [path.resolve(extensionRoot, "..", "shared", "hub", "index.ts")],
+    outfile: path.join(brokerRoot, "shared-hub.js"),
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node18",
+    sourcemap: false,
+  }),
+  esbuild.build({
+    absWorkingDir: path.resolve(extensionRoot, ".."),
+    entryPoints: [path.resolve(extensionRoot, "..", "shared", "hub", "index.ts")],
+    outfile: path.join(brokerRoot, "shared-hub-browser.js"),
+    bundle: true,
+    platform: "browser",
+    format: "esm",
+    target: "es2020",
+    sourcemap: false,
+  }),
 ]).catch((error) => {
   console.error(error);
   process.exitCode = 1;

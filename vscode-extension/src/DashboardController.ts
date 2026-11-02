@@ -44,6 +44,7 @@ const QUOTA_NOTIFICATION_KEYS = [
  *    - Manages task creation, classification delegation, and platform routing.
  */
 export class DashboardController implements vscode.Disposable {
+  private disposed = false;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly watchers: vscode.Disposable[] = [];
   private readonly output = vscode.window.createOutputChannel("Integrated Power Agent Runs");
@@ -56,6 +57,7 @@ export class DashboardController implements vscode.Disposable {
   private refreshTimer?: ReturnType<typeof setTimeout>;
   private writeTimer?: ReturnType<typeof setTimeout>;
   private tokenPollingTimer?: ReturnType<typeof setInterval>;
+  private pendingRefreshYieldTimer?: ReturnType<typeof setTimeout>;
   private pendingWriteState?: DashboardState;
   private isRefreshing = false;
   private pendingRefreshForce?: boolean;
@@ -133,6 +135,8 @@ export class DashboardController implements vscode.Disposable {
   }
 
   public dispose(): void {
+    this.disposed = true;
+
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;
@@ -140,6 +144,10 @@ export class DashboardController implements vscode.Disposable {
     if (this.writeTimer) {
       clearTimeout(this.writeTimer);
       this.writeTimer = undefined;
+    }
+    if (this.pendingRefreshYieldTimer) {
+      clearTimeout(this.pendingRefreshYieldTimer);
+      this.pendingRefreshYieldTimer = undefined;
     }
     this.stopTokenPolling(false);
 
@@ -153,11 +161,14 @@ export class DashboardController implements vscode.Disposable {
   }
 
   public publishState(): void {
+    if (this.disposed) {
+      return;
+    }
     this.postState();
   }
 
   public async handleMessage(message: unknown): Promise<void> {
-    if (!this.isInboundMessage(message)) {
+    if (this.disposed || !this.isInboundMessage(message)) {
       return;
     }
 
@@ -237,6 +248,9 @@ export class DashboardController implements vscode.Disposable {
   }
 
   public async refreshBrokerControls(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
     if (this.brokerController && typeof this.brokerController.getPort === "function") {
       const port = this.brokerController.getPort();
       if (!port) {
@@ -257,6 +271,9 @@ export class DashboardController implements vscode.Disposable {
         client.listTasks(scope),
         client.listApprovals(scope),
       ]);
+      if (this.disposed) {
+        return;
+      }
       if (!taskResult.ok || taskResult.errors.length || !approvalResult.ok || approvalResult.errors.length) {
         throw new Error([...taskResult.errors, ...approvalResult.errors].filter(Boolean).join("; ") || "Broker workspace data is unavailable.");
       }
@@ -291,6 +308,9 @@ export class DashboardController implements vscode.Disposable {
 
       try {
         const caps = await client.listCapabilities();
+        if (this.disposed) {
+          return;
+        }
         const codexCap = caps.find((c) => c.provider === "openai.codex.app");
         const agyCap = caps.find((c) => c.provider === "google.antigravity.ide");
         const localCap = caps.find((c) => c.provider === "local.openai-compatible");
@@ -308,6 +328,10 @@ export class DashboardController implements vscode.Disposable {
         }
       } catch {}
 
+      if (this.disposed) {
+        return;
+      }
+
       this.brokerState.platforms = {
         localOnline,
         codexOnline,
@@ -317,18 +341,26 @@ export class DashboardController implements vscode.Disposable {
         antigravityReason,
       };
     } catch (error) {
+      if (this.disposed) {
+        return;
+      }
       this.brokerState.error = this.errorMessage(error);
       this.brokerState.tasks = [];
       this.brokerState.approvals = [];
       this.brokerTasks.clear();
       this.brokerApprovals.clear();
     } finally {
-      this.brokerState.loading = false;
-      this.postMessage({ type: "brokerState", state: { ...this.brokerState } });
+      if (!this.disposed) {
+        this.brokerState.loading = false;
+        this.postMessage({ type: "brokerState", state: { ...this.brokerState } });
+      }
     }
   }
 
   public postBrokerState(): void {
+    if (this.disposed) {
+      return;
+    }
     this.postMessage({ type: "brokerState", state: { ...this.brokerState } });
   }
 
@@ -520,6 +552,9 @@ export class DashboardController implements vscode.Disposable {
   }
 
   public async refresh(force: boolean = false): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
     if (this.isRefreshing) {
       this.pendingRefreshForce = (this.pendingRefreshForce || force) ? true : false;
       return;
@@ -538,9 +573,15 @@ export class DashboardController implements vscode.Disposable {
 
     try {
       this.state = await this.readDashboardState();
+      if (this.disposed) {
+        return;
+      }
       this.syncTokenPolling(this.state.activeRuns.length > 0);
       this.postState();
     } catch (error) {
+      if (this.disposed) {
+        return;
+      }
       const message = this.errorMessage(error);
       this.output.appendLine(`[refresh failed] ${message}`);
       this.state = {
@@ -556,15 +597,23 @@ export class DashboardController implements vscode.Disposable {
       this.postError(message);
     } finally {
       this.isRefreshing = false;
-      if (this.pendingRefreshForce !== undefined) {
+      if (!this.disposed && this.pendingRefreshForce !== undefined) {
         const forceNext = this.pendingRefreshForce;
         this.pendingRefreshForce = undefined;
         // Schedule next refresh slightly later to yield execution
-        setTimeout(() => { void this.refresh(forceNext); }, 50);
+        this.pendingRefreshYieldTimer = setTimeout(() => {
+          this.pendingRefreshYieldTimer = undefined;
+          if (!this.disposed) {
+            void this.refresh(forceNext);
+          }
+        }, 50);
+        this.pendingRefreshYieldTimer.unref?.();
       }
     }
 
-    void this.refreshTokenStatus(generation, force);
+    if (!this.disposed) {
+      void this.refreshTokenStatus(generation, force);
+    }
   }
 
   public async openRunsFile(): Promise<void> {
@@ -590,6 +639,9 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private resetWatchers(): void {
+    if (this.disposed) {
+      return;
+    }
     for (const watcher of this.watchers.splice(0)) {
       watcher.dispose();
     }
@@ -598,17 +650,26 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private scheduleRefresh(): void {
+    if (this.disposed) {
+      return;
+    }
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
 
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
-      void this.refresh(false);
+      if (!this.disposed) {
+        void this.refresh(false);
+      }
     }, 150);
+    this.refreshTimer.unref?.();
   }
 
   private syncTokenPolling(_isActive: boolean): void {
+    if (this.disposed) {
+      return;
+    }
     // Keep continuous 5s polling active while dashboard is mounted
     this.startTokenPolling();
   }
@@ -621,9 +682,12 @@ export class DashboardController implements vscode.Disposable {
   }
 
   public refreshQuotaSettings(force = false): Promise<void> {
+    if (this.disposed) {
+      return Promise.resolve();
+    }
     if (this.quotaSettingsRefresh) {
       return force
-        ? this.quotaSettingsRefresh.then(() => this.refreshQuotaSettings(true))
+        ? this.quotaSettingsRefresh.then(() => (this.disposed ? Promise.resolve() : this.refreshQuotaSettings(true)))
         : this.quotaSettingsRefresh;
     }
     if (!force && Date.now() < this.quotaSettingsRetryAt) return Promise.resolve();
@@ -633,6 +697,9 @@ export class DashboardController implements vscode.Disposable {
   }
 
   public useLegacyQuotaSettingsFallback(): void {
+    if (this.disposed) {
+      return;
+    }
     this.brokerStartupFailed = true;
     this.sharedQuotaSettingsCapabilityKnown = true;
     this.sharedQuotaSettingsSupported = false;
@@ -640,10 +707,12 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async loadQuotaSettings(): Promise<void> {
+    if (this.disposed) return;
     const client = this.brokerController?.getClient();
     if (!client) return;
     try {
       let result = await client.getQuotaSettings();
+      if (this.disposed) return;
       if (!result.initialized && result.revision === 0) {
         result = await client.putQuotaSettings({
           expectedRevision: 0,
@@ -651,7 +720,9 @@ export class DashboardController implements vscode.Disposable {
           idempotencyKey: randomUUID(),
           settings: this.readLocalQuotaSettings(),
         });
+        if (this.disposed) return;
         if (result.conflict) result = await client.getQuotaSettings();
+        if (this.disposed) return;
       }
       if (!result.initialized || result.revision < 0) {
         this.sharedQuotaSettingsCapabilityKnown = true;
@@ -662,10 +733,13 @@ export class DashboardController implements vscode.Disposable {
       this.sharedQuotaSettingsCapabilityKnown = true;
       this.sharedQuotaSettingsSupported = true;
       this.quotaSettingsRetryAt = 0;
+      if (this.disposed) return;
       await this.applyQuotaSettings(result.revision, result.settings);
     } catch (error) {
+      if (this.disposed) return;
       // A legacy broker has no shared-settings capability; keep the validated IDE settings path.
       const health = this.brokerController?.getAttachedHealth?.() ?? await this.brokerController?.getClient().health().catch(() => undefined);
+      if (this.disposed) return;
       this.sharedQuotaSettingsCapabilityKnown = Boolean(health);
       this.sharedQuotaSettingsSupported = Boolean(health?.capabilities?.includes("quota.settings.read"));
       this.sharedQuotaSettingsReady = false;
@@ -703,6 +777,7 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async applyQuotaSettings(revision: number, settings: QuotaSettings): Promise<void> {
+    if (this.disposed) return;
     this.quotaSettingsRevision = revision;
     this.sharedQuotaSettingsReady = true;
     this.syncedQuotaSettingsFingerprint = this.quotaSettingsFingerprint(settings);
@@ -724,17 +799,26 @@ export class DashboardController implements vscode.Disposable {
     if (this.quotaSettingsFingerprint(current) === this.syncedQuotaSettingsFingerprint) return;
     this.applyingQuotaSettings = true;
     try {
+      if (this.disposed) return;
       const quota = vscode.workspace.getConfiguration("integratedPower.quota");
       const notifications = vscode.workspace.getConfiguration("integratedPower.notifications");
       const pollInterval = Math.min(60, Math.max(1, Math.round(settings.pollIntervalMs / 1000)));
       if (current.pollIntervalMs !== pollInterval * 1000) await quota.update("pollInterval", pollInterval, vscode.ConfigurationTarget.Global);
+      if (this.disposed) return;
       if (current.prewarmMode !== settings.prewarmMode) await quota.update("prewarmMode", settings.prewarmMode, vscode.ConfigurationTarget.Global);
+      if (this.disposed) return;
       if (current.prewarmModes.antigravity !== settings.prewarmModes.antigravity) await quota.update("prewarmModeGemini", settings.prewarmModes.antigravity, vscode.ConfigurationTarget.Global);
+      if (this.disposed) return;
       if (settings.prewarmModes.argon && current.prewarmModes.argon !== settings.prewarmModes.argon) await quota.update("prewarmModeArgon", settings.prewarmModes.argon, vscode.ConfigurationTarget.Global);
+      if (this.disposed) return;
       if (current.prewarmModes.opus !== settings.prewarmModes.opus) await quota.update("prewarmModeClaude", settings.prewarmModes.opus, vscode.ConfigurationTarget.Global);
+      if (this.disposed) return;
       if (current.prewarmModes.codex !== settings.prewarmModes.codex) await quota.update("prewarmModeChatGPT", settings.prewarmModes.codex, vscode.ConfigurationTarget.Global);
+      if (this.disposed) return;
       if (current.notifyOnFull !== settings.notifyOnFull) await notifications.update("notifyOnFullTokens", settings.notifyOnFull, vscode.ConfigurationTarget.Global);
+      if (this.disposed) return;
       for (const key of QUOTA_NOTIFICATION_KEYS) {
+        if (this.disposed) return;
         if (current.notifications[key] !== settings.notifications[key]) {
           await notifications.update(key, settings.notifications[key], vscode.ConfigurationTarget.Global);
         }
@@ -742,7 +826,9 @@ export class DashboardController implements vscode.Disposable {
     } finally {
       this.applyingQuotaSettings = false;
     }
-    this.restartTokenPolling();
+    if (!this.disposed) {
+      this.restartTokenPolling();
+    }
   }
 
   private async persistLocalQuotaSettings(): Promise<void> {
@@ -753,13 +839,14 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async writeSharedQuotaSettings(settings: QuotaSettings): Promise<boolean> {
-    if (!this.brokerController || this.quotaSettingsRevision === undefined) return false;
+    if (this.disposed || !this.brokerController || this.quotaSettingsRevision === undefined) return false;
     try {
       const result = await this.brokerController.getClient().putQuotaSettings({
         expectedRevision: this.quotaSettingsRevision,
         idempotencyKey: randomUUID(),
         settings,
       });
+      if (this.disposed) return false;
       if (result.conflict) {
         await this.applyQuotaSettings(result.revision, result.settings);
         return false;
@@ -771,23 +858,32 @@ export class DashboardController implements vscode.Disposable {
       await this.applyQuotaSettings(result.revision, result.settings);
       return true;
     } catch (error) {
-      this.output.appendLine(`[quota settings] Shared settings save failed: ${this.errorMessage(error)}`);
+      if (!this.disposed) {
+        this.output.appendLine(`[quota settings] Shared settings save failed: ${this.errorMessage(error)}`);
+      }
       return false;
     }
   }
 
   private restartTokenPolling(): void {
+    if (this.disposed) {
+      return;
+    }
     this.stopTokenPolling(false);
     this.startTokenPolling();
   }
 
   private startTokenPolling(): void {
-    if (this.tokenPollingTimer) {
+    if (this.disposed || this.tokenPollingTimer) {
       return;
     }
 
     const interval = this.getPollIntervalMs();
     this.tokenPollingTimer = setInterval(async () => {
+      if (this.disposed) {
+        this.stopTokenPolling(false);
+        return;
+      }
       if (this.isRefreshing || this.isTokenRefreshing) {
         return;
       }
@@ -799,6 +895,7 @@ export class DashboardController implements vscode.Disposable {
         // Silent periodic background refresh
       }
     }, interval);
+    this.tokenPollingTimer.unref?.();
   }
 
   private stopTokenPolling(_triggerFinalRefresh: boolean): void {
@@ -916,6 +1013,7 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async refreshTokenStatus(generation: number, force: boolean = false): Promise<void> {
+    if (this.disposed) return;
     if (this.isTokenRefreshing && !force) return;
     this.isTokenRefreshing = true;
     try {
@@ -923,6 +1021,7 @@ export class DashboardController implements vscode.Disposable {
         refreshQuota: true,
         forceRefresh: force,
       });
+      if (this.disposed) return;
 
       const previousTokenStatus = this.state.tokenStatus;
       const safeTokenStatus: TokenStatus | undefined = this.mergeTokenStatus(previousTokenStatus, tokenStatus);
@@ -940,10 +1039,11 @@ export class DashboardController implements vscode.Disposable {
         updatedAt: new Date().toISOString(),
       };
       this.postState();
-      if (safeTokenStatus) {
+      if (safeTokenStatus && !this.disposed) {
         void this.checkAutoPrewarm(safeTokenStatus);
       }
     } catch (error) {
+      if (this.disposed) return;
       const message = this.errorMessage(error);
       this.output.appendLine(`[token refresh failed] ${message}`);
       this.state = {
@@ -1339,6 +1439,9 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private postState(): void {
+    if (this.disposed) {
+      return;
+    }
     this.postMessage({
       type: "state",
       state: this.state,
@@ -1347,6 +1450,9 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private scheduleWriteDashboardState(state: DashboardState): void {
+    if (this.disposed) {
+      return;
+    }
     this.pendingWriteState = state;
     if (this.writeTimer) {
       clearTimeout(this.writeTimer);
@@ -1354,13 +1460,17 @@ export class DashboardController implements vscode.Disposable {
     this.writeTimer = setTimeout(() => {
       this.writeTimer = undefined;
       const stateToWrite = this.pendingWriteState;
-      if (stateToWrite) {
+      if (stateToWrite && !this.disposed) {
         void this.writeDashboardState(stateToWrite);
       }
     }, 500);
+    this.writeTimer.unref?.();
   }
 
   private async writeDashboardState(state: DashboardState): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
     const uri = this.paths.dashboardStateUri();
     if (!uri) {
       return;
@@ -1368,13 +1478,21 @@ export class DashboardController implements vscode.Disposable {
 
     try {
       const json = `${JSON.stringify(state, null, 2)}\n`;
+      if (this.disposed) {
+        return;
+      }
       await vscode.workspace.fs.writeFile(uri, Buffer.from(json, "utf8"));
     } catch (error) {
-      this.output.appendLine(`[dashboard state write failed] ${this.errorMessage(error)}`);
+      if (!this.disposed) {
+        this.output.appendLine(`[dashboard state write failed] ${this.errorMessage(error)}`);
+      }
     }
   }
 
   private postError(message: string): void {
+    if (this.disposed) {
+      return;
+    }
     this.postMessage({
       type: "error",
       message,
@@ -1881,11 +1999,13 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async checkAutoPrewarm(status: TokenStatus | undefined): Promise<void> {
+    if (this.disposed) return;
     if (!this.sharedQuotaSettingsCapabilityKnown || this.sharedQuotaSettingsSupported) return;
     if (!status) return;
 
     const targets = ["antigravity", "argon", "opus", "codex"];
     for (const target of targets) {
+      if (this.disposed) return;
       const targetMode = this.currentPrewarmModes[target] || "click";
       if (targetMode === "click") {
         continue;
@@ -1897,12 +2017,15 @@ export class DashboardController implements vscode.Disposable {
         this.output.appendLine(`[prewarm] Auto-triggering pre-warm in mode '${targetMode}' for ${check.label}`);
         await this.handlePrewarm(target, windowType, false);
 
+        if (this.disposed) return;
         if (targetMode === "once") {
           this.output.appendLine(`[prewarm] 'Once Pre-warm' executed for ${check.label}. Reverting target mode to 'click'.`);
           await this.setPrewarmMode("click", target);
-          void vscode.window.showInformationMessage(
-            `[Integrated Power] Once Pre-warm executed for ${check.label}. Mode returned to 'Click to Pre-warm'.`
-          );
+          if (!this.disposed) {
+            void vscode.window.showInformationMessage(
+              `[Integrated Power] Once Pre-warm executed for ${check.label}. Mode returned to 'Click to Pre-warm'.`
+            );
+          }
         }
       }
     }

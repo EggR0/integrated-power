@@ -30,6 +30,9 @@ dist/
 *.zip
 *.log
 *.bak_*
+*.orig_bak
+__pycache__/
+*.pyc
 .pnpm-store/
 .tmp-*
 coverage/

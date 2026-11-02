@@ -5,6 +5,7 @@ import * as path from "path";
 import * as cp from "child_process";
 import * as crypto from "crypto";
 import { BrokerConflictError, IntegratedPowerBroker } from "./broker";
+import { HubController } from "./hub/hubController";
 import { CreateTaskInput, DelegateTaskInput } from "./protocol";
 import { integratedPowerProtocolBoundary } from "./protocols";
 import { processMcpRequest } from "./mcpServer";
@@ -25,6 +26,7 @@ export const BROKER_CAPABILITIES = [
   "tasks.read", "tasks.write", "approvals.read", "approvals.userDecision", "tokens.read",
   "providers.external", "quota.prewarm", "workspaces.read", "runs.read", "metrics.localLlm.read",
   "quota.settings.read", "quota.settings.write", "quota.notifications.claim",
+  "hub.read", "hub.write", "hub.dispatch",
 ];
 const sharedQuota = require(path.join(__dirname, "shared-quota.js")) as {
   detectRefilledQuotaWindows(previous: unknown, current: unknown, alreadyNotified: Set<string> | readonly string[]): {
@@ -83,6 +85,8 @@ export async function startBrokerServer(
   options: BrokerServerOptions = {},
 ): Promise<BrokerServerHandle> {
   const stateRoot = path.resolve(options.stateRoot ?? resolveIntegratedPowerStateRoot());
+  const hubController = broker.hubController ?? new HubController(stateRoot, broker);
+  if (!broker.hubController) broker.hubController = hubController;
   const quotaSettingsStore = new QuotaSettingsStore(stateRoot);
   const readTokenStatus = options.tokenStatusReader ?? (() => scanLiveTokenStatus());
   const dispatchPrewarm = options.prewarmDispatcher ?? spawnPrewarm;
@@ -496,6 +500,54 @@ export async function startBrokerServer(
       if (request.method === "GET" && url.pathname === "/v1/tags") {
         return send(response, 200, { tags: broker.getAllTags() });
       }
+      if (request.method === "GET" && url.pathname === "/v1/hub/overview") {
+        const force = url.searchParams.get("refresh") === "1" || url.searchParams.get("force") === "1";
+        return send(response, 200, await hubController.getOverview(force));
+      }
+      if (request.method === "GET" && url.pathname === "/v1/hub/ecosystem") {
+        const force = url.searchParams.get("refresh") === "1" || url.searchParams.get("force") === "1";
+        const overview = await hubController.getOverview(force);
+        return send(response, 200, overview.ecosystem);
+      }
+      if (request.method === "GET" && url.pathname === "/v1/hub/config") {
+        return send(response, 200, (await hubController.getOverview()).config);
+      }
+      if ((request.method === "PUT" || request.method === "POST") && url.pathname === "/v1/hub/config") {
+        const partial = await readJson(request) as any;
+        return send(response, 200, hubController.updateConfig(partial));
+      }
+      if (request.method === "POST" && url.pathname === "/v1/hub/ingest") {
+        const body = await readJson(request) as any;
+        const item = await hubController.ingestTodo(body);
+        return send(response, 201, { ok: true, todo: item });
+      }
+      if (request.method === "POST" && url.pathname === "/v1/hub/todos/sync") {
+        return send(response, 200, await hubController.syncTodos());
+      }
+      if (request.method === "GET" && url.pathname === "/v1/hub/todos") {
+        return send(response, 200, { todos: hubController.getTodos() });
+      }
+      if (request.method === "POST" && /^\/v1\/hub\/todos\/([^/]+)\/clarify$/.test(url.pathname)) {
+        const match = url.pathname.match(/^\/v1\/hub\/todos\/([^/]+)\/clarify$/)!;
+        const id = decodeURIComponent(match[1]);
+        const body = await readJson(request) as any;
+        return send(response, 200, { ok: true, todo: await hubController.clarifyTodo(id, body) });
+      }
+      if (request.method === "POST" && /^\/v1\/hub\/todos\/([^/]+)\/dispatch$/.test(url.pathname)) {
+        const match = url.pathname.match(/^\/v1\/hub\/todos\/([^/]+)\/dispatch$/)!;
+        const id = decodeURIComponent(match[1]);
+        const body = await readJson(request) as any;
+        const tokenSnapshot = body?.tokenSnapshot ?? await readTokenStatus().catch(() => undefined);
+        const res = await hubController.dispatchTodo(id, { ...body, tokenSnapshot });
+        return send(response, 200, { ok: true, ...res });
+      }
+      if (request.method === "GET" && url.pathname === "/v1/hub/playbooks") {
+        return send(response, 200, { playbooks: (await hubController.getOverview()).playbooks });
+      }
+      if (request.method === "POST" && url.pathname === "/v1/hub/playbooks") {
+        const body = await readJson(request) as any;
+        return send(response, 200, { ok: true, playbook: hubController.savePlaybook(body) });
+      }
       return send(response, 404, { error: "not_found" });
     } catch (error) {
       if (error instanceof BrokerConflictError) {
@@ -557,7 +609,10 @@ export async function startBrokerServer(
     port,
     close: () => {
       if (schedulerTimer) clearInterval(schedulerTimer);
-      return new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      const result = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      (server as http.Server & { closeIdleConnections?: () => void; closeAllConnections?: () => void }).closeIdleConnections?.();
+      (server as http.Server & { closeIdleConnections?: () => void; closeAllConnections?: () => void }).closeAllConnections?.();
+      return result;
     },
   };
 }

@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import * as http from "http";
 import { IntegratedPowerBroker } from "./broker";
+import { HubController } from "./hub/hubController";
 import { CreateTaskInput, DelegateTaskInput } from "./protocol";
 import { integratedPowerProtocolBoundary } from "./protocols";
 import { scanLiveTokenStatus } from "./tokenScanner";
@@ -133,9 +134,44 @@ async function callTool(broker: IntegratedPowerBroker, name: string, args: Recor
       return await tokenStatusReader();
     case "integrated_power_synthesize":
       return { event: await broker.synthesize({ taskId: String(args.taskId), provider: args.provider ?? "google.antigravity.ide", content: String(args.content ?? ""), dissent: Array.isArray(args.dissent) ? args.dissent.map(String) : [], confidence: Number(args.confidence ?? 1), evidenceIds: Array.isArray(args.evidenceIds) ? args.evidenceIds.map(String) : [], expectedRevision: targetRevision, idempotencyKey: args.idempotencyKey }) };
+    case "integrated_power_hub_overview": {
+      const hubController = resolveHubController(broker);
+      return await hubController.getOverview(Boolean(args.forceRefresh));
+    }
+    case "integrated_power_hub_ingest": {
+      const hubController = resolveHubController(broker);
+      return await hubController.ingestTodo({
+        text: String(args.text ?? ""),
+        categoryOverride: args.categoryOverride ? String(args.categoryOverride) : undefined,
+        allowManualCredit: Boolean(args.allowManualCredit),
+      });
+    }
+    case "integrated_power_hub_clarify": {
+      const hubController = resolveHubController(broker);
+      return await hubController.clarifyTodo(String(args.id), {
+        answers: Array.isArray(args.answers) ? args.answers : [],
+        learnedPreference: args.learnedPreference ? String(args.learnedPreference) : undefined,
+        learnedRule: args.learnedRule ? String(args.learnedRule) : undefined,
+      });
+    }
+    case "integrated_power_hub_dispatch": {
+      const hubController = resolveHubController(broker);
+      const tokenSnapshot = await tokenStatusReader().catch(() => undefined);
+      return await hubController.dispatchTodo(String(args.id), {
+        preferredProvider: args.preferredProvider,
+        executeNow: Boolean(args.executeNow),
+        tokenSnapshot,
+      });
+    }
     default:
       throw new Error(`Unknown Integrated Power MCP tool: ${name}`);
   }
+}
+
+function resolveHubController(broker: IntegratedPowerBroker): HubController {
+  if (broker.hubController) return broker.hubController;
+  broker.hubController = new HubController(undefined, broker);
+  return broker.hubController;
 }
 
 function optionalRevision(value: unknown): number | undefined {

@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import type { HubController } from "./hub/hubController";
 import { EventLedger } from "./ledger";
 import {
   AgentAdapter,
@@ -32,6 +33,7 @@ export class BrokerConflictError extends Error {
 }
 
 export class IntegratedPowerBroker {
+  public hubController?: HubController;
   private readonly adapters = new Map<string, AgentAdapter>();
   private readonly capabilities = new Map<string, AgentCapability>();
   private readonly tasks = new Map<string, TaskEnvelope>();

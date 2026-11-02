@@ -459,14 +459,20 @@ export async function fetchLiveCodexRateLimits(force = false): Promise<LiveCodex
   return new Promise((resolve) => {
     let settled = false;
     let child: ChildProcess | undefined;
+    let rl: readline.Interface | undefined;
 
     const finish = (res?: LiveCodexRateLimits) => {
       if (!settled) {
         settled = true;
+        try { rl?.close(); } catch {}
         if (child) {
+          try { child.stdin?.end(); } catch {}
+          try { child.stdin?.destroy(); } catch {}
+          try { child.stdout?.destroy(); } catch {}
           try {
             if (!child.killed) child.kill();
           } catch {}
+          try { child.unref(); } catch {}
         }
         if (res) {
           cachedCodexRateLimits = { fetchedAt: Date.now(), data: res };
@@ -476,6 +482,7 @@ export async function fetchLiveCodexRateLimits(force = false): Promise<LiveCodex
     };
 
     const timer = setTimeout(() => finish(undefined), 3500);
+    timer.unref?.();
 
     try {
       child = spawn(codexCli, ["app-server", "--listen", "stdio://"], {
@@ -499,7 +506,7 @@ export async function fetchLiveCodexRateLimits(force = false): Promise<LiveCodex
       finish(undefined);
     });
 
-    const rl = readline.createInterface({ input: activeChild.stdout! });
+    rl = readline.createInterface({ input: activeChild.stdout! });
     let nextId = 1;
 
     const sendRpc = (method: string, params: any) => {

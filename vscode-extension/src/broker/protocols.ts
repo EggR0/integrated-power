@@ -125,6 +125,26 @@ export const integratedPowerProtocolBoundary: IntegratedPowerProtocolBoundary = 
         description: "Persist a synthesis with dissent, confidence, and evidence references.",
         inputSchema: { type: "object", properties: { taskId: { type: "string" }, provider: { type: "string" }, content: { type: "string" }, dissent: { type: "array", items: { type: "string" } }, confidence: { type: "number" }, evidenceIds: { type: "array", items: { type: "string" } }, expectedRevision: { type: "integer" }, idempotencyKey: { type: "string" } }, required: ["taskId", "provider", "content", "confidence", "expectedRevision"] },
       },
+      {
+        name: "integrated_power_hub_overview",
+        description: "Fetch complete Hub ecosystem, todo, and playbook overview.",
+        inputSchema: { type: "object", properties: { forceRefresh: { type: "boolean" } } },
+      },
+      {
+        name: "integrated_power_hub_ingest",
+        description: "Ingest a new todo item into the canonical Hub with triage and ambiguity scoring.",
+        inputSchema: { type: "object", properties: { text: { type: "string" }, categoryOverride: { type: "string" }, allowManualCredit: { type: "boolean" } }, required: ["text"] },
+      },
+      {
+        name: "integrated_power_hub_clarify",
+        description: "Answer clarification questions for an ambiguous Hub todo and update learned playbooks.",
+        inputSchema: { type: "object", properties: { id: { type: "string" }, answers: { type: "array", items: { type: "object" } }, learnedPreference: { type: "string" }, learnedRule: { type: "string" } }, required: ["id"] },
+      },
+      {
+        name: "integrated_power_hub_dispatch",
+        description: "Dispatch a ready Hub todo to the optimal provider adhering to privacy firewall and quota cascading.",
+        inputSchema: { type: "object", properties: { id: { type: "string" }, preferredProvider: { type: "string" }, executeNow: { type: "boolean" } }, required: ["id"] },
+      },
     ],
   },
   a2a: { agentCardPath: "/.well-known/agent-card.json", taskEndpoint: "/message:send", protocolVersion: "1.0" },
