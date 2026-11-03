@@ -125,9 +125,46 @@ export class AgyQuotaClient {
     if (typeof value === 'string') {
       if (/^\d+$/.test(value)) return this.expiryEpoch(Number(value));
       const parsed = Date.parse(value);
-      if (!Number.isNaN(parsed)) return Math.floor(parsed / 1000);
+      if (!Number.isNaN(parsed)) {
+        const epochSec = Math.floor(parsed / 1000);
+        const nowSec = Math.floor(Date.now() / 1000);
+        // OAuth access tokens expire in 1 hour (3600s).
+        // If an expiry claim is more than 3660s into the future, it is timezone-corrupted or invalid.
+        if (epochSec > nowSec + 3660) {
+          return 0; // Force refresh
+        }
+        return epochSec;
+      }
     }
     return 0;
+  }
+
+  public async writeCredential(
+    target: string,
+    email: string,
+    accessToken: string,
+    refreshToken: string,
+    expiresIn: number = 3599
+  ): Promise<void> {
+    const script = path.join(this.extensionPath, 'scripts', 'write-agy-credential.ps1');
+    try {
+      await this.execFileAsync(
+        'cmd.exe',
+        [
+          '/c', 'chcp', '65001', '>nul', '&&',
+          'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+          '-File', script,
+          '-Target', target,
+          '-Email', email,
+          '-AccessToken', accessToken,
+          '-RefreshToken', refreshToken,
+          '-ExpiresIn', String(expiresIn),
+        ],
+        { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 15000 }
+      );
+    } catch {
+      // Non-fatal if credential writing fails
+    }
   }
 
   public tokenIsValid(token: any): boolean {
@@ -252,6 +289,10 @@ export class AgyQuotaClient {
                 };
               } else if (rawToken.refresh_token) {
                 token = await this.refreshAccessToken(rawToken.refresh_token, agyPath);
+                await this.writeCredential(`gemini:antigravity:${email}`, email, token.access_token, rawToken.refresh_token);
+                if (isIdeActive) {
+                  await this.writeCredential('gemini:antigravity', email, token.access_token, rawToken.refresh_token);
+                }
               }
             }
             if (token) {
@@ -270,27 +311,58 @@ export class AgyQuotaClient {
             return;
           }
 
+          let currentToken = token;
           const headers = {
-            Authorization: `Bearer ${token.access_token}`,
+            Authorization: `Bearer ${currentToken.access_token}`,
             'Content-Type': 'application/json',
             Accept: 'application/json',
             'User-Agent': userAgent,
           };
 
-          const accountRes = await this.requestJson(`${API_BASE}:loadCodeAssist`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
+          const rawTokenRef = credData.token;
+          const executeWith401Recovery = async (url: string, bodyJson: any) => {
+            try {
+              return await this.requestJson(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(bodyJson),
+              });
+            } catch (err: any) {
+              const msg = String(err?.message || err);
+              if ((msg.includes('HTTP 401') || msg.includes('authentication credentials')) && rawTokenRef?.refresh_token) {
+                AgyQuotaClient.inMemoryCachedTokens.delete(email);
+                const fresh = await this.refreshAccessToken(rawTokenRef.refresh_token, agyPath);
+                currentToken = fresh;
+                token = fresh;
+                headers.Authorization = `Bearer ${fresh.access_token}`;
+                const newKey = createHash('sha256').update(String(rawTokenRef.refresh_token)).digest('hex');
+                AgyQuotaClient.inMemoryCachedTokens.set(email, { token: fresh, credentialKey: newKey });
+
+                await this.writeCredential(`gemini:antigravity:${email}`, email, fresh.access_token, rawTokenRef.refresh_token);
+                if (isIdeActive) {
+                  await this.writeCredential('gemini:antigravity', email, fresh.access_token, rawTokenRef.refresh_token);
+                }
+
+                return await this.requestJson(url, {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify(bodyJson),
+                });
+              }
+              throw err;
+            }
+          };
+
+          const accountRes = await executeWith401Recovery(`${API_BASE}:loadCodeAssist`, {
+            metadata: { ideType: 'ANTIGRAVITY' },
           });
 
           if (!accountRes.cloudaicompanionProject) {
             throw new Error('Cloud Code did not return a quota project.');
           }
 
-          const quotaRes = await this.requestJson(`${API_BASE}:retrieveUserQuotaSummary`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ project: accountRes.cloudaicompanionProject }),
+          const quotaRes = await executeWith401Recovery(`${API_BASE}:retrieveUserQuotaSummary`, {
+            project: accountRes.cloudaicompanionProject,
           });
 
           if (!Array.isArray(quotaRes.groups)) {
@@ -457,34 +529,62 @@ export class AgyQuotaClient {
     const credential = await this.readCredential('gemini:antigravity');
     const identityMaterial = String(credential.token.refresh_token || credential.token.access_token || '');
     if (!identityMaterial) throw new AgyNotAuthenticatedError('The agy credential has no account token. Sign in to agy again.');
-    const credentialKey = createHash('sha256').update(identityMaterial).digest('hex');
     let token: QuotaToken | undefined;
     if (this.tokenIsValid(credential.token)) token = credential.token;
-    else token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
+    else {
+      token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
+      if (credential.id_token_email) {
+        await this.writeCredential('gemini:antigravity', credential.id_token_email, token.access_token, credential.token.refresh_token);
+        await this.writeCredential(`gemini:antigravity:${credential.id_token_email}`, credential.id_token_email, token.access_token, credential.token.refresh_token);
+      }
+    }
     if (!token) throw new AgyNotAuthenticatedError('The agy credential could not provide a valid account token. Sign in to agy again.');
 
     const version = await this.agyVersion(agyPath);
     const userAgent = `antigravity/cli/${version} windows/amd64`;
-    const headers = {
+    let headers = {
       Authorization: `Bearer ${token.access_token}`,
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'User-Agent': userAgent,
     };
 
-    const account = await this.requestJson(`${API_BASE}:loadCodeAssist`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } }),
+    const executeFallbackRequest = async (url: string, bodyJson: any) => {
+      try {
+        return await this.requestJson(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(bodyJson),
+        });
+      } catch (err: any) {
+        const msg = String(err?.message || err);
+        if ((msg.includes('HTTP 401') || msg.includes('authentication credentials')) && credential.token?.refresh_token) {
+          const fresh = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
+          token = fresh;
+          headers.Authorization = `Bearer ${fresh.access_token}`;
+          if (credential.id_token_email) {
+            await this.writeCredential('gemini:antigravity', credential.id_token_email, fresh.access_token, credential.token.refresh_token);
+            await this.writeCredential(`gemini:antigravity:${credential.id_token_email}`, credential.id_token_email, fresh.access_token, credential.token.refresh_token);
+          }
+          return await this.requestJson(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(bodyJson),
+          });
+        }
+        throw err;
+      }
+    };
+
+    const account = await executeFallbackRequest(`${API_BASE}:loadCodeAssist`, {
+      metadata: { ideType: 'ANTIGRAVITY' },
     });
     if (!account.cloudaicompanionProject) {
       throw new Error('Cloud Code did not return a quota project.');
     }
 
-    const quota = await this.requestJson(`${API_BASE}:retrieveUserQuotaSummary`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ project: account.cloudaicompanionProject }),
+    const quota = await executeFallbackRequest(`${API_BASE}:retrieveUserQuotaSummary`, {
+      project: account.cloudaicompanionProject,
     });
 
     return {
