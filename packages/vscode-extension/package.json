@@ -1,0 +1,364 @@
+{
+  "name": "integrated-power",
+  "publisher": "EggR0",
+  "displayName": "Integrated Power",
+  "description": "Multi-AI broker orchestration, token tracking, and local compute manager for Antigravity IDE and VS Code.",
+  "version": "0.14.0",
+  "author": {
+    "name": "EggR0"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "icon": "images/integrated-power.png",
+  "galleryBanner": {
+    "color": "#121632",
+    "theme": "dark"
+  },
+  "preview": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EggR0/integrated-power.git"
+  },
+  "homepage": "https://github.com/EggR0/integrated-power#readme",
+  "bugs": {
+    "url": "https://github.com/EggR0/integrated-power/issues"
+  },
+  "keywords": [
+    "integrated power",
+    "integratedpower",
+    "eggr",
+    "antigravity",
+    "antigravity ide",
+    "ai usage",
+    "agent dashboard",
+    "token usage",
+    "quota",
+    "local llm",
+    "gpu",
+    "vram",
+    "orchestration",
+    "windows 11"
+  ],
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Visualization",
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Integrated Power",
+      "properties": {
+        "integratedPower.view.showAntigravity": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Antigravity IDE capacity section in the dashboard."
+        },
+        "integratedPower.view.showCodex": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Codex capacity section in the dashboard."
+        },
+        "integratedPower.view.showClaude": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Anthropic Claude capacity section in the dashboard."
+        },
+        "integratedPower.view.showLocalLlm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Local LLM capacity section in the dashboard."
+        },
+        "integratedPower.view.showQueue": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the AI Work Queue panel in the dashboard."
+        },
+        "integratedPower.view.showMetrics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Recent Metrics panel in the dashboard."
+        },
+        "integratedPower.view.showErrors": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Errors panel in the dashboard."
+        },
+        "integratedPower.notifications.notifyOnFullTokens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send an IDE notification when individual AI model token quotas recharge to 100%."
+        },
+        "integratedPower.notifications.antigravityGemini5h": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Antigravity IDE Gemini 5-hour quota recharges to 100%."
+        },
+        "integratedPower.notifications.antigravityGeminiWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Antigravity IDE Gemini weekly quota recharges to 100%."
+        },
+        "integratedPower.notifications.antigravityClaude5h": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Antigravity IDE Claude 5-hour quota recharges to 100%."
+        },
+        "integratedPower.notifications.antigravityClaudeWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Antigravity IDE Claude weekly quota recharges to 100%."
+        },
+        "integratedPower.notifications.chatgpt5h": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when ChatGPT 5-hour quota recharges to 100%."
+        },
+        "integratedPower.notifications.chatgptWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when ChatGPT weekly quota recharges to 100%."
+        },
+        "integratedPower.notifications.claude5h": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Claude 5-hour quota recharges to 100%."
+        },
+        "integratedPower.notifications.claudeWeekly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when Claude weekly quota recharges to 100%."
+        },
+        "integratedPower.system.autoStartOnBoot": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically launch Integrated Power background broker on Windows startup."
+        },
+        "integratedPower.quota.prewarmMode": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "enumDescriptions": [
+            "Click to Pre-warm: manual trigger on demand via [⚡ Pre-warm] button.",
+            "Always Pre-warm: automatically trigger pre-warm whenever 5-hour quota reaches 100% Ready.",
+            "Once Pre-warm: automatically trigger pre-warm once on the next 100% Ready window, then revert to Click."
+          ],
+          "default": "click",
+          "description": "Global default 5-hour quota pre-warm automation mode (Click, Always, or Once)."
+        },
+        "integratedPower.quota.prewarmModeGemini": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "default": "click",
+          "description": "5-hour quota pre-warm automation mode for Google Gemini (Antigravity IDE)."
+        },
+        "integratedPower.quota.prewarmModeArgon": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "default": "click",
+          "description": "Quota pre-warm automation mode for Gemini 4 Argon (Antigravity IDE)."
+        },
+        "integratedPower.quota.prewarmModeClaude": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "default": "click",
+          "description": "5-hour quota pre-warm automation mode for Anthropic Claude."
+        },
+        "integratedPower.quota.prewarmModeChatGPT": {
+          "type": "string",
+          "enum": [
+            "click",
+            "always",
+            "once"
+          ],
+          "default": "click",
+          "description": "5-hour quota pre-warm automation mode for OpenAI ChatGPT / Codex."
+        },
+        "integratedPower.quota.pollInterval": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Interval in seconds to refresh AI quota telemetry (1s to 60s, default 5s)."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "integratedPower",
+          "title": "Integrated Power",
+          "icon": "$(rocket)"
+        }
+      ]
+    },
+    "views": {
+      "integratedPower": [
+        {
+          "type": "webview",
+          "id": "integratedPower.agentRunsDashboard",
+          "name": "Agent Runs Dashboard",
+          "icon": "$(dashboard)"
+        }
+      ]
+    },
+    "commands": [
+        {
+          "command": "integratedPower.agentRuns.refresh",
+          "title": "Refresh Agent Runs Dashboard",
+          "icon": "$(refresh)"
+        },
+        {
+          "command": "integratedPower.agentRuns.openCompact",
+          "title": "Integrated Power: Open Compact Toolbar Panel",
+          "icon": "$(pulse)"
+        },
+      {
+        "command": "integratedPower.agentRuns.openRunsFile",
+        "title": "Open Runs JSONL File",
+        "icon": "$(json)"
+      },
+      {
+        "command": "integratedPower.addTaskToQueue",
+        "title": "Integrated Power: Add Task to Work Queue",
+        "icon": "$(add)"
+      },
+      {
+        "command": "integratedPower.agentRuns.configureViews",
+        "title": "Antigravity IDE: Configure Dashboard Views"
+      },
+      {
+        "command": "integratedPower.antigravity.syncHistory",
+        "title": "Antigravity IDE: Sync & Restore Conversation History",
+        "icon": "$(history)"
+      },
+      {
+        "command": "integratedPower.antigravity.repairAndRestart",
+        "title": "Antigravity IDE: Repair Conversation History & Restart",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "integratedPower.eggr.installOrUpdateOrchestrator",
+        "title": "Integrated Power: Install or Update Integrated Orchestrator"
+      },
+      {
+        "command": "integratedPower.eggr.openConfigurationCenter",
+        "title": "Integrated Power: Open Configuration Center"
+      },
+      {
+        "command": "integratedPower.eggr.runFirstRunSetup",
+        "title": "Integrated Power: Run First-Run Setup"
+      },
+      {
+        "command": "integratedPower.eggr.runDashboardSetup",
+        "title": "Integrated Power: Configure Dashboard"
+      },
+      {
+        "command": "integratedPower.eggr.runOrchestratorSetup",
+        "title": "Integrated Power: Configure Integrated Orchestrator"
+      },
+      {
+        "command": "integratedPower.eggr.runPrivateKnowledgeSetup",
+        "title": "Integrated Power: Configure Private Git Knowledge"
+      },
+      {
+        "command": "integratedPower.broker.start",
+        "title": "Integrated Power: Start Multi-AI Broker"
+      },
+      {
+        "command": "integratedPower.broker.openDashboard",
+        "title": "Integrated Power: Open Broker Tasks"
+      },
+      {
+        "command": "integratedPower.broker.showLogs",
+        "title": "Integrated Power: Show Broker Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "integratedPower.local.startDModelServer",
+        "title": "Integrated Power: Start D: Local Model Server"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "integratedPower.agentRuns.openCompact"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "integratedPower.agentRuns.refresh",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        },
+        {
+          "command": "integratedPower.agentRuns.openRunsFile",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        },
+        {
+          "command": "integratedPower.antigravity.repairAndRestart",
+          "when": "view == integratedPower.agentRunsDashboard",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile && node ./scripts/build-extension.js",
+    "compile": "tsc -p ./ && node ./scripts/build-broker-package.js && node ./scripts/write-broker-manifest.js",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run test:reuse && node ./scripts/test-quota-core.js && node ./scripts/test-token-manager-headless.js && npm run compile && node ./scripts/test-compact-ui.js && node ./scripts/test-dashboard-broker-flow.js && node ./scripts/test-dashboard-approval-revision.js && node ./scripts/test-prewarm.js && node ./scripts/test-runtime-background-token.js && node ./scripts/test-first-run-onboarding.js && node ./scripts/run-headless-tests.js && node ./scripts/run-broker-tests.js && npm run test:powershell",
+    "test:ui": "node ./scripts/test-compact-ui.js && node ./scripts/test-dashboard-broker-flow.js && node ./scripts/test-dashboard-approval-revision.js && node ./scripts/test-token-manager-headless.js",
+    "test:broker": "node ./scripts/run-broker-tests.js",
+    "test:quota": "node ./scripts/test-quota-core.js",
+    "test:onboarding": "node ./scripts/test-first-run-onboarding.js",
+    "test:reuse": "node ./scripts/run-reuse-gate.js && node ./scripts/test-gpu-selection.js",
+    "test:powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-LocalLLMInventory.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/tests/Test-OnboardingMigration.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./assets/ip-orchestrator-plugin/skills/ip-orchestrator/scripts/tests/Invoke-LocalLLM.Tests.ps1",
+    "test:extension": "npm run compile && node ./out/test/runTest.js",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.6",
+    "typescript": "^5.1.3"
+  },
+  "dependencies": {
+    "@ag-ui/core": "^0.0.57",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "gray-matter": "^4.0.3",
+    "zod": "^4.4.3"
+  },
+  "optionalDependencies": {
+    "@a2a-js/sdk": "1.0.1",
+    "better-sqlite3-multiple-ciphers": "13.0.3"
+  }
+}

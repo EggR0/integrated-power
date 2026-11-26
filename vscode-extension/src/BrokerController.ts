@@ -4,7 +4,7 @@ import * as vscode from "vscode";
 import * as http from "http";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { IntegratedPowerBroker, BrokerClient, BrokerHealth, createPreferredEventLedger, createFirstWaveAdapters, startBrokerServer, BrokerServerHandle, loadExistingLedgerKey, loadOrCreateLedgerKey, migrateBrokerLedgers, getCanonicalBrokerLedgerPath } from "./broker";
+import { IntegratedPowerBroker, BrokerClient, BrokerHealth, createPreferredEventLedger, createFirstWaveAdapters, startBrokerServer, BrokerServerHandle, loadExistingLedgerKey, loadOrCreateLedgerKey, migrateBrokerLedgers, getCanonicalBrokerLedgerPath, resolveStaticDirectory } from "./broker";
 import { resolveIntegratedPowerStateRoot } from "./storagePath";
 
 const execFileAsync = promisify(execFile);
@@ -48,47 +48,59 @@ export class BrokerController implements vscode.Disposable {
       }
       return;
     }
-    const canonicalLedgerBase = getCanonicalBrokerLedgerPath();
-    const canonicalLedgerPath = existingLedgerPath(canonicalLedgerBase);
-    const canonicalExists = fs.existsSync(canonicalLedgerPath);
-    const stateRoot = resolveIntegratedPowerStateRoot();
-    const legacyBases = [
-      path.join(stateRoot, "events.enc.jsonl"),
-      path.join(context.globalStorageUri.fsPath, "broker", "events.enc.jsonl"),
-    ];
-    const candidateSet = new Set(legacyBases.flatMap(existingLedgerCandidates));
-    candidateSet.delete(canonicalLedgerPath);
-    const legacyLedgers = [...candidateSet].map((sourcePath) => {
-      const key = loadExistingLedgerKey(`${sourcePath}.key`);
-      if (!key) throw new Error(`Legacy broker ledger key was not found for ${sourcePath}. Both the ledger and existing state were preserved.`);
-      return { path: sourcePath, key };
-    });
-    let canonicalLedgerKey: Buffer | undefined;
-    await migrateBrokerLedgers(legacyLedgers, canonicalLedgerPath, (destinationPath, exists) => {
-      const key = exists
-        ? loadExistingLedgerKey(`${destinationPath}.key`)
-        : loadOrCreateLedgerKey(`${canonicalLedgerBase}.key`);
-      if (!key) throw new Error(`Canonical broker ledger key was not found for ${destinationPath}. Existing state was preserved.`);
-      canonicalLedgerKey = key;
-      return key;
-    });
-    if (!canonicalLedgerKey) {
-      canonicalLedgerKey = canonicalExists
-        ? loadExistingLedgerKey(`${canonicalLedgerPath}.key`)
-        : loadOrCreateLedgerKey(`${canonicalLedgerBase}.key`);
-    }
-    if (!canonicalLedgerKey) throw new Error(`Canonical broker ledger key was not found for ${canonicalLedgerPath}. Existing state was preserved.`);
-    const ledger = createPreferredEventLedger(canonicalLedgerBase, canonicalLedgerKey);
-    this.broker = new IntegratedPowerBroker(ledger, createFirstWaveAdapters());
-    await this.broker.initialize();
     try {
-      this.server = await startBrokerServer(this.broker, port);
+      const canonicalLedgerBase = getCanonicalBrokerLedgerPath();
+      const canonicalLedgerPath = existingLedgerPath(canonicalLedgerBase);
+      const canonicalExists = fs.existsSync(canonicalLedgerPath);
+      const stateRoot = resolveIntegratedPowerStateRoot();
+      const legacyBases = [
+        path.join(stateRoot, "events.enc.jsonl"),
+        path.join(context.globalStorageUri.fsPath, "broker", "events.enc.jsonl"),
+      ];
+      const candidateSet = new Set(legacyBases.flatMap(existingLedgerCandidates));
+      candidateSet.delete(canonicalLedgerPath);
+      const legacyLedgers = [...candidateSet].map((sourcePath) => {
+        const key = loadExistingLedgerKey(`${sourcePath}.key`);
+        if (!key) throw new Error(`Legacy broker ledger key was not found for ${sourcePath}. Both the ledger and existing state were preserved.`);
+        return { path: sourcePath, key };
+      });
+      let canonicalLedgerKey: Buffer | undefined;
+      await migrateBrokerLedgers(legacyLedgers, canonicalLedgerPath, (destinationPath, exists) => {
+        const key = exists
+          ? loadExistingLedgerKey(`${destinationPath}.key`)
+          : loadOrCreateLedgerKey(`${canonicalLedgerBase}.key`);
+        if (!key) throw new Error(`Canonical broker ledger key was not found for ${destinationPath}. Existing state was preserved.`);
+        canonicalLedgerKey = key;
+        return key;
+      });
+      if (!canonicalLedgerKey) {
+        canonicalLedgerKey = canonicalExists
+          ? loadExistingLedgerKey(`${canonicalLedgerPath}.key`)
+          : loadOrCreateLedgerKey(`${canonicalLedgerBase}.key`);
+      }
+      if (!canonicalLedgerKey) throw new Error(`Canonical broker ledger key was not found for ${canonicalLedgerPath}. Existing state was preserved.`);
+      const ledger = createPreferredEventLedger(canonicalLedgerBase, canonicalLedgerKey);
+      this.broker = new IntegratedPowerBroker(ledger, createFirstWaveAdapters());
+      await this.broker.initialize();
+    } catch (error) {
+      this.log(`Broker ledger initialization error: ${error instanceof Error ? error.message : String(error)}`);
+      const fallbackHealth = await probeBroker(port);
+      if (fallbackHealth) {
+        this.server = { port, close: async () => undefined };
+        this.attachedHealth = fallbackHealth;
+        this.log(`Attached to existing broker running on 127.0.0.1:${port}`);
+        await context.globalState.update("integratedPower.broker.v1", { port, startedAt: new Date().toISOString(), bind: "127.0.0.1", attached: true });
+      }
+      return;
+    }
+    try {
+      this.server = await startBrokerServer(this.broker, port, { staticDir: resolveStaticDirectory() });
       this.log(`Broker successfully listening on http://127.0.0.1:${port}`);
     } catch (error) {
       const racedHealth = isAddressInUse(error) ? await probeBroker(port) : undefined;
       if (!racedHealth) {
         this.log(`Broker start error: ${error instanceof Error ? error.message : String(error)}`);
-        throw error;
+        return;
       }
       this.broker = undefined;
       this.server = { port, close: async () => undefined };
@@ -97,11 +109,13 @@ export class BrokerController implements vscode.Disposable {
         ? `Broker port ${port} in use, attached to compatible process.`
         : `Broker port ${port} belongs to an incompatible legacy process; it remains running. Health: ${JSON.stringify(racedHealth)}`);
     }
-    await context.globalState.update("integratedPower.broker.v1", {
-      port: this.server.port,
-      startedAt: new Date().toISOString(),
-      bind: "127.0.0.1",
-    });
+    if (this.server) {
+      await context.globalState.update("integratedPower.broker.v1", {
+        port: this.server.port,
+        startedAt: new Date().toISOString(),
+        bind: "127.0.0.1",
+      });
+    }
   }
 
   public getPort(): number | undefined { return this.server?.port; }
@@ -117,7 +131,7 @@ export class BrokerController implements vscode.Disposable {
     this.log(`Executing local model launcher script: ${script}`);
     const result = await execFileAsync(
       "powershell.exe",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script],
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", script],
       { windowsHide: true, timeout: 45_000, maxBuffer: 4 * 1024 * 1024 },
     );
     const stdout = String(result.stdout).trim();

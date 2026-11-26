@@ -20,7 +20,13 @@ function getSharedQuotaSource(env = process.env) {
   }
 
   const extensionRoot = getExtensionRoot();
-  return path.resolve(extensionRoot, "..", "shared", "quota", "index.ts");
+  const candidates = [
+    path.resolve(extensionRoot, "..", "shared", "quota", "index.ts"),
+    path.resolve(extensionRoot, "..", "..", "shared", "quota", "index.ts"),
+    path.resolve(extensionRoot, "..", "packages", "shared", "quota", "index.ts"),
+  ];
+  const found = candidates.find((c) => fs.existsSync(c));
+  return found || candidates[0];
 }
 
 module.exports = { getSharedQuotaSource };

@@ -1977,7 +1977,7 @@ export class TokenManager {
           timeout: options.timeoutMs ?? 10_000,
           maxBuffer: 1024 * 1024,
           windowsHide: true,
-          shell: options.shell ?? process.platform === "win32",
+          shell: options.shell ?? (process.platform === "win32" && /\.(cmd|bat)$/i.test(file)),
         },
         (error, stdout, stderr) => {
           const stdoutText = String(stdout ?? "");

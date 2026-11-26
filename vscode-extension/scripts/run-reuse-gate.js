@@ -7,7 +7,12 @@ const failures = [];
 const requireText = (relative, text) => { if (!read(relative).includes(text)) failures.push(`${relative} is missing required reuse marker: ${text}`); };
 const forbidText = (relative, text) => { if (read(relative).includes(text)) failures.push(`${relative} contains forbidden duplicate/unsafe implementation: ${text}`); };
 
-for (const file of ["..\\AGENTS.md", "..\\docs\\reuse-map.md", "..\\docs\\adr\\0001-reuse-boundaries.md"]) if (!fs.existsSync(path.join(root, file))) failures.push(`missing ${file}`);
+const repoRoot = fs.existsSync(path.join(root, "AGENTS.md"))
+  ? root
+  : fs.existsSync(path.join(root, "..", "AGENTS.md"))
+    ? path.resolve(root, "..")
+    : path.resolve(root, "..", "..");
+for (const file of ["AGENTS.md", "docs\\reuse-map.md", "docs\\adr\\0001-reuse-boundaries.md"]) if (!fs.existsSync(path.join(repoRoot, file))) failures.push(`missing ${file}`);
 requireText("src\\broker\\adapters.ts", "runLegacyLocalLlm");
 forbidText("src\\broker\\adapters.ts", "/api/generate");
 requireText("assets\\ip-orchestrator-plugin\\skills\\ip-orchestrator\\scripts\\Select-LocalLLMModel.ps1", "GpuUuid");

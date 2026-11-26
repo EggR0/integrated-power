@@ -17,7 +17,9 @@ const vm = require("vm");
 
 const extensionRoot = path.resolve(__dirname, "..");
 const bundlePath = path.join(extensionRoot, "webview", "quota-core.js");
-const ccMain = path.resolve(extensionRoot, "..", "control-center", "src", "main.js");
+const ccMainPrimary = path.resolve(extensionRoot, "..", "control-center", "src", "main.js");
+const ccMainFallback = path.resolve(extensionRoot, "..", "..", "integrated-power-control-center", "src", "main.js");
+const ccMain = fs.existsSync(ccMainPrimary) ? ccMainPrimary : ccMainFallback;
 
 function loadIIFE(file) {
   const sandbox = { window: {} };
@@ -644,7 +646,10 @@ test("control-center imports the shared quota source (no duplicated K logic)", (
   // via innerHTML at runtime.
   assert.ok(cc.includes("applyProviderVisibility"), "control-center must apply provider-block visibility (B5)");
   assert.ok(cc.includes("ip_provider_visibility"), "control-center must persist provider visibility in localStorage (B5)");
-  const ccHtml = fs.readFileSync(path.resolve(extensionRoot, "..", "control-center", "index.html"), "utf8");
+  const ccHtmlPrimary = path.resolve(extensionRoot, "..", "control-center", "index.html");
+  const ccHtmlFallback = path.resolve(extensionRoot, "..", "..", "integrated-power-control-center", "index.html");
+  const ccHtmlPath = fs.existsSync(ccHtmlPrimary) ? ccHtmlPrimary : ccHtmlFallback;
+  const ccHtml = fs.readFileSync(ccHtmlPath, "utf8");
   for (const key of ["antigravity", "openai", "claude", "local"]) {
     assert.ok(
       ccHtml.includes(`data-provider="${key}"`),

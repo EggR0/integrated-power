@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-11-11T11:20:00+09:00",
+  "rootWorkspace": "D:\\Workspace\\Integrated POWER",
+  "packages": {
+    "vscode-extension": {
+      "originalPath": "D:\\Workspace\\Integrated POWER\\vscode-extension",
+      "targetPath": "D:\\Workspace\\Integrated POWER\\packages\\vscode-extension",
+      "role": "Antigravity IDE VSIX Extension (IP)"
+    },
+    "control-center": {
+      "originalPath": "D:\\Workspace\\integrated-power-control-center",
+      "internalMirrorPath": "D:\\Workspace\\Integrated POWER\\control-center",
+      "targetPath": "D:\\Workspace\\Integrated POWER\\packages\\control-center",
+      "role": "Integrated Power Control Center (IPCC: Broker + Web UI + Tauri)"
+    },
+    "shared": {
+      "originalPath": "D:\\Workspace\\Integrated POWER\\shared",
+      "targetPath": "D:\\Workspace\\Integrated POWER\\packages\\shared",
+      "role": "Shared modules (quota, hub, telemetry)"
+    }
+  },
+  "hooks": [
+    "C:\\Users\\jsp0\\.gemini\\config\\plugins\\ip-orchestrator-plugin\\hooks.json",
+    "D:\\Workspace\\Integrated POWER\\.agents\\hooks.json"
+  ],
+  "verificationTargets": [
+    "http://127.0.0.1:37241/",
+    "http://127.0.0.1:37241/health"
+  ]
+}

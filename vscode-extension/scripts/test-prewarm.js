@@ -53,7 +53,7 @@ assert.ok(stopScript.includes("button svg.lucide-square"), "stop script must ref
 assert.ok(stopScript.includes(".click()"), "stop script must invoke click on stop element");
 
 // 3. Targets, Prompt, and 3-Mode Selection
-assert.strictEqual(shared.PREWARM_PING_PROMPT, "integrated power");
+assert.strictEqual(shared.PREWARM_PING_PROMPT, "say hi");
 assert.ok(shared.PREWARM_TARGETS.length >= 3, "must have at least 3 prewarm targets");
 const geminiTarget = shared.PREWARM_TARGETS.find(t => t.model === "antigravity");
 assert.ok(geminiTarget, "Gemini target must exist");
@@ -106,8 +106,8 @@ assert.strictEqual(activeCountdownMetric.canPrewarm, false, "prewarm not allowed
 assert.match(activeCountdownMetric.refreshFull, /^· Refreshes in (?:2h 59m|3h 0m)$/);
 assert.match(activeCountdownMetric.refreshShort, /^· (?:2:59|3:00)$/);
 
-// Top-of-window 100% idle state: Providers report resetTime = measuredAt + 5h.
-// Telemetry and polling delays result in ~4:59h remaining. This is an idle full window, NOT an active countdown.
+// Top-of-window 100% idle state: Providers report resetTime = measuredAt + 5h when dormant/full.
+// Even if telemetry reports ~4:59h remaining, it is dormant and must display as full 5h 0m Ready for prewarm.
 const idleTopOfWindow5hMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 100,
   antigravityResetTime: resetIn(4.98), // 4h 58.8m
@@ -117,7 +117,7 @@ const idleTopOfWindow5hMetric = shared.buildTokenMetric("5Hours", {
 
 assert.strictEqual(idleTopOfWindow5hMetric.isReady, true, "4:59h remaining must be recognized as full window Ready, not active countdown");
 assert.strictEqual(idleTopOfWindow5hMetric.canPrewarm, true, "prewarm must be allowed when window is full at 4:59h");
-assert.match(idleTopOfWindow5hMetric.refreshFull, /^· Refreshes in 4h (?:58m|59m)$/);
+assert.strictEqual(idleTopOfWindow5hMetric.refreshFull, "· Refreshes in 5h 0m");
 assert.strictEqual(shared.canTriggerPrewarm(idleTopOfWindow5hMetric), true);
 
 // Weekly prewarm operates independently:
@@ -146,6 +146,30 @@ const weeklyActiveCountdownMetric = shared.buildTokenMetric("Weekly", {
 assert.strictEqual(weeklyActiveCountdownMetric.isReady, false);
 assert.strictEqual(weeklyActiveCountdownMetric.canPrewarm, false);
 assert.strictEqual(shared.canTriggerPrewarm(weeklyActiveCountdownMetric), false);
+
+// 3. Partial usage (99.99%) with top-of-window reset must NEVER be classified as dormant 100% or isDormantTopReset.
+const partial5hTopMetric = shared.buildTokenMetric("5Hours", {
+  antigravityPercentage: 99.99,
+  antigravityResetTime: resetIn(4.98),
+  antigravityWeeklyPercentage: 100,
+  antigravityWeeklyResetTime: resetIn(48),
+}, "antigravity", "Gemini 5Hours", "antigravityWeekly");
+assert.strictEqual(partial5hTopMetric.isReady, false, "99.99% must not be treated as dormant 100% Ready");
+assert.strictEqual(partial5hTopMetric.canPrewarm, false, "99.99% must not be eligible for prewarm");
+assert.strictEqual(shared.canTriggerPrewarm(partial5hTopMetric), false);
+assert.notStrictEqual(partial5hTopMetric.refreshFull, "· Refreshes in 5h 0m", "99.99% must display real countdown, not 5h 0m");
+assert.match(partial5hTopMetric.refreshFull, /^· Refreshes in (?:4h 58m|4h 59m)$/);
+
+// 4. Weekly partial usage (99.99%) with top-of-window reset must NEVER be classified as dormant 100% or isDormantTopReset.
+const partialWeeklyTopMetric = shared.buildTokenMetric("Weekly", {
+  antigravityWeeklyPercentage: 99.99,
+  antigravityWeeklyResetTime: resetIn(167.5),
+}, "antigravityWeekly", "Gemini Weekly");
+assert.strictEqual(partialWeeklyTopMetric.isReady, false, "Weekly 99.99% must not be treated as dormant 100% Ready");
+assert.strictEqual(partialWeeklyTopMetric.canPrewarm, false, "Weekly 99.99% must not be eligible for prewarm");
+assert.strictEqual(shared.canTriggerPrewarm(partialWeeklyTopMetric), false);
+assert.notStrictEqual(partialWeeklyTopMetric.refreshFull, "· Refreshes in 168h 0m", "Weekly 99.99% must display real countdown, not 168h 0m");
+assert.match(partialWeeklyTopMetric.refreshFull, /^· Refreshes in (?:167h 29m|167h 30m|167h 31m)$/);
 
 const activeMetric = shared.buildTokenMetric("5Hours", {
   antigravityPercentage: 95,
@@ -194,7 +218,7 @@ async function runAsyncTests() {
   assert.strictEqual(result.retainedPercentage, undefined, "ACK does not prove retained quota");
   assert.strictEqual(result.timerStartedAt, undefined, "ACK does not prove the provider started a timer");
   assert.match(result.message, /dispatched|accepted/i);
-  assert.strictEqual(dispatchedPrompt, "integrated power");
+  assert.strictEqual(dispatchedPrompt, "say hi");
   // 7. Dynamic Model Resolution Contracts for AGY (Gemini/Claude) and Codex
   const { getLowestAgyModel, resolveLowestModelFromList } = require("../out/broker/agyModelResolver");
   const { resolveLowestCodexModelFromList } = require("../out/broker/codexAppServer");

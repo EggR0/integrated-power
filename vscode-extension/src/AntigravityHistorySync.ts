@@ -245,6 +245,7 @@ export class AntigravityHistorySyncManager {
           {
             detached: true,
             stdio: "ignore",
+            windowsHide: true,
           }
         );
         child.unref();

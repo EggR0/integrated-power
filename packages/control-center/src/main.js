@@ -1,0 +1,3754 @@
+import "./style.css";
+import {
+  capacityTone,
+  mergeQuotaSettings,
+  clampPollInterval,
+  buildTokenMetric,
+  absoluteTokenText,
+  buildGaugeTickGradient,
+  calculateCapacitySummary,
+  localServerBadge,
+  localLoadedModelLabel,
+  validateExternalProvider,
+  parseExternalPayload,
+  parseModelList,
+  modelDiscoveryUrls,
+  EXTERNAL_POLL_MIN_MS,
+  detectRefilledQuotaWindows,
+  ANTIGRAVITY_STOP_SELECTORS,
+  PREWARM_TARGETS,
+  canTriggerPrewarm,
+} from "@shared/quota";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "@tauri-apps/api/core";
+import { classifyCollectionResponse } from "./api-read-state.mjs";
+import {
+  renderEcosystemMatrixHtml,
+  renderHubTodoListHtml,
+  renderPlaybooksHtml,
+} from "@shared/hub";
+
+// Broker base URL. 37241 is the canonical standalone port; during vite dev a
+// separate broker on another port can be attached with ?broker=<port> (dev-only
+// convenience — the Tauri shell always launches 37241 via broker-server.js).
+// BROKER_PORT is the single source of truth for every user-facing label.
+const _BROKER_PORT = Number(new URLSearchParams(location.search).get("broker"));
+const BROKER_PORT = (Number.isFinite(_BROKER_PORT) && _BROKER_PORT > 0) ? _BROKER_PORT : 37241;
+const API = "http://127.0.0.1:" + BROKER_PORT;
+// Reflect the actual broker port in the footer (canonical 37241, or the
+// ?broker= override in dev) so the label never lies about which process is up.
+{
+  const _footer = document.getElementById("broker-footer");
+  if (_footer) _footer.textContent = `v0.14.0 · loopback ${BROKER_PORT}`;
+  // Every endpoint label in the settings tab reflects the actual broker port
+  // (BROKER_PORT), so dev ?broker=<port> runs never show a stale 37241 URL.
+  const _setEndpoint = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  _setEndpoint("settings-bind-url", API);
+  _setEndpoint("settings-status-url", `${API}/v1/tokens/status`);
+  _setEndpoint("settings-mcp-url", `${API}/mcp`);
+  _setEndpoint("settings-chatgpt-mcp-url", `${API}/mcp`);
+  _setEndpoint("settings-agent-card-url", `${API}/.well-known/agent-card.json`);
+  const _claudeCmd = document.getElementById("settings-claude-cli-cmd");
+  if (_claudeCmd) _claudeCmd.textContent = `claude mcp add integrated-power ${API}/mcp`;
+  // The home stat placeholder reflects the brand count — set by the
+  // post-declaration block below (AGENT_BRANDS is not in scope here yet).
+  const _statBroker = document.getElementById("stat-broker");
+  if (_statBroker) _statBroker.textContent = `가동중 (${BROKER_PORT})`;
+}
+const streams = new Map();
+
+// Shared quota settings schema: defaults + coercion live in shared/quota.
+// Persistence stays local (localStorage) — only the schema is shared.
+const quotaSettings = mergeQuotaSettings({
+  pollIntervalMs: localStorage.getItem("ip_poll_interval") ? Number(localStorage.getItem("ip_poll_interval")) : undefined,
+  notifyOnFull: localStorage.getItem("ip_notify_full_tokens") !== "false",
+  prewarmModes: {
+    antigravity: localStorage.getItem("ip_prewarm_mode_antigravity") || localStorage.getItem("ip_prewarm_mode"),
+    argon: localStorage.getItem("ip_prewarm_mode_argon") || localStorage.getItem("ip_prewarm_mode"),
+    opus: localStorage.getItem("ip_prewarm_mode_opus") || localStorage.getItem("ip_prewarm_mode"),
+    codex: localStorage.getItem("ip_prewarm_mode_codex") || localStorage.getItem("ip_prewarm_mode"),
+  },
+});
+
+const prefixOf = {
+  "gemini-5h": "antigravity", "gemini-weekly": "antigravityWeekly",
+  "argon-5h": "argon", "argon-weekly": "argonWeekly",
+  "opus-5h": "opus", "opus-weekly": "opusWeekly",
+  "codex-5h": "codex", "codex-weekly": "codexWeekly",
+  "antigravity": "antigravity", "argon": "argon", "opus": "opus", "codex": "codex",
+};
+const prewarmModelByWindow = {
+  "gemini-5h": "antigravity",
+  "gemini-weekly": "antigravity",
+  "argon-5h": "argon",
+  "argon-weekly": "argon",
+  "opus-5h": "opus",
+  "opus-weekly": "opus",
+  "codex-5h": "codex",
+  "codex-weekly": "codex",
+};
+let providerDndController = null;
+
+const state = {
+  capabilities: [],
+  tasks: [],
+  approvals: [],
+  tokenStatus: null,
+  previousTokenStatus: null,
+  lastFullNotified: false,
+  notifyOnFullTokens: quotaSettings.notifyOnFull,
+  pollInterval: quotaSettings.pollIntervalMs,
+  autoStartEnabled: false,
+  logs: { path: "", lines: [] },
+  mainProvider: "google.antigravity.ide",
+  brokerOnline: false,
+  lastSyncAt: null,
+  tokenStatusError: "",
+  activeTab: "tokens", // DEFAULT ACTIVE TAB
+  taskFilter: "active", // "active" (pending, running) | "completed" (completed, failed, cancelled)
+  activeClarificationTodoId: null,
+  // External (user-registered) providers: { id, name, baseUrl, quotaUrl?, apiKey?, defaultModel?, discoverModels, pollMs, enabled }[]
+  externalProviders: [],
+  // Latest parsed quota result per provider id (from the broker-side fetch).
+  externalData: {},
+  // Latest discovered model list per provider id (OpenAI /v1/models or Ollama /api/tags).
+  externalModels: {},
+  workspaceId: localStorage.getItem("ip_workspace_id") || "",
+  workspacePath: localStorage.getItem("ip_workspace_path") || "",
+  workspaces: [],
+  quotaSettingsRevision: 0,
+  quotaSettingsInitialized: false,
+  quotaSettings: { ...quotaSettings, prewarmModes: { ...quotaSettings.prewarmModes }, notifications: { ...quotaSettings.notifications } },
+  brokerHealth: null,
+  hubOverview: null,
+  hubEcosystem: null,
+  hubTodos: [],
+  hubPlaybooks: [],
+  hubConfig: null,
+  hubError: null,
+  lastManualPrewarmAt: 0,
+  seenPrewarmNotificationIds: new Set(),
+};
+
+const defaults = [
+  { provider: "google.antigravity.ide", label: "Antigravity IDE / Agy", mode: "cli", capabilities: ["leader", "executor"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
+  { provider: "local.openai-compatible", label: "로컬 Qwen 3.8 27B", mode: "local", capabilities: ["executor", "local-mcp"], available: false, stateKind: "not_installed", stateLabel: "설치X", model: "qwen3.8:27b", reason: "확인중" },
+  { provider: "openai.codex.app", label: "Codex App Server", mode: "app-server", capabilities: ["leader", "executor"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
+  { provider: "openai.chatgpt.app", label: "ChatGPT desktop/web MCP app", mode: "gui", capabilities: ["leader", "remote-mcp"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
+  { provider: "anthropic.claude.desktop", label: "Claude Desktop local MCP", mode: "gui", capabilities: ["leader", "local-mcp"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
+  { provider: "google.antigravity.app", label: "Antigravity", mode: "gui", capabilities: ["leader", "executor"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "확인중" },
+  { provider: "anthropic.cowork", label: "Claude Cowork", mode: "gui", capabilities: ["leader"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "미지원" },
+  { provider: "xai.grok", label: "xAI Grok", mode: "gui", capabilities: ["leader"], available: false, stateKind: "not_installed", stateLabel: "설치X", reason: "미지원" },
+];
+
+const $ = (id) => document.getElementById(id);
+// Brand grouping: several broker capabilities are different INSTALL SURFACES
+// of one product/account
+const AGENT_BRANDS = {
+  "openai.codex.app": "chatgpt",
+  "openai.chatgpt.app": "chatgpt",
+  "anthropic.claude.desktop": "claude",
+  "anthropic.cowork": "claude",
+  "google.antigravity.ide": "antigravity",
+  "google.antigravity.app": "antigravity",
+  "local.openai-compatible": "local",
+  "xai.grok": "grok",
+};
+const AGENT_BRAND_LABELS = {
+  chatgpt: "ChatGPT",
+  claude: "Claude",
+  antigravity: "Antigravity",
+  local: "로컬 Qwen 3.8 27B",
+  grok: "Grok",
+};
+// Home stat denominator: brand groups (5), not raw install surfaces (8).
+{
+  const _statAgents = document.getElementById("stat-agents");
+  if (_statAgents) _statAgents.textContent = `- / 5개`;
+}
+function brandGroups() {
+  const groups = new Map();
+  for (const item of currentCapabilities()) {
+    const key = AGENT_BRANDS[item.provider] || item.provider;
+    if (!groups.has(key)) {
+      groups.set(key, { key, label: AGENT_BRAND_LABELS[key] || item.label || item.provider, items: [] });
+    }
+    groups.get(key).items.push(item);
+  }
+  return Array.from(groups.values());
+}
+// Representative surface of a brand for the main-agent selection: the first
+// installed surface, else the first one.
+const brandRepresentative = (g) => g.items.find((i) => i.available) || g.items[0];
+const node = (tag, text, className) => {
+  const value = document.createElement(tag);
+  if (text !== undefined) value.textContent = String(text);
+  if (className) value.className = className;
+  return value;
+};
+const button = (text, className, data = {}) => {
+  const value = node("button", text, className);
+  Object.assign(value.dataset, data);
+  return value;
+};
+const safeText = (value, fallback = "-") => (value === undefined || value === null || value === "" ? fallback : String(value));
+
+// Apple Liquid Glass Theme System (titanium, pearl, cashmere)
+function applyTheme(themeName) {
+  const chosen = ["titanium", "pearl", "cashmere"].includes(themeName) ? themeName : "titanium";
+  document.documentElement.setAttribute("data-theme", chosen);
+  const shell = $("app-shell");
+  if (shell) shell.setAttribute("data-theme", chosen);
+  localStorage.setItem("ipcc.liquidTheme", chosen);
+
+  ["titanium", "pearl", "cashmere"].forEach((t) => {
+    const btn = $(`theme-btn-${t}`);
+    if (btn) btn.classList.toggle("active", t === chosen);
+  });
+
+  const footerTheme = $("footer-version-theme");
+  if (footerTheme) {
+    const themeLabels = {
+      titanium: "Integrated Power v0.14.0 · Smoked Titanium Liquid Glass",
+      pearl: "Integrated Power v0.14.0 · Pearl White Liquid Glass",
+      cashmere: "Integrated Power v0.14.0 · Warm Cashmere Stone",
+    };
+    footerTheme.textContent = themeLabels[chosen] || themeLabels.titanium;
+  }
+}
+
+async function api(path, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeout ?? 10000);
+  try {
+    const response = await fetch(`${API}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: { "content-type": "application/json", ...(options.headers || {}) },
+    });
+    const text = await response.text();
+    let body = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
+    if (!response.ok) {
+      const err = new Error(body.error || (Array.isArray(body.errors) ? body.errors.map((item) => typeof item === "string" ? item : item?.message || item?.error || item?.code).filter(Boolean).join(" · ") : "") || `HTTP ${response.status}`);
+      err.status = response.status;
+      err.body = body;
+      throw err;
+    }
+    return body;
+  } finally { clearTimeout(timer); }
+}
+
+function workspaceReadUrl(endpoint) {
+  const query = new URLSearchParams();
+  if (state.workspacePath.trim()) query.set("workspacePath", state.workspacePath.trim());
+  else if (state.workspaceId) query.set("workspaceId", state.workspaceId);
+  else return undefined;
+  return `${endpoint}?${query}`;
+}
+
+function workspaceSelectionValue() {
+  return state.workspacePath ? `path:${state.workspacePath}` : state.workspaceId ? `id:${state.workspaceId}` : "";
+}
+
+function renderWorkspaceChoices() {
+  const select = $("workspace-context-select");
+  if (!select) return;
+  const selected = workspaceSelectionValue();
+  select.replaceChildren();
+  select.append(new Option("워크스페이스 선택", ""));
+  for (const workspace of state.workspaces) {
+    if (workspace?.workspaceId) select.append(new Option(workspace.workspaceId, `id:${workspace.workspaceId}`));
+  }
+  const paths = [...new Set(state.tasks.map((task) => task.workspacePath).filter((value) => typeof value === "string" && value.trim()))];
+  for (const workspacePath of paths) select.append(new Option(workspacePath, `path:${workspacePath}`));
+  select.value = selected;
+  const pathInput = $("workspace-context-path");
+  if (pathInput && pathInput.value !== state.workspacePath) pathInput.value = state.workspacePath;
+}
+
+function setWorkspaceContext(value, pathValue = "") {
+  state.workspaceId = value.startsWith("id:") ? value.slice(3) : "";
+  state.workspacePath = pathValue.trim() || (value.startsWith("path:") ? value.slice(5) : "");
+  localStorage.setItem("ip_workspace_id", state.workspaceId);
+  localStorage.setItem("ip_workspace_path", state.workspacePath);
+  renderWorkspaceChoices();
+  void refresh();
+}
+
+function updateWorkspaceContextFromControls() {
+  const selectValue = $("workspace-context-select")?.value || "";
+  const pathValue = $("workspace-context-path")?.value || "";
+  setWorkspaceContext(selectValue, pathValue);
+}
+
+function applyQuotaSettingsEnvelope(envelope) {
+  if (!envelope || envelope.ok === false || !envelope.settings) return false;
+  state.quotaSettingsRevision = Number(envelope.revision) || 0;
+  state.quotaSettingsInitialized = Boolean(envelope.initialized);
+  if (!state.quotaSettingsInitialized) return true;
+  state.quotaSettings = mergeQuotaSettings(envelope.settings);
+  state.pollInterval = state.quotaSettings.pollIntervalMs;
+  state.notifyOnFullTokens = state.quotaSettings.notifyOnFull;
+  for (const [prefix, mode] of Object.entries(state.quotaSettings.prewarmModes)) localStorage.setItem(`ip_prewarm_mode_${prefix}`, mode);
+  localStorage.setItem("ip_poll_interval", String(state.pollInterval));
+  localStorage.setItem("ip_notify_full_tokens", String(state.notifyOnFullTokens));
+  if ($("setting-poll-interval-select")) $("setting-poll-interval-select").value = String(state.pollInterval);
+  if ($("token-notify-quick-toggle")) $("token-notify-quick-toggle").checked = state.notifyOnFullTokens;
+  if ($("setting-token-notify-toggle")) $("setting-token-notify-toggle").checked = state.notifyOnFullTokens;
+  if (pollTimer && pollTimerInterval !== state.pollInterval) {
+    clearInterval(pollTimer);
+    pollTimerInterval = state.pollInterval;
+    pollTimer = setInterval(refresh, state.pollInterval);
+  }
+  renderPrewarmToolbar();
+  return true;
+}
+
+async function saveQuotaSettings({ message } = {}) {
+  const initializeFrom = state.quotaSettingsInitialized ? undefined : "desktop";
+  try {
+    const saved = await api("/v1/settings/quota", {
+      method: "POST",
+      body: JSON.stringify({
+        settings: state.quotaSettings,
+        expectedRevision: state.quotaSettingsRevision,
+        idempotencyKey: crypto.randomUUID(),
+        ...(initializeFrom ? { initializeFrom } : {}),
+      }),
+    });
+    applyQuotaSettingsEnvelope(saved);
+    if (message) showToast(message);
+    return true;
+  } catch (error) {
+    if (error.status === 409 && error.body?.settings) {
+      applyQuotaSettingsEnvelope(error.body);
+      showToast("설정이 다른 화면에서 바뀌었습니다. 최신 서버 설정을 적용했습니다.", true);
+    } else {
+      showToast(`통합 설정 저장 실패: ${error.message}`, true);
+    }
+    return false;
+  }
+}
+
+let brokerStale = false;
+const isStaleBrokerError = (e) =>
+  e && e.status === 404 && /not_found/.test(e.message || "");
+const STALE_BROKER_HINT = "브로커를 재시작하세요 (IDE 브로커: Antigravity 재시작 · dev 브로커: npm run dev 재실행)";
+
+function setConnection(kind, message) {
+  state.brokerOnline = kind === "online";
+  const dot = $("connection-dot");
+  if (dot) dot.className = `connection-dot ${kind === "online" ? "online" : "offline"}`;
+  const label = $("connection-label");
+  if (label) label.textContent = message;
+  const statBroker = $("stat-broker");
+  if (statBroker) statBroker.textContent = kind === "online" ? `가동중 (${BROKER_PORT})` : "연결 끊김";
+  const tbStatus = $("titlebar-broker-status");
+  if (tbStatus) {
+    tbStatus.replaceChildren();
+    const pDot = node("span", undefined, kind === "online" ? "pulse-dot-emerald" : "traffic-dot traffic-red");
+    tbStatus.append(pDot, document.createTextNode(` REST 127.0.0.1:${BROKER_PORT}`));
+  }
+}
+
+function currentCapabilities() {
+  const values = state.capabilities.length ? state.capabilities : defaults;
+  return defaults.map((fallback) => values.find((item) => item.provider === fallback.provider) || fallback)
+    .concat(values.filter((item) => !defaults.some((fallback) => fallback.provider === item.provider)));
+}
+
+let toastTimer;
+function showToast(message, isError = false) {
+  const toast = $("toast");
+  if (!toast) return;
+  toast.textContent = message;
+  toast.style.borderColor = isError ? "var(--accent-rose)" : "var(--accent-amber)";
+  toast.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add("hidden"), 3800);
+}
+
+async function copyToClipboard(text, successMsg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(successMsg);
+  } catch (error) {
+    showToast("클립보드 복사 실패: " + error.message, true);
+  }
+}
+
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    void Notification.requestPermission();
+  }
+}
+
+function sendDesktopNotification(title, body) {
+  if (!state.notifyOnFullTokens) return;
+  if ("Notification" in window && Notification.permission === "granted") {
+    try {
+      new Notification(title, {
+        body,
+        icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>",
+      });
+    } catch {
+      // Fallback
+    }
+  }
+}
+
+function playFullChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc1.type = "sine";
+    osc2.type = "triangle";
+    osc1.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc1.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
+    osc2.frequency.setValueAtTime(1174.66, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+    osc1.start();
+    osc2.start();
+    osc1.stop(ctx.currentTime + 0.85);
+    osc2.stop(ctx.currentTime + 0.85);
+  } catch {
+    // ignore
+  }
+}
+
+function checkTokenFullNotification(previous, current) {
+  if (!current || !state.notifyOnFullTokens) return;
+
+  state.notifiedFullWindows = state.notifiedFullWindows || new Set();
+
+  const { notifications, updatedNotifiedSet } = detectRefilledQuotaWindows(
+    previous,
+    current,
+    state.notifiedFullWindows,
+  );
+  state.notifiedFullWindows = updatedNotifiedSet;
+
+  if (notifications.length > 0) {
+    playFullChime();
+    for (const item of notifications) {
+      showToast(`⚡ [100% 완충] ${item.target.message}`);
+      sendDesktopNotification("⚡ [Integrated Power] 100% 충전 완료", item.target.message);
+    }
+  }
+}
+
+function switchTab(targetTab) {
+  state.activeTab = targetTab;
+  document.querySelectorAll(".nav-link").forEach((link) => {
+    link.classList.toggle("active", link.dataset.section === targetTab);
+  });
+  document.querySelectorAll(".view-section").forEach((sec) => {
+    sec.classList.toggle("active", sec.id === `view-${targetTab}`);
+  });
+
+  const titles = {
+    tokens: { eyebrow: "AI 쿼터 및 토큰 실시간 관제", title: "AI 모델 쿼터 현황 및 리셋 주기" },
+    home: { eyebrow: "통합 관제 센터", title: "PC 상태와 AI 작업을 한곳에서" },
+    agents: { eyebrow: "에이전트 관리", title: "연결된 AI 에이전트 현황 및 진단" },
+    tasks: { eyebrow: "작업 및 승인", title: "멀티 에이전트 작업 위임 및 승인 관리" },
+    logs: { eyebrow: "실시간 진단", title: "Integrated Power 브로커 로그" },
+    settings: { eyebrow: "환경 설정", title: "네트워크, 시작 프로그램 및 알림 설정" },
+  };
+
+  const current = titles[targetTab] || titles.tokens;
+  if ($("page-eyebrow")) $("page-eyebrow").textContent = current.eyebrow;
+  if ($("page-title")) $("page-title").textContent = current.title;
+
+  if (targetTab === "logs") void refreshLogs();
+}
+
+const gaugeTicksEnabled = () => localStorage.getItem("ip_gauge_ticks") !== "false";
+
+function renderHomeActivityRings(ts) {
+  const geminiPct = Math.max(0, Math.min(100, ts?.antigravityPercentage ?? 100));
+  const opusPct = Math.max(0, Math.min(100, ts?.opusPercentage ?? 100));
+  const codexPct = Math.max(0, Math.min(100, ts?.codexPercentage ?? 100));
+  const argonPct = Math.max(0, Math.min(100, ts?.argonWeeklyPercentage ?? 100));
+
+  const cGemini = 464.95; // 2 * pi * 74
+  const cOpus = 364.42;   // 2 * pi * 58
+  const cCodex = 263.89;  // 2 * pi * 42
+  const cArgon = 163.36;  // 2 * pi * 26
+
+  const setRing = (id, c, pct) => {
+    const el = $(id);
+    if (!el) return;
+    el.setAttribute("stroke-dasharray", String(c));
+    const offset = c * (1 - pct / 100);
+    el.setAttribute("stroke-dashoffset", String(offset));
+  };
+
+  setRing("ring-gemini-fill", cGemini, geminiPct);
+  setRing("ring-opus-fill", cOpus, opusPct);
+  setRing("ring-codex-fill", cCodex, codexPct);
+  setRing("ring-argon-fill", cArgon, argonPct);
+
+  if ($("ring-metric-gemini")) $("ring-metric-gemini").textContent = `${geminiPct.toFixed(0)}%`;
+  if ($("ring-metric-opus")) $("ring-metric-opus").textContent = `${opusPct.toFixed(0)}%`;
+  if ($("ring-metric-codex")) $("ring-metric-codex").textContent = `${codexPct.toFixed(0)}%`;
+  if ($("ring-metric-argon")) $("ring-metric-argon").textContent = `${argonPct.toFixed(0)}%`;
+
+  const argonRow = $("ring-row-argon");
+  const ringCenterStatus = $("ring-center-status");
+  const argonFill = $("ring-argon-fill");
+
+  if (argonPct <= 25) {
+    if (argonRow) {
+      argonRow.classList.add("alert");
+      if ($("ring-metric-argon")) $("ring-metric-argon").textContent = `${argonPct.toFixed(0)}% (경고)`;
+    }
+    if (ringCenterStatus) {
+      ringCenterStatus.textContent = "주의";
+      ringCenterStatus.style.color = "var(--accent-amber)";
+    }
+    if (argonFill) argonFill.style.stroke = "var(--accent-amber)";
+  } else {
+    if (argonRow) argonRow.classList.remove("alert");
+    if (ringCenterStatus) {
+      ringCenterStatus.textContent = "정상";
+      ringCenterStatus.style.color = "var(--accent-emerald)";
+    }
+    if (argonFill) argonFill.style.stroke = "var(--accent-amber)";
+  }
+
+  const lcs = ts?.localComputeStatus;
+  if ($("ring-metric-vram")) {
+    if (lcs && Array.isArray(lcs.gpus) && lcs.gpus[0]) {
+      const g = lcs.gpus[0];
+      const usedGb = (g.vramUsedMb / 1024).toFixed(1);
+      const totalGb = (g.vramTotalMb / 1024).toFixed(0);
+      $("ring-metric-vram").textContent = `${usedGb} / ${totalGb} GB`;
+    } else {
+      $("ring-metric-vram").textContent = "대기 (오프라인)";
+    }
+  }
+}
+
+function resolveAccountActiveFlags(acc, ideEmail, agy2Email) {
+  const emailLower = acc?.email ? String(acc.email).toLowerCase() : "";
+  const isIdeActive = Boolean(
+    acc?.isIdeActive || (emailLower && ideEmail && emailLower === String(ideEmail).toLowerCase()),
+  );
+  const isAgy2Active = Boolean(
+    acc?.isAgy2Active || (emailLower && agy2Email && emailLower === String(agy2Email).toLowerCase()),
+  );
+  return { isIdeActive, isAgy2Active };
+}
+
+function formatAccountActiveBadge(acc, isIdeActive, isAgy2Active, isLegacyFallback = false) {
+  if (acc?.error) {
+    return { text: "오류", className: "provider-state-tag critical", title: String(acc.error) };
+  }
+  if (isIdeActive && isAgy2Active) {
+    return {
+      text: "Active IDE · 2.0",
+      className: "provider-state-tag online active-both",
+      title: "Antigravity IDE 및 Antigravity 2.0 모두 로그인됨",
+    };
+  }
+  if (isIdeActive) {
+    return {
+      text: "Active IDE",
+      className: "provider-state-tag online active-ide",
+      title: "Antigravity IDE에 로그인됨",
+    };
+  }
+  if (isAgy2Active) {
+    return {
+      text: "Active 2.0",
+      className: "provider-state-tag online active-agy2",
+      title: "Antigravity 2.0에 로그인됨",
+    };
+  }
+  if (acc?.email) {
+    return {
+      text: "연결됨",
+      className: "provider-state-tag",
+      title: "저장된 계정 (현재 IDE/2.0 비활성)",
+    };
+  }
+  if (isLegacyFallback) {
+    return {
+      text: "연결됨",
+      className: "provider-state-tag online",
+      title: "Antigravity 연결됨",
+    };
+  }
+  return {
+    text: "미연결",
+    className: "provider-state-tag",
+    title: "연결된 계정 없음",
+  };
+}
+
+function buildOrderedAntigravityAccounts(rawTs = {}) {
+  const rawAccounts = rawTs?.accounts;
+  const rawEntries = Array.isArray(rawAccounts)
+    ? rawAccounts.filter((a) => a && a.email).map((a) => [a.email, a])
+    : (rawAccounts && typeof rawAccounts === "object" ? Object.entries(rawAccounts) : []);
+
+  const byLower = new Map();
+  for (const [key, acc] of rawEntries) {
+    const email = (acc && acc.email) || key;
+    if (!email) continue;
+    const lower = String(email).toLowerCase();
+    byLower.set(lower, { ...(acc && typeof acc === "object" ? acc : {}), email: String(email) });
+  }
+
+  let ideEmail = rawTs?.activeIdeAccountEmail
+    || [...byLower.values()].find((a) => a.isIdeActive)?.email
+    || "";
+  let agy2Email = rawTs?.activeAgy2AccountEmail
+    || [...byLower.values()].find((a) => a.isAgy2Active)?.email
+    || "";
+
+  if (!ideEmail && !agy2Email && rawTs?.activeAccountEmail) {
+    ideEmail = String(rawTs.activeAccountEmail);
+  }
+
+  if (ideEmail && !byLower.has(String(ideEmail).toLowerCase())) {
+    byLower.set(String(ideEmail).toLowerCase(), { email: String(ideEmail), isIdeActive: true });
+  }
+  if (agy2Email && !byLower.has(String(agy2Email).toLowerCase())) {
+    byLower.set(String(agy2Email).toLowerCase(), { email: String(agy2Email), isAgy2Active: true });
+  }
+
+  const normalized = [...byLower.values()].map((acc) => {
+    const { isIdeActive, isAgy2Active } = resolveAccountActiveFlags(acc, ideEmail, agy2Email);
+    return { ...acc, isIdeActive, isAgy2Active };
+  });
+
+  const ordered = [];
+  const seen = new Set();
+  const pushUnique = (acc) => {
+    if (!acc || !acc.email) return;
+    const lower = String(acc.email).toLowerCase();
+    if (seen.has(lower)) return;
+    seen.add(lower);
+    ordered.push(acc);
+  };
+
+  const ideAcc = normalized.find((a) => a.isIdeActive) || findAccountByEmail(Object.fromEntries(normalized.map((a) => [a.email, a])), ideEmail);
+  const agy2Acc = normalized.find((a) => a.isAgy2Active) || findAccountByEmail(Object.fromEntries(normalized.map((a) => [a.email, a])), agy2Email);
+  pushUnique(ideAcc);
+  pushUnique(agy2Acc);
+
+  const remaining = normalized
+    .filter((a) => !seen.has(String(a.email).toLowerCase()))
+    .sort((a, b) => String(a.email).toLowerCase().localeCompare(String(b.email).toLowerCase()));
+  for (const acc of remaining) pushUnique(acc);
+
+  return { ordered, ideEmail, agy2Email };
+}
+
+function applyAccountCardHeader({ card, pillEl, emailEl, stateEl, errEl, acc, ideEmail, agy2Email, isLegacyFallback = false }) {
+  if (card) {
+    card.dataset.accountEmail = acc?.email || "";
+  }
+  if (pillEl) {
+    const label = acc?.email || "Antigravity";
+    pillEl.textContent = label;
+    pillEl.title = label;
+  }
+  if (emailEl) {
+    emailEl.textContent = "";
+    emailEl.title = "";
+    emailEl.style.display = "none";
+  }
+  if (stateEl) {
+    const { isIdeActive, isAgy2Active } = resolveAccountActiveFlags(acc, ideEmail, agy2Email);
+    const badge = formatAccountActiveBadge(acc, isIdeActive, isAgy2Active, isLegacyFallback);
+    stateEl.textContent = badge.text;
+    stateEl.className = badge.className;
+    stateEl.title = badge.title;
+  }
+  if (errEl) {
+    if (acc?.error) {
+      errEl.textContent = `오류: ${acc.error}`;
+      errEl.style.display = "";
+      errEl.style.fontSize = "11px";
+      errEl.style.color = "var(--accent-rose)";
+      errEl.style.padding = "6px 8px";
+      errEl.style.background = "rgba(239, 68, 68, 0.1)";
+      errEl.style.borderRadius = "6px";
+      errEl.style.marginBottom = "8px";
+    } else {
+      errEl.textContent = "";
+      errEl.style.display = "none";
+    }
+  }
+}
+
+function findAccountByEmail(accountsObj, email) {
+  if (!email || !accountsObj || typeof accountsObj !== "object") return null;
+  if (accountsObj[email]) return accountsObj[email];
+  const lower = String(email).toLowerCase();
+  const match = Object.entries(accountsObj).find(([key]) => String(key).toLowerCase() === lower);
+  return match ? match[1] : null;
+}
+
+function getPrimaryAccount(ts) {
+  const accountsObj = Array.isArray(ts?.accounts)
+    ? Object.fromEntries(ts.accounts.map((a) => [a.email, a]))
+    : (ts?.accounts && typeof ts.accounts === "object" ? ts.accounts : {});
+  const accountEntries = Object.entries(accountsObj);
+  if (!accountEntries.length) return null;
+
+  const byIdeEmail = findAccountByEmail(accountsObj, ts?.activeIdeAccountEmail);
+  if (byIdeEmail) return byIdeEmail;
+
+  const ideActive = accountEntries.find(([, a]) => a && a.isIdeActive);
+  if (ideActive) return ideActive[1];
+
+  const byAgy2Email = findAccountByEmail(accountsObj, ts?.activeAgy2AccountEmail);
+  if (byAgy2Email) return byAgy2Email;
+
+  const agy2Active = accountEntries.find(([, a]) => a && a.isAgy2Active);
+  if (agy2Active) return agy2Active[1];
+
+  const byActiveEmail = findAccountByEmail(accountsObj, ts?.activeAccountEmail);
+  if (byActiveEmail) return byActiveEmail;
+
+  // Never depend on key insertion order (it changes with response timing).
+  return [...accountEntries].sort(([a], [b]) => a.localeCompare(b))[0][1];
+}
+
+const ACCOUNT_SCOPED_QUOTA_KEY = /^(antigravity|argon|opus)/;
+
+// An account's quota is shown only from that account's own entry. The top-level
+// antigravity/argon/opus fields belong to whichever account the IDE picked as
+// primary on that cycle, so they are never used as a substitute (a missing value
+// stays "unavailable" instead of showing another account's number).
+function getPrimaryTokenStatus(ts = {}, primaryAcc) {
+  if (!primaryAcc) return ts;
+  const base = Object.fromEntries(
+    Object.entries(ts).filter(([key]) => !ACCOUNT_SCOPED_QUOTA_KEY.test(key)),
+  );
+  const scoped = Object.fromEntries(
+    Object.entries(primaryAcc).filter(([key]) => ACCOUNT_SCOPED_QUOTA_KEY.test(key)),
+  );
+  return {
+    ...base,
+    ...scoped,
+    activeAccountEmail: primaryAcc.email,
+  };
+}
+
+function getEffectiveTokenStatus() {
+  const ts = state.tokenStatus || {};
+  const primaryAcc = getPrimaryAccount(ts);
+  return getPrimaryTokenStatus(ts, primaryAcc);
+}
+
+function createPrewarmButton(prewarmModel, windowId) {
+  const btn = document.createElement("button");
+  btn.className = "prewarm-action apple-tactile";
+  btn.type = "button";
+  btn.dataset.prewarmWindow = prewarmModel;
+  btn.dataset.windowId = windowId;
+
+  const sFull = document.createElement("span");
+  sFull.className = "prewarm-action-full";
+  sFull.textContent = "⚡ Pre-warm";
+  const sMed = document.createElement("span");
+  sMed.className = "prewarm-action-medium";
+  sMed.textContent = "⚡ Prewarm";
+  const sShort = document.createElement("span");
+  sShort.className = "prewarm-action-short";
+  sShort.textContent = "⚡ Pre";
+  btn.append(sFull, sMed, sShort);
+  return btn;
+}
+
+function createQuotaRowSkeleton(windowName, prewarmModel, windowId, hasPrewarm) {
+  const row = document.createElement("div");
+  row.className = "quota-window-row";
+
+  const info = document.createElement("div");
+  info.className = "window-info";
+  const nameEl = document.createElement("span");
+  nameEl.className = "window-name";
+  nameEl.textContent = windowName;
+  const valEl = document.createElement("span");
+  valEl.className = "window-val";
+  valEl.textContent = "--% remaining";
+  info.append(nameEl, valEl);
+
+  let footer = null;
+  const countdown = document.createElement("p");
+  countdown.className = "window-countdown";
+  countdown.textContent = "· Waiting for quota";
+
+  if (hasPrewarm) {
+    footer = document.createElement("div");
+    footer.className = "quota-window-footer";
+    footer.appendChild(countdown);
+
+    const btn = createPrewarmButton(prewarmModel, windowId);
+    footer.appendChild(btn);
+  }
+
+  const track = document.createElement("div");
+  track.className = "progress-track";
+  const bar = document.createElement("div");
+  bar.className = `progress-fill ${prewarmModel === "opus" ? "opus" : "gemini"}`;
+  bar.style.width = "0%";
+  track.appendChild(bar);
+
+  const tokens = document.createElement("p");
+  tokens.className = "window-tokens";
+
+  row.append(info, footer || countdown, track, tokens);
+  return row;
+}
+
+function renderAccountCard(acc, grid, anchorEl, ideEmail = "", agy2Email = "") {
+  const slug = acc.email.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const cardId = `provider-account-${slug}`;
+  const dataProvider = `account:${acc.email}`;
+  let card = document.getElementById(cardId);
+
+  if (!card) {
+    card = document.createElement("div");
+    card.className = "card provider-card liquid-card";
+    card.id = cardId;
+    card.dataset.provider = dataProvider;
+    card.dataset.accountEmail = acc.email;
+
+    const header = document.createElement("div");
+    header.className = "provider-header";
+
+    const pill = document.createElement("span");
+    pill.className = "provider-pill";
+    pill.dataset.ref = "pill";
+
+    const emailTag = document.createElement("span");
+    emailTag.className = "account-email-tag";
+    emailTag.dataset.ref = "email";
+
+    const stateTag = document.createElement("span");
+    stateTag.className = "provider-state-tag";
+    stateTag.dataset.ref = "state";
+
+    const prewarmBtn = document.createElement("button");
+    prewarmBtn.className = "prewarm-settings-btn apple-tactile";
+    prewarmBtn.type = "button";
+    prewarmBtn.dataset.prewarmTarget = "antigravity-2";
+    prewarmBtn.title = "프리웜 설정";
+    prewarmBtn.textContent = "⚙ 프리웜";
+
+    const toggleBtn = document.createElement("button");
+    toggleBtn.className = "provider-toggle apple-tactile";
+    toggleBtn.type = "button";
+    toggleBtn.dataset.provider = dataProvider;
+    toggleBtn.title = "블록 접기/펼치기";
+    toggleBtn.dataset.ref = "toggle";
+    toggleBtn.textContent = providerVisibility[dataProvider] !== false ? "접기" : "펼치기";
+
+    header.append(pill, emailTag, stateTag, prewarmBtn, toggleBtn);
+
+    const models = document.createElement("div");
+    models.className = "provider-models";
+    models.dataset.ref = "models";
+
+    const errBanner = document.createElement("div");
+    errBanner.className = "account-error-banner";
+    errBanner.style.display = "none";
+    errBanner.dataset.ref = "errorBanner";
+    models.appendChild(errBanner);
+
+    // 1. Gemini block
+    const geminiBlock = document.createElement("div");
+    geminiBlock.className = "model-block";
+    const geminiTitleRow = document.createElement("div");
+    geminiTitleRow.className = "model-name-row";
+    const geminiH4 = document.createElement("h4");
+    geminiH4.textContent = "Gemini";
+    const geminiPrewarmBtn = createPrewarmButton("antigravity", "gemini-5h");
+    geminiTitleRow.append(geminiH4, geminiPrewarmBtn);
+    geminiBlock.appendChild(geminiTitleRow);
+
+    const gemini5hRow = createQuotaRowSkeleton("5Hours", "antigravity", "gemini-5h", false);
+    gemini5hRow.dataset.rowId = "gemini-5h";
+    const geminiWeeklyRow = createQuotaRowSkeleton("Weekly", "antigravity", "gemini-weekly", false);
+    geminiWeeklyRow.dataset.rowId = "gemini-weekly";
+    geminiBlock.append(gemini5hRow, geminiWeeklyRow);
+
+    // 2. Argon block
+    const argonBlock = document.createElement("div");
+    argonBlock.className = "model-block";
+    argonBlock.style.marginTop = "14px";
+    argonBlock.style.paddingTop = "14px";
+    argonBlock.style.borderTop = "1px solid var(--glass-border-subtle)";
+    const argonTitleRow = document.createElement("div");
+    argonTitleRow.className = "model-name-row";
+    const argonH4 = document.createElement("h4");
+    argonH4.textContent = "Gemini 4 Argon";
+    const argonPrewarmBtn = createPrewarmButton("argon", "argon-weekly");
+    argonTitleRow.append(argonH4, argonPrewarmBtn);
+    argonBlock.appendChild(argonTitleRow);
+
+    const argon5hRow = createQuotaRowSkeleton("5Hours", "argon", "argon-5h", false);
+    argon5hRow.dataset.rowId = "argon-5h";
+    const argonWeeklyRow = createQuotaRowSkeleton("Weekly", "argon", "argon-weekly", false);
+    argonWeeklyRow.dataset.rowId = "argon-weekly";
+    argonBlock.append(argon5hRow, argonWeeklyRow);
+
+    // 3. Claude block
+    const claudeBlock = document.createElement("div");
+    claudeBlock.className = "model-block";
+    claudeBlock.style.marginTop = "14px";
+    claudeBlock.style.paddingTop = "14px";
+    claudeBlock.style.borderTop = "1px solid var(--glass-border-subtle)";
+    const claudeTitleRow = document.createElement("div");
+    claudeTitleRow.className = "model-name-row";
+    const claudeH4 = document.createElement("h4");
+    claudeH4.textContent = "Claude";
+    const claudePrewarmBtn = createPrewarmButton("opus", "opus-5h");
+    claudeTitleRow.append(claudeH4, claudePrewarmBtn);
+    claudeBlock.appendChild(claudeTitleRow);
+
+    const claude5hRow = createQuotaRowSkeleton("5Hours", "opus", "opus-5h", false);
+    claude5hRow.dataset.rowId = "opus-5h";
+    const claudeWeeklyRow = createQuotaRowSkeleton("Weekly", "opus", "opus-weekly", false);
+    claudeWeeklyRow.dataset.rowId = "opus-weekly";
+    claudeBlock.append(claude5hRow, claudeWeeklyRow);
+
+    models.append(geminiBlock, argonBlock, claudeBlock);
+    card.append(header, models);
+
+    if (anchorEl) {
+      grid.insertBefore(card, anchorEl);
+    } else {
+      grid.appendChild(card);
+    }
+  }
+
+  updateAccountCardData(card, acc, ideEmail, agy2Email);
+  return card;
+}
+
+function updateAccountCardData(card, acc, ideEmail = "", agy2Email = "") {
+  applyAccountCardHeader({
+    card,
+    pillEl: card.querySelector('[data-ref="pill"]'),
+    emailEl: card.querySelector('[data-ref="email"]'),
+    stateEl: card.querySelector('[data-ref="state"]'),
+    errEl: card.querySelector('[data-ref="errorBanner"]'),
+    acc,
+    ideEmail,
+    agy2Email,
+    isLegacyFallback: false,
+  });
+
+  const accTs = getPrimaryTokenStatus({}, acc);
+  const windows = {
+    "gemini-5h": buildTokenMetric("5Hours", accTs, "antigravity", "Gemini 5Hours", "antigravityWeekly"),
+    "gemini-weekly": buildTokenMetric("Weekly", accTs, "antigravityWeekly", "Gemini Weekly"),
+    "argon-5h": buildTokenMetric("5Hours", accTs, "argon", "Argon 4 5Hours", "argonWeekly"),
+    "argon-weekly": buildTokenMetric("Weekly", accTs, "argonWeekly", "Argon 4 Weekly"),
+    "opus-5h": buildTokenMetric("5Hours", accTs, "opus", "Claude 5Hours", "opusWeekly"),
+    "opus-weekly": buildTokenMetric("Weekly", accTs, "opusWeekly", "Claude Weekly"),
+  };
+
+  const noDataText = state.tokenStatusError ? "쿼터 갱신 실패" : "쿼터 대기 중";
+  for (const [id, m] of Object.entries(windows)) {
+    const row = card.querySelector(`[data-row-id="${id}"]`);
+    if (!row) continue;
+    if (id === "argon-5h") {
+      row.style.display = m.unavailable ? "none" : "";
+    }
+    const valEl = row.querySelector(".window-val");
+    if (valEl) {
+      valEl.textContent = m.unavailable
+        ? noDataText
+        : m.isWeeklyExhausted
+          ? "0.00% remaining (Weekly exhausted)"
+          : `${m.percentage.toFixed(2)}% remaining`;
+      valEl.title = m.tooltip || "";
+    }
+    const countdownEl = row.querySelector(".window-countdown");
+    if (countdownEl) {
+      countdownEl.textContent = m.refreshFull || `· ${noDataText}`;
+      countdownEl.title = m.tooltip || "";
+    }
+    const prewarmBtn = card.querySelector(`.prewarm-action[data-window-id="${id}"]`) || row.querySelector(".prewarm-action");
+    if (prewarmBtn) {
+      const model = prewarmModelByWindow[id];
+      const windowType = id.endsWith("-weekly") ? "weekly" : "5h";
+      const target = PREWARM_TARGETS.find((c) => c.model === model && (c.window === windowType || (!c.window && windowType === "5h")));
+      let allowed = Boolean(target && canTriggerPrewarm(m));
+      let activeWindowId = id;
+      if (!allowed && id === "gemini-5h" && windows["gemini-weekly"] && canTriggerPrewarm(windows["gemini-weekly"])) {
+        allowed = true;
+        activeWindowId = "gemini-weekly";
+      } else if (!allowed && id === "opus-5h" && windows["opus-weekly"] && canTriggerPrewarm(windows["opus-weekly"])) {
+        allowed = true;
+        activeWindowId = "opus-weekly";
+      }
+      const activeMetric = activeWindowId !== id ? windows[activeWindowId] : m;
+      const reason = activeMetric.unavailable
+        ? "쿼터 정보를 확인할 수 없습니다."
+        : activeMetric.isWeeklyExhausted
+          ? "주간 쿼터 소진으로 프리웜을 실행할 수 없습니다."
+          : !allowed && activeMetric.refreshFull
+            ? `재충전 중입니다 (${activeMetric.refreshFull}).`
+            : "쿼터가 100%이고 시간이 꽉 차 있을 때 실행할 수 있습니다.";
+      prewarmBtn.disabled = !allowed;
+      prewarmBtn.title = allowed
+        ? "100% 대기 윈도우에 최소 영문 핑(say hi) 후 즉시 취소하여 브로커에 프리웜 실행을 요청합니다. 원격 타이머 시작 여부는 요청 시점에는 확인되지 않습니다."
+        : reason;
+      prewarmBtn.setAttribute("aria-label", `${target?.displayName || id} pre-warm${allowed ? "" : ` disabled: ${reason}`}`);
+      prewarmBtn.onclick = allowed ? () => window.triggerPrewarmWindow && window.triggerPrewarmWindow(activeWindowId, acc.email) : null;
+    }
+    const bar = row.querySelector(".progress-fill");
+    if (bar) {
+      const displayPct = typeof m.displayPercentage === "number" ? m.displayPercentage : m.percentage;
+      bar.style.width = `${Math.max(0, Math.min(100, displayPct ?? 0))}%`;
+      bar.classList.toggle("warning", m.tone === "warning");
+      bar.classList.toggle("critical", m.tone === "critical");
+      bar.title = m.tooltip || "";
+    }
+    if (gaugeTicksEnabled()) {
+      const track = bar && bar.parentElement;
+      if (track && track.classList.contains("progress-track")) {
+        let ticks = track.querySelector(".progress-ticks");
+        if (!ticks) {
+          ticks = document.createElement("div");
+          ticks.className = "progress-ticks";
+          track.appendChild(ticks);
+        }
+        const segments = id.endsWith("weekly") ? 7 : 5;
+        ticks.dataset.segments = String(segments);
+        ticks.style.backgroundImage = buildGaugeTickGradient(segments);
+        ticks.style.display = "";
+      }
+    } else if (bar) {
+      const track = bar.parentElement;
+      const ticks = track && track.querySelector(".progress-ticks");
+      if (ticks) ticks.style.display = "none";
+    }
+    const tokensEl = row.querySelector(".window-tokens");
+    if (tokensEl) {
+      const p = prefixOf[id];
+      const text = absoluteTokenText(accTs[`${p}TokensLeft`], accTs[`${p}Max`], accTs[`${p}EstimatedAbsolute`]);
+      tokensEl.textContent = text || "";
+    }
+  }
+}
+
+function updateProviderMetrics(prefix, accTs, email) {
+  const windows = {
+    "gemini-5h": buildTokenMetric("5Hours", accTs, "antigravity", "Gemini 5Hours", "antigravityWeekly"),
+    "gemini-weekly": buildTokenMetric("Weekly", accTs, "antigravityWeekly", "Gemini Weekly"),
+    "argon-5h": buildTokenMetric("5Hours", accTs, "argon", "Argon 4 5Hours", "argonWeekly"),
+    "argon-weekly": buildTokenMetric("Weekly", accTs, "argonWeekly", "Argon 4 Weekly"),
+    "opus-5h": buildTokenMetric("5Hours", accTs, "opus", "Claude 5Hours", "opusWeekly"),
+    "opus-weekly": buildTokenMetric("Weekly", accTs, "opusWeekly", "Claude Weekly"),
+  };
+  const noDataText = state.tokenStatusError ? "쿼터 갱신 실패" : "쿼터 대기 중";
+  const argon5hRow = $(prefix ? `row-${prefix}-argon-5h` : "row-argon-5h");
+  if (argon5hRow) {
+    argon5hRow.style.display = windows["argon-5h"].unavailable ? "none" : "";
+  }
+  for (const [id, m] of Object.entries(windows)) {
+    const elId = prefix ? `${prefix}-${id}` : id;
+    const label = $(`label-${elId}`);
+    if (label) {
+      label.textContent = m.unavailable
+        ? noDataText
+        : m.isWeeklyExhausted
+          ? "0.00% remaining (Weekly exhausted)"
+          : `${m.percentage.toFixed(2)}% remaining`;
+      label.title = m.tooltip || "";
+    }
+    const reset = $(`reset-${elId}`);
+    if (reset) {
+      reset.textContent = m.refreshFull || `· ${noDataText}`;
+      reset.title = m.tooltip || "";
+      reset.style.cursor = "";
+      reset.onclick = null;
+    }
+    const prewarmButton = $(`prewarm-${elId}`);
+    if (prewarmButton) {
+      const model = prewarmModelByWindow[id];
+      const windowType = id.endsWith("-weekly") ? "weekly" : "5h";
+      const target = PREWARM_TARGETS.find((c) => c.model === model && (c.window === windowType || (!c.window && windowType === "5h")));
+      let allowed = Boolean(target && canTriggerPrewarm(m));
+      let activeWindowId = id;
+      if (!allowed && id === "gemini-5h" && windows["gemini-weekly"] && canTriggerPrewarm(windows["gemini-weekly"])) {
+        allowed = true;
+        activeWindowId = "gemini-weekly";
+      } else if (!allowed && id === "opus-5h" && windows["opus-weekly"] && canTriggerPrewarm(windows["opus-weekly"])) {
+        allowed = true;
+        activeWindowId = "opus-weekly";
+      }
+      const activeMetric = activeWindowId !== id ? windows[activeWindowId] : m;
+      const reason = activeMetric.unavailable
+        ? "쿼터 정보를 확인할 수 없습니다."
+        : activeMetric.isWeeklyExhausted
+          ? "주간 쿼터 소진으로 프리웜을 실행할 수 없습니다."
+          : !allowed && activeMetric.refreshFull
+            ? `재충전 중입니다 (${activeMetric.refreshFull}).`
+            : "쿼터가 100%이고 시간이 꽉 차 있을 때 실행할 수 있습니다.";
+      prewarmButton.disabled = !allowed;
+      prewarmButton.title = allowed
+        ? "100% 대기 윈도우에 최소 영문 핑(say hi) 후 즉시 취소하여 브로커에 프리웜 실행을 요청합니다. 원격 타이머 시작 여부는 요청 시점에는 확인되지 않습니다."
+        : reason;
+      prewarmButton.setAttribute("aria-label", `${target?.displayName || id} pre-warm${allowed ? "" : ` disabled: ${reason}`}`);
+      prewarmButton.onclick = allowed ? () => window.triggerPrewarmWindow && window.triggerPrewarmWindow(activeWindowId, email) : null;
+    }
+    const bar = $(`bar-${elId}`);
+    if (bar) {
+      const displayPct = typeof m.displayPercentage === "number" ? m.displayPercentage : m.percentage;
+      bar.style.width = `${Math.max(0, Math.min(100, displayPct ?? 0))}%`;
+      bar.classList.toggle("warning", m.tone === "warning");
+      bar.classList.toggle("critical", m.tone === "critical");
+      bar.title = m.tooltip || "";
+    }
+    if (gaugeTicksEnabled()) {
+      const track = bar && bar.parentElement;
+      if (track && track.classList.contains("progress-track")) {
+        let ticks = track.querySelector(".progress-ticks");
+        if (!ticks) {
+          ticks = document.createElement("div");
+          ticks.className = "progress-ticks";
+          track.appendChild(ticks);
+        }
+        const segments = id.endsWith("weekly") ? 7 : 5;
+        ticks.dataset.segments = String(segments);
+        ticks.style.backgroundImage = buildGaugeTickGradient(segments);
+        ticks.style.display = "";
+      }
+    } else if (bar) {
+      const track = bar.parentElement;
+      const ticks = track && track.querySelector(".progress-ticks");
+      if (ticks) ticks.style.display = "none";
+    }
+    const abs = $(`tokens-${elId}`);
+    if (abs) {
+      const p = prefixOf[id];
+      const text = absoluteTokenText(accTs[`${p}TokensLeft`], accTs[`${p}Max`], accTs[`${p}EstimatedAbsolute`]);
+      abs.textContent = text || "";
+    }
+  }
+}
+
+function renderTokens() {
+  const barEl = $("account-selector-bar");
+  if (barEl) barEl.style.display = "none";
+
+  const rawTs = state.tokenStatus || {};
+  const { ordered: orderedAccounts, ideEmail, agy2Email } = buildOrderedAntigravityAccounts(rawTs);
+
+  // Activity rings on Home follow primary active account (IDE -> 2.0 -> alphabetical)
+  const primaryAcc = orderedAccounts[0] || getPrimaryAccount(rawTs);
+  const ts = getPrimaryTokenStatus(rawTs, primaryAcc);
+  renderHomeActivityRings(ts);
+
+  // 2. Update Slot 1 (#provider-antigravity) — account-centric banner + dynamic IDE/2.0 ACTIVE badge
+  const slot1Acc = orderedAccounts[0] || null;
+  const card1 = $("provider-antigravity");
+  applyAccountCardHeader({
+    card: card1,
+    pillEl: $("antigravity-provider-pill") || document.querySelector("#provider-antigravity .provider-pill"),
+    emailEl: $("antigravity-account-email") || document.querySelector("#provider-antigravity .account-email-tag"),
+    stateEl: $("antigravity-provider-state-tag") || document.querySelector("#provider-antigravity .provider-state-tag"),
+    errEl: $("antigravity-account-error"),
+    acc: slot1Acc,
+    ideEmail,
+    agy2Email,
+    isLegacyFallback: orderedAccounts.length === 0,
+  });
+  const slot1Ts = orderedAccounts.length === 0
+    ? rawTs
+    : (slot1Acc ? getPrimaryTokenStatus(rawTs, slot1Acc) : {});
+  updateProviderMetrics("", slot1Ts, slot1Acc?.email);
+
+  // 3. Update Slot 2 (#provider-antigravity-2) — visible only when 2+ distinct accounts exist
+  const slot2Acc = orderedAccounts[1] || null;
+  const card2 = $("provider-antigravity-2");
+  if (slot2Acc) {
+    if (card2) {
+      card2.dataset.slotEmpty = "false";
+      card2.style.display = "";
+    }
+    applyAccountCardHeader({
+      card: card2,
+      pillEl: $("antigravity-2-provider-pill") || document.querySelector("#provider-antigravity-2 .provider-pill"),
+      emailEl: $("antigravity-2-account-email") || document.querySelector("#provider-antigravity-2 .account-email-tag"),
+      stateEl: $("antigravity-2-provider-state-tag") || document.querySelector("#provider-antigravity-2 .provider-state-tag"),
+      errEl: $("antigravity-2-account-error"),
+      acc: slot2Acc,
+      ideEmail,
+      agy2Email,
+      isLegacyFallback: false,
+    });
+    updateProviderMetrics("agy2", getPrimaryTokenStatus(rawTs, slot2Acc), slot2Acc.email);
+  } else if (card2) {
+    card2.dataset.slotEmpty = "true";
+    card2.dataset.accountEmail = "";
+    card2.style.display = "none";
+  }
+
+  // 4. Update Group 2: OpenAI (Codex 5h & Weekly)
+  const noDataText = state.tokenStatusError ? "쿼터 갱신 실패" : "쿼터 대기 중";
+  const codexWindows = {
+    "codex-5h": buildTokenMetric("5Hours", ts, "codex", "ChatGPT 5Hours", "codexWeekly"),
+    "codex-weekly": buildTokenMetric("Weekly", ts, "codexWeekly", "ChatGPT Weekly"),
+  };
+  for (const [id, m] of Object.entries(codexWindows)) {
+    const label = $(`label-${id}`);
+    if (label) {
+      label.textContent = m.unavailable
+        ? noDataText
+        : m.isWeeklyExhausted
+          ? "0.00% remaining (Weekly exhausted)"
+          : `${m.percentage.toFixed(2)}% remaining`;
+      label.title = m.tooltip || "";
+    }
+    const reset = $(`reset-${id}`);
+    if (reset) {
+      reset.textContent = m.refreshFull || `· ${noDataText}`;
+      reset.title = m.tooltip || "";
+    }
+    const prewarmButton = $(`prewarm-${id}`);
+    if (prewarmButton) {
+      const model = prewarmModelByWindow[id];
+      const windowType = id.endsWith("-weekly") ? "weekly" : "5h";
+      const target = PREWARM_TARGETS.find((c) => c.model === model && (c.window === windowType || (!c.window && windowType === "5h")));
+      const allowed = Boolean(target && canTriggerPrewarm(m));
+      const reason = m.unavailable
+        ? "쿼터 정보를 확인할 수 없습니다."
+        : m.isWeeklyExhausted
+          ? "주간 쿼터 소진으로 프리웜을 실행할 수 없습니다."
+          : !allowed && m.refreshFull
+            ? `재충전 중입니다 (${m.refreshFull}).`
+            : "쿼터가 100%이고 시간이 꽉 차 있을 때 실행할 수 있습니다.";
+      prewarmButton.disabled = !allowed;
+      prewarmButton.title = allowed
+        ? "100% 대기 윈도우에 최소 영문 핑(say hi) 후 즉시 취소하여 브로커에 프리웜 실행을 요청합니다. 원격 타이머 시작 여부는 요청 시점에는 확인되지 않습니다."
+        : reason;
+      prewarmButton.setAttribute("aria-label", `${target?.displayName || id} pre-warm${allowed ? "" : ` disabled: ${reason}`}`);
+      prewarmButton.onclick = allowed ? () => window.triggerPrewarmWindow && window.triggerPrewarmWindow(id) : null;
+    }
+    const bar = $(`bar-${id}`);
+    if (bar) {
+      const displayPct = typeof m.displayPercentage === "number" ? m.displayPercentage : m.percentage;
+      bar.style.width = `${Math.max(0, Math.min(100, displayPct ?? 0))}%`;
+      bar.classList.toggle("warning", m.tone === "warning");
+      bar.classList.toggle("critical", m.tone === "critical");
+      bar.title = m.tooltip || "";
+    }
+    if (gaugeTicksEnabled()) {
+      const track = bar && bar.parentElement;
+      if (track && track.classList.contains("progress-track")) {
+        let ticks = track.querySelector(".progress-ticks");
+        if (!ticks) {
+          ticks = document.createElement("div");
+          ticks.className = "progress-ticks";
+          track.appendChild(ticks);
+        }
+        const segments = id.endsWith("weekly") ? 7 : 5;
+        ticks.dataset.segments = String(segments);
+        ticks.style.backgroundImage = buildGaugeTickGradient(segments);
+        ticks.style.display = "";
+      }
+    } else if (bar) {
+      const track = bar.parentElement;
+      const ticks = track && track.querySelector(".progress-ticks");
+      if (ticks) ticks.style.display = "none";
+    }
+    const abs = $(`tokens-${id}`);
+    if (abs) {
+      const p = prefixOf[id];
+      const text = absoluteTokenText(ts[`${p}TokensLeft`], ts[`${p}Max`], ts[`${p}EstimatedAbsolute`]);
+      abs.textContent = text || "";
+    }
+  }
+
+  // 5. Render any remaining 3rd+ accounts dynamically
+  const grid = document.querySelector(".token-providers-grid");
+  const otherAccounts = orderedAccounts.slice(2);
+
+  const validSlugs = new Set();
+  if (grid) {
+    const openaiCard = $("provider-openai");
+    for (const acc of otherAccounts) {
+      if (!acc || !acc.email) continue;
+      const slug = acc.email.replace(/[^a-zA-Z0-9_-]/g, "_");
+      validSlugs.add(slug);
+      renderAccountCard(acc, grid, openaiCard, ideEmail, agy2Email);
+    }
+
+    grid.querySelectorAll(":scope > [id^='provider-account-']").forEach((el) => {
+      const slug = el.id.replace("provider-account-", "");
+      if (!validSlugs.has(slug)) {
+        el.remove();
+      }
+    });
+  }
+
+  if (providerDndController) {
+    providerDndController.bindAll();
+    providerDndController.restoreOrder();
+  }
+  applyProviderVisibility();
+
+  const summary = calculateCapacitySummary(ts);
+  const summaryEl = $("token-capacity-summary");
+  if (summaryEl) {
+    summaryEl.replaceChildren();
+    if (summary) {
+      const toneClass = `summary-${capacityTone(summary.lowest.percentage)}`;
+      summaryEl.append(
+        node("span", `Best: ${summary.strongest.label} ${summary.strongest.percentage.toFixed(0)}%`, "summary-pill"),
+        node("span", `Lowest: ${summary.lowest.label} ${summary.lowest.percentage.toFixed(0)}%`, `summary-pill ${toneClass}`),
+      );
+      summaryEl.style.display = "";
+    } else {
+      summaryEl.style.display = "none";
+    }
+  }
+
+  renderPrewarmToolbar();
+
+  const codexTag = $("codex-status-tag");
+  if (codexTag) {
+    const codexWorking = ts.codexState === "working";
+    codexTag.textContent = ts.codexState
+      ? (codexWorking ? "작업 중" : "대기")
+      : "확인중";
+    codexTag.className = `provider-state-tag ${codexWorking ? "online" : ""}`;
+  }
+
+  const routingLabel = { normal: "정상", degraded: "저하", restricted: "제한", critical: "제한", unknown: "확인중" };
+  const routing = ts.taskRouting || ts.recommendedTaskWeight || "unknown";
+  const routingBadge = $("task-routing-badge");
+  if (routingBadge) {
+    const cssClass = routing === "unknown" ? "" : routing === "critical" ? "restricted" : routing;
+    routingBadge.className = `task-routing-pill ${cssClass}`.trim();
+    routingBadge.textContent = routingLabel[routing] || routing;
+  }
+
+  const du = ts.claudeDirectUsage || ts.directUsage;
+  const hasClaudeData = du && ((du.sevenDaysTokens > 0) || (du.eventCount > 0) || (du.today?.eventCount > 0) || (du.sevenDays?.eventCount > 0));
+  
+  const claudeTag = $("claude-status-tag");
+  if (claudeTag) {
+    const tagText = hasClaudeData ? "기록 있음" : "기록 없음";
+    claudeTag.textContent = tagText;
+    claudeTag.className = "provider-state-tag";
+  }
+
+  const todayTok = du?.todayTokens ?? du?.today?.totalTokens ?? 0;
+  const todayBillable = du?.todayPaidTokens ?? du?.today?.billableTokens;
+  const sevenDayTok = du?.sevenDaysTokens ?? du?.sevenDays?.totalTokens ?? 0;
+  const sevenDayEvents = du?.eventCount ?? du?.sevenDays?.eventCount ?? 0;
+
+  if ($("claude-today-tokens")) {
+    const el = $("claude-today-tokens");
+    el.replaceChildren();
+    el.append(
+      document.createTextNode(`${todayTok.toLocaleString()} `),
+      node("span", "tokens", "unit-label")
+    );
+  }
+  if ($("claude-today-billable")) $("claude-today-billable").textContent = todayBillable === undefined ? "Unavailable" : todayBillable.toLocaleString();
+  if ($("claude-7d-tokens")) {
+    const el = $("claude-7d-tokens");
+    el.replaceChildren();
+    el.append(
+      document.createTextNode(`${sevenDayTok.toLocaleString()} `),
+      node("span", "tokens", "unit-label")
+    );
+  }
+  if ($("claude-7d-events")) $("claude-7d-events").textContent = `${sevenDayEvents}건`;
+
+  const sourcesList = Array.isArray(du?.sources) && du.sources.length ? du.sources.join(", ") : "Claude API/CLI/Cowork 사용 기록이 없습니다.";
+  if ($("claude-sources-text")) $("claude-sources-text").textContent = sourcesList;
+
+  const lastUsedStr = du?.lastUsedAt || du?.lastMeasuredAt;
+  if ($("claude-last-used")) {
+    if (lastUsedStr) {
+      try {
+        const d = new Date(lastUsedStr);
+        $("claude-last-used").textContent = Number.isNaN(d.getTime()) ? lastUsedStr : d.toLocaleTimeString();
+      } catch {
+        $("claude-last-used").textContent = lastUsedStr;
+      }
+    } else {
+      $("claude-last-used").textContent = "사용 기록 없음";
+    }
+  }
+
+  const lcs = ts.localComputeStatus || {};
+  const badge = localServerBadge(lcs.endpointHealth, lcs.loadedModels, lcs.programName);
+  const localTag = $("local-llm-status-tag");
+  if (localTag) {
+    const tagClass = badge.tone === "active" ? "online" : badge.tone === "idle" ? "idle" : "";
+    localTag.textContent = badge.text;
+    localTag.className = `provider-state-tag ${tagClass}`.trim();
+    localTag.title = badge.text;
+  }
+  const loadedModelEl = $("local-loaded-model");
+  if (loadedModelEl) loadedModelEl.textContent = localLoadedModelLabel(lcs.loadedModels);
+  const endpointEl = $("local-endpoint-health");
+  if (endpointEl) {
+    const health = typeof lcs.endpointHealth === "string" ? lcs.endpointHealth : "offline";
+    const running = health === "ok" || health === "idle";
+    endpointEl.textContent = running
+      ? `${health === "ok" ? "정상" : "대기"} (${lcs.programName || "server"})`
+      : "오프라인";
+  }
+
+  const gpuContainer = $("gpu-status-container");
+  if (gpuContainer && lcs && Array.isArray(lcs.gpus) && lcs.gpus.length) {
+    gpuContainer.replaceChildren();
+    lcs.gpus.forEach((gpu) => {
+      const vramPct = gpu.vramTotalMb > 0 ? Math.round((gpu.vramUsedMb / gpu.vramTotalMb) * 1000) / 10 : 0;
+      const card = document.createElement("div");
+      card.className = "gpu-block";
+      card.style.marginTop = "8px";
+      card.style.padding = "8px";
+      card.style.background = "var(--glass-surface-subtle)";
+      card.style.borderRadius = "8px";
+      card.style.border = "1px solid var(--glass-border-subtle)";
+
+      const title = node("div", `GPU ${gpu.id}: ${gpu.name}`);
+      title.style.fontWeight = "700";
+      title.style.fontSize = "12px";
+      title.style.color = "var(--text-main)";
+      title.style.marginBottom = "6px";
+      card.append(title);
+
+      const utilBox = node("div");
+      utilBox.style.display = "flex";
+      utilBox.style.flexDirection = "column";
+      utilBox.style.gap = "2px";
+      utilBox.style.marginBottom = "6px";
+
+      const utilRow = node("div");
+      utilRow.style.display = "flex";
+      utilRow.style.justifyContent = "space-between";
+      utilRow.style.fontSize = "11.5px";
+      const utilLabel = node("span", "GPU Utilization");
+      utilLabel.style.color = "var(--text-muted)";
+      const utilVal = node("span", `${gpu.utilizationPercentage}% current load · `);
+      utilVal.style.color = "var(--text-main)";
+      utilVal.style.fontWeight = "600";
+      const pwr = node("span", `${gpu.powerDrawW !== undefined ? gpu.powerDrawW.toFixed(2) + "W" : "-"} / ${gpu.powerLimitW !== undefined ? gpu.powerLimitW.toFixed(1) + "W" : "-"}`);
+      pwr.style.color = "var(--accent-amber)";
+      utilVal.append(pwr);
+      utilRow.append(utilLabel, utilVal);
+
+      const utilTrack = node("div", undefined, "progress-track");
+      utilTrack.style.height = "5px";
+      const utilFill = node("div", undefined, "progress-fill local");
+      utilFill.style.width = `${Math.max(0, Math.min(100, gpu.utilizationPercentage))}%`;
+      utilTrack.append(utilFill);
+      utilBox.append(utilRow, utilTrack);
+      card.append(utilBox);
+
+      const vramBox = node("div");
+      vramBox.style.display = "flex";
+      vramBox.style.flexDirection = "column";
+      vramBox.style.gap = "2px";
+
+      const vramRow = node("div");
+      vramRow.style.display = "flex";
+      vramRow.style.justifyContent = "space-between";
+      vramRow.style.fontSize = "11.5px";
+      const vramLabel = node("span", "VRAM Usage");
+      vramLabel.style.color = "var(--text-muted)";
+      const vramVal = node("span", `${vramPct}% used `);
+      vramVal.style.color = "var(--text-main)";
+      vramVal.style.fontWeight = "600";
+      const vramSub = node("span", `(${(gpu.vramUsedMb / 1024).toFixed(1)} GB / ${(gpu.vramTotalMb / 1024).toFixed(1)} GB)`);
+      vramSub.style.color = "var(--text-subtle)";
+      vramSub.style.fontSize = "10.5px";
+      vramVal.append(vramSub);
+      vramRow.append(vramLabel, vramVal);
+
+      const vramTrack = node("div", undefined, "progress-track");
+      vramTrack.style.height = "5px";
+      const vramFill = node("div", undefined, "progress-fill local");
+      vramFill.style.width = `${Math.max(0, Math.min(100, vramPct))}%`;
+      vramTrack.append(vramFill);
+      vramBox.append(vramRow, vramTrack);
+      card.append(vramBox);
+
+      gpuContainer.append(card);
+    });
+  }
+
+  const actList = $("token-activity-list");
+  if (actList) {
+    actList.replaceChildren();
+    const activities = Array.isArray(ts.activity) && ts.activity.length ? ts.activity : [
+      "브로커에서 활동 기록을 받아오지 못했습니다.",
+    ];
+    for (const act of activities) {
+      actList.append(node("li", `• ${act}`));
+    }
+  }
+  if ($("token-last-updated")) {
+    const t = state.lastSyncAt ? state.lastSyncAt.toLocaleTimeString() : "—";
+    $("token-last-updated").textContent = state.brokerOnline
+      ? `마지막 동기화: ${t} · 실시간 연동됨`
+      : `브로커 오프라인 — 마지막 동기화: ${t}`;
+  }
+
+  renderHomeActivityRings(ts);
+}
+
+function renderMainAgent() {
+  const groups = brandGroups();
+  let selectedGroup = groups.find((g) => g.items.some((i) => i.provider === state.mainProvider)) || groups[0];
+  if (!selectedGroup) selectedGroup = { key: "antigravity", label: "Antigravity", items: [defaults[0]] };
+  const selected = brandRepresentative(selectedGroup);
+  state.mainProvider = selected.provider;
+  const select = $("main-agent-select");
+  if (select) {
+    select.replaceChildren();
+    for (const group of groups) {
+      const rep = brandRepresentative(group);
+      const option = node("option", group.items.length > 1 ? `${group.label} (${group.items.map((i) => i.label || i.provider).join(" · ")})` : group.label);
+      option.value = rep.provider;
+      option.selected = rep.provider === state.mainProvider;
+      select.append(option);
+    }
+  }
+
+  if ($("main-agent-name")) $("main-agent-name").textContent = selectedGroup.label;
+  if ($("top-agent-label")) $("top-agent-label").textContent = selectedGroup.label;
+
+  const pill = $("main-agent-status");
+  if (pill) {
+    const anyAvailable = selectedGroup.items.some((i) => i.available);
+    pill.textContent = anyAvailable ? "사용가능" : "확인중";
+    pill.className = `status-pill ${anyAvailable ? "available" : "not-installed"}`;
+  }
+
+  const endpoint = selected.endpoint || selected.reason || "공식 연결 경로 확인 중";
+  if ($("main-agent-detail")) {
+    const surfaces = selectedGroup.items.length > 1
+      ? ` · 표면: ${selectedGroup.items.map((i) => i.label || i.provider).join(", ")}`
+      : "";
+    $("main-agent-detail").textContent = `연결 방식: ${safeText(selected.mode)} · 대상 ID: ${selected.provider} · ${endpoint}${surfaces}`;
+  }
+
+  if ($("selected-agent-hint")) {
+    $("selected-agent-hint").textContent = `현재 메인 대상: ${selectedGroup.label}`;
+  }
+
+  const actions = $("main-agent-actions");
+  if (actions) {
+    actions.replaceChildren();
+    if (selectedGroup.key === "chatgpt") {
+      actions.append(
+        button("📋 ChatGPT HTTP URL 복사", "button primary copy-chatgpt-mcp apple-tactile"),
+        button("📋 STDIO 경로 복사", "button secondary copy-chatgpt-stdio apple-tactile"),
+      );
+    } else if (selectedGroup.key === "claude") {
+      actions.append(
+        button("⚡ Claude Desktop 자동 등록", "button primary register-claude apple-tactile"),
+        button("📋 설정 JSON 복사", "button secondary copy-claude-mcp apple-tactile"),
+      );
+    } else {
+      const copyJsonButton = node("button", undefined, "button secondary copy-generic-mcp apple-tactile");
+      copyJsonButton.type = "button";
+      copyJsonButton.setAttribute("aria-label", "MCP 설정 JSON 복사");
+      copyJsonButton.title = "MCP 설정 JSON 복사";
+      copyJsonButton.append(node("span", "📋 MCP 설정 JSON 복사", "copy-json-full"), node("span", "⧉", "copy-json-short"));
+      actions.append(copyJsonButton);
+    }
+  }
+}
+
+function renderHomeStats() {
+  const groups = brandGroups();
+  const availableCount = groups.filter((g) => g.items.some((c) => c.available)).length;
+  if ($("stat-agents")) $("stat-agents").textContent = `${availableCount} / 5개`;
+  if ($("stat-tasks")) $("stat-tasks").textContent = `${state.tasks.length}건`;
+  if ($("stat-approvals")) $("stat-approvals").textContent = `${state.approvals.length}건`;
+}
+
+function renderAgents() {
+  const target = $("agent-list");
+  if (!target) return;
+  target.replaceChildren();
+  for (const group of brandGroups()) {
+    const anyAvailable = group.items.some((i) => i.available);
+    const card = node("article", undefined, "agent-card-item card liquid-card");
+    const topRow = node("div", undefined, "agent-heading");
+    topRow.append(node("strong", group.label));
+    const pill = node("span", anyAvailable ? "사용가능" : "설치X", `status-pill ${anyAvailable ? "available" : "not-installed"}`);
+    topRow.append(pill);
+    card.append(topRow);
+
+    for (const item of group.items) {
+      card.append(node("div", `${item.label || item.provider} — ${item.provider} · ${item.mode || "bridge"}`, "agent-card-meta"));
+    }
+    const first = group.items[0];
+    const desc = node("div", first.model ? `모델: ${first.model}` : safeText(first.reason, "공식 연결 경로"), "agent-card-meta");
+    card.append(desc);
+
+    const act = node("div", undefined, "agent-quick-actions");
+    if (group.key === "chatgpt") {
+      act.append(button("📋 HTTP URL", "button secondary copy-chatgpt-mcp apple-tactile"));
+    } else if (group.key === "claude") {
+      act.append(button("⚡ 자동 등록", "button primary register-claude apple-tactile"));
+    } else {
+      const rep = brandRepresentative(group);
+      act.append(button("선택", "button secondary select-main-btn apple-tactile", { provider: rep.provider }));
+    }
+    card.append(act);
+    target.append(card);
+  }
+}
+
+function renderTasks() {
+  const taskStatusLabel = { pending: "대기", running: "진행중", completed: "완료", failed: "실패", cancelled: "취소" };
+  const taskTarget = $("tasks");
+  if (taskTarget) {
+    taskTarget.replaceChildren();
+    const filteredTasks = state.tasks.filter((t) => {
+      const isDone = t.status === "completed" || t.status === "failed" || t.status === "cancelled";
+      return state.taskFilter === "completed" ? isDone : !isDone;
+    });
+
+    if (!filteredTasks.length) {
+      taskTarget.append(node("div", state.taskFilter === "completed" ? "완료된 작업 기록이 없습니다." : "진행 중인 작업이 없습니다.", "empty-card"));
+    } else {
+      for (const item of filteredTasks) {
+        const itemCard = node("div", undefined, "card task-card liquid-card");
+        itemCard.append(node("strong", item.title || item.id));
+        itemCard.append(node("p", item.goal || ""));
+        const supervisor = item.originProvider
+          ? (AGENT_BRAND_LABELS[AGENT_BRANDS[item.originProvider]] || item.originProvider)
+          : "-";
+        const meta = node("div", `상태: ${taskStatusLabel[item.status] || item.status} · 개정: ${item.revision} · 주관: ${supervisor}`, "muted");
+        itemCard.append(meta);
+        const actions = node("div", undefined, "task-actions");
+        actions.append(
+          button("위임", "button secondary delegate apple-tactile", { task: item.id, revision: String(item.revision) }),
+          button("취소", "button secondary cancel apple-tactile", { task: item.id, revision: String(item.revision) }),
+        );
+        itemCard.append(actions);
+        taskTarget.append(itemCard);
+      }
+    }
+  }
+
+  const approvalTarget = $("approvals");
+  if (approvalTarget) {
+    approvalTarget.replaceChildren();
+    if (!state.approvals.length) {
+      approvalTarget.append(node("div", "승인 대기 중인 요청이 없습니다.", "empty-card"));
+    } else {
+      for (const item of state.approvals) {
+        const appCard = node("div", undefined, "card approval-card liquid-card");
+        appCard.append(node("strong", `[${item.action}] ${item.description || item.id}`));
+        appCard.append(node("p", `요청자: ${item.requestedBy} · 작업: ${item.taskId}`));
+        const actions = node("div", undefined, "task-actions");
+        actions.append(button("✓ 승인", "button primary approve apple-tactile", { approval: item.id, revision: String(item.expectedRevision ?? 1) }));
+        appCard.append(actions);
+        approvalTarget.append(appCard);
+      }
+    }
+  }
+}
+
+function renderRuns(runsData) {
+  const listTarget = $("runs-timeline-list");
+  const countBadge = $("runs-active-count");
+  if (!listTarget) return;
+
+  const readState = classifyCollectionResponse({ response: runsData?.response, error: runsData?.error, key: "runs" });
+  const runs = Array.isArray(runsData?.response?.runs) ? runsData.response.runs : [];
+  const activeCount = runsData?.response?.activeCount || 0;
+  if (countBadge) {
+    countBadge.textContent = `${activeCount}개 실행중`;
+    countBadge.className = `status-pill ${activeCount > 0 ? "unlinked" : "available"}`;
+  }
+
+  listTarget.replaceChildren();
+  if (["unsupported", "unavailable", "unselected"].includes(readState.kind)) {
+    const message = readState.kind === "unsupported" ? "현재 브로커가 실행 기록 API를 지원하지 않습니다." : readState.kind === "unselected" ? "워크스페이스를 선택하거나 경로를 입력하면 IDE 실행 기록을 볼 수 있습니다." : "실행 기록을 불러오지 못했습니다.";
+    listTarget.append(node("div", `${message} ${readState.message}`.trim(), "empty-card api-read-state"));
+    return;
+  }
+  if (readState.kind === "partial") {
+    listTarget.append(node("div", `일부 실행 기록을 읽지 못했습니다: ${readState.message}`, "api-read-warning"));
+  }
+  if (!runs.length) {
+    listTarget.append(node("div", "기록된 워크스페이스 에이전트 실행이 없습니다.", "empty-card"));
+    return;
+  }
+
+  for (const run of runs.slice(0, 15)) {
+    const itemCard = node("div", undefined, "card task-card liquid-card");
+    const topRow = node("div", undefined, "agent-heading");
+    topRow.append(node("strong", run.title || run.id));
+    const runStatusMeta = {
+      running: { text: "진행중", cls: "unlinked" },
+      completed: { text: "완료", cls: "available" },
+      failed: { text: "실패", cls: "not-installed" },
+      pending: { text: "대기", cls: "waiting" },
+      cancelled: { text: "취소", cls: "waiting" },
+    }[run.status] || { text: run.status, cls: "waiting" };
+    topRow.append(node("span", runStatusMeta.text, `status-pill ${runStatusMeta.cls}`));
+    itemCard.append(topRow);
+
+    const metaParts = [
+      run.model ? `모델: ${run.model}` : undefined,
+      run.taskScale ? `규모: ${run.taskScale}` : undefined,
+      run.elapsedSeconds !== undefined ? `소요: ${run.elapsedSeconds.toFixed(1)}초` : undefined,
+      run.tokensUsed !== undefined ? `토큰: ${run.tokensUsed.toLocaleString()}개` : undefined,
+      run.exitCode !== undefined ? `종료코드: ${run.exitCode}` : undefined,
+    ].filter(Boolean);
+
+    if (metaParts.length) {
+      itemCard.append(node("p", metaParts.join(" · "), "muted"));
+    }
+
+    if (Array.isArray(run.artifacts) && run.artifacts.length) {
+      const artRow = node("div", undefined, "agent-card-meta");
+      artRow.append(node("span", `산출물 (${run.artifacts.length}개): `));
+      run.artifacts.forEach((art) => {
+        const link = node("span", art.path, "code-box");
+        link.style.display = "inline-block";
+        link.style.margin = "2px 4px";
+        link.style.fontSize = "11px";
+        artRow.append(link);
+      });
+      itemCard.append(artRow);
+    }
+
+    listTarget.append(itemCard);
+  }
+}
+
+function renderLocalLlmMetrics(metricsData) {
+  const tbody = $("local-metrics-tbody");
+  const summary = $("local-metrics-summary");
+  if (!tbody) return;
+
+  const readState = classifyCollectionResponse({ response: metricsData?.response, error: metricsData?.error, key: "metrics" });
+  const metrics = Array.isArray(metricsData?.response?.metrics) ? metricsData.response.metrics : [];
+  if (summary) {
+    summary.textContent = readState.kind === "empty" || readState.kind === "available" || readState.kind === "partial"
+      ? `총 ${metrics.length}건 기록${readState.kind === "partial" ? " · 일부 오류" : ""}`
+      : readState.kind === "unsupported" ? "지원되지 않음" : "조회 실패";
+  }
+
+  tbody.replaceChildren();
+  if (["unsupported", "unavailable", "unselected"].includes(readState.kind)) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 8;
+    td.className = "api-read-state";
+    td.textContent = `${readState.kind === "unsupported" ? "현재 브로커가 로컬 LLM 지표 API를 지원하지 않습니다." : readState.kind === "unselected" ? "워크스페이스를 선택하거나 경로를 입력하면 IDE 로컬 LLM 지표를 볼 수 있습니다." : "로컬 LLM 지표를 불러오지 못했습니다."} ${readState.message}`.trim();
+    tr.append(td);
+    tbody.append(tr);
+    return;
+  }
+  if (readState.kind === "partial") {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 8;
+    td.className = "api-read-warning";
+    td.textContent = `일부 지표를 읽지 못했습니다: ${readState.message}`;
+    tr.append(td);
+    tbody.append(tr);
+  }
+  if (!metrics.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 7;
+    td.style.padding = "12px";
+    td.style.textAlign = "center";
+    td.style.color = "var(--text-subtle)";
+    td.textContent = "기록된 로컬 LLM 실행 데이터가 없습니다.";
+    tr.append(td);
+    tbody.append(tr);
+    return;
+  }
+
+  for (const m of metrics.slice(-10).reverse()) {
+    const tr = document.createElement("tr");
+    tr.style.borderBottom = "1px solid var(--glass-border-subtle)";
+    const statusColor = m.success ? "var(--accent-emerald)" : "var(--accent-rose)";
+    const statusText = m.success ? "성공" : "실패";
+    const timeStr = m.timestamp ? m.timestamp.split("T")[1]?.slice(0, 8) || m.timestamp : "-";
+
+    const tdTime = document.createElement("td");
+    tdTime.style.padding = "6px 8px";
+    tdTime.style.color = "var(--text-muted)";
+    tdTime.textContent = timeStr;
+
+    const tdTitle = document.createElement("td");
+    tdTitle.style.padding = "6px 8px";
+    tdTitle.style.fontWeight = "600";
+    tdTitle.style.color = "var(--text-main)";
+    tdTitle.textContent = m.taskTitle || "-";
+
+    const tdModel = document.createElement("td");
+    tdModel.style.padding = "6px 8px";
+    tdModel.style.color = "var(--accent-amber)";
+    tdModel.textContent = m.model || "qwen3.8:27b";
+
+    const tdScale = document.createElement("td");
+    tdScale.style.padding = "6px 8px";
+    tdScale.style.color = "var(--text-muted)";
+    tdScale.textContent = m.taskScale || "-";
+
+    const tdElapsed = document.createElement("td");
+    tdElapsed.style.padding = "6px 8px";
+    tdElapsed.style.color = "var(--text-main)";
+    tdElapsed.textContent = m.actualElapsedSeconds ? `${m.actualElapsedSeconds.toFixed(1)}초` : "-";
+
+    const tdTokens = document.createElement("td");
+    tdTokens.style.padding = "6px 8px";
+    tdTokens.style.color = "var(--text-main)";
+    tdTokens.textContent = m.totalTokens ? m.totalTokens.toLocaleString() : "-";
+
+    const tdSpeed = document.createElement("td");
+    tdSpeed.style.padding = "6px 8px";
+    tdSpeed.style.color = "var(--accent-amber-light)";
+    tdSpeed.textContent = m.tokensPerSecond ? `${m.tokensPerSecond.toFixed(1)} t/s` : "-";
+
+    const tdStatus = document.createElement("td");
+    tdStatus.style.padding = "6px 8px";
+    tdStatus.style.fontWeight = "600";
+    tdStatus.style.color = statusColor;
+    tdStatus.textContent = statusText;
+
+    tr.append(tdTime, tdTitle, tdModel, tdScale, tdElapsed, tdTokens, tdSpeed, tdStatus);
+    tbody.append(tr);
+  }
+}
+
+function safeInjectHtml(container, html) {
+  if (!container) return;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  container.replaceChildren(...Array.from(doc.body.childNodes));
+}
+
+function renderHubEcosystem() {
+  const container = $("hub-ecosystem-container");
+  if (!container) return;
+  if (state.hubEcosystem) {
+    safeInjectHtml(container, renderEcosystemMatrixHtml(state.hubEcosystem));
+    const pill = $("ecosystem-summary-pill");
+    if (pill) {
+      const readyCount = (state.hubEcosystem.connectors || []).filter((c) => c.state === "ready").length;
+      pill.textContent = `${readyCount}개 준비됨`;
+      pill.className = `status-pill ${readyCount > 0 ? "status-ok" : "waiting"}`;
+    }
+  } else {
+    container.replaceChildren(node("div", state.hubError ? `생태계 진단 대기: ${state.hubError}` : "커넥터 상태를 진단하는 중…", "empty-card"));
+  }
+}
+
+function renderHubTodos() {
+  const hosts = [$("hub-todo-items-host"), $("hub-tasks-todo-items-host")].filter(Boolean);
+  if (!hosts.length) return;
+  const filteredTodos = state.hubTodos.filter((t) => {
+    const isCompleted = t.status === "completed";
+    return state.taskFilter === "completed" ? isCompleted : !isCompleted;
+  });
+  const html = renderHubTodoListHtml(filteredTodos);
+  for (const host of hosts) {
+    safeInjectHtml(host, html);
+  }
+}
+
+function renderHubPlaybooks() {
+  const container = $("hub-playbooks-host");
+  if (!container) return;
+  safeInjectHtml(container, renderPlaybooksHtml(state.hubPlaybooks));
+}
+
+function renderHubSettings() {
+  if (!state.hubConfig) return;
+  if ($("setting-vault-path") && document.activeElement !== $("setting-vault-path")) {
+    $("setting-vault-path").value = state.hubConfig.customVaultPath || "";
+  }
+  if ($("setting-todo-path") && document.activeElement !== $("setting-todo-path")) {
+    $("setting-todo-path").value = state.hubConfig.customTodoFilePath || "";
+  }
+  if ($("setting-todo-auto-sync")) {
+    $("setting-todo-auto-sync").checked = state.hubConfig.autoSyncMarkdown !== false;
+  }
+}
+
+function openIntegrationModal() {
+  const modal = $("integration-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  renderIntegrationModalConnectors();
+}
+
+function closeIntegrationModal() {
+  const modal = $("integration-modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function renderIntegrationModalConnectors() {
+  const grid = $("integration-connectors-grid");
+  if (!grid) return;
+  grid.replaceChildren();
+
+  const connectors = state.hubOverview?.ecosystem?.connectors || state.hubEcosystem?.connectors || [
+    { id: "openclaw", label: "OpenClaw (Discord/Telegram Bridge)", state: "ready", protocol: "acp", details: "ACP 127.0.0.1:37241" },
+    { id: "hermes-agent", label: "Hermes Agent (NousResearch)", state: "ready", protocol: "openai-v1", details: "Reasoning harness" },
+    { id: "opencodex", label: "OpenCodex (Writer-Critic Harness)", state: "ready", protocol: "cli", details: "Codex CLI" },
+    { id: "obsidian-local-rest-api", label: "Obsidian Local REST API", state: "ready", protocol: "rest", details: "Todo.md & Knowledge Vault" },
+    { id: "docling", label: "Docling / MinerU (OCR Ingestion)", state: "ready", protocol: "cli", details: "Multimodal OCR pipeline" },
+    { id: "ollama", label: "Ollama (RTX 3090)", state: "ready", protocol: "rest", details: "Port 11434 local inference" },
+  ];
+
+  for (const c of connectors) {
+    const card = node("div", undefined, "connector-sheet-card");
+    const top = node("div", undefined, "connector-card-top");
+    top.append(
+      node("span", c.label || c.id, "connector-card-name"),
+      node("span", c.state === "ready" ? "연결됨" : "대기", `status-pill ${c.state === "ready" ? "available" : "waiting"}`)
+    );
+    card.append(top);
+    if (c.details) {
+      card.append(node("p", c.details, "connector-card-desc"));
+    }
+    card.append(node("span", `Protocol: ${c.protocol || "Standard"}`, "connector-card-proto"));
+    grid.append(card);
+  }
+}
+
+function openClarificationModal(todoId) {
+  state.activeClarificationTodoId = todoId;
+  const modal = $("clarification-modal");
+  if (!modal) return;
+  const todo = state.hubTodos.find((t) => t.id === todoId) || { id: todoId, title: "모호한 요청", clarificationQuestions: [] };
+
+  if ($("clarification-todo-title")) {
+    $("clarification-todo-title").textContent = `[${todo.title || todo.id}]`;
+  }
+
+  const container = $("clarification-questions-container");
+  if (container) {
+    container.replaceChildren();
+    const questions = Array.isArray(todo.clarificationQuestions) && todo.clarificationQuestions.length
+      ? todo.clarificationQuestions
+      : [{ id: "q1", question: "검증 대상 모델은 무엇입니까?", options: ["Gemini", "Codex", "Claude"] }];
+
+    for (const q of questions) {
+      const qBlock = node("div", undefined, "clarify-q-block");
+      qBlock.append(node("span", q.question, "clarify-q-title"));
+      const input = node("input", undefined, "clarify-answer-input");
+      input.type = "text";
+      input.placeholder = "직접 답변을 입력하거나 아래 옵션을 선택하세요";
+      input.dataset.questionId = q.id;
+
+      if (Array.isArray(q.options) && q.options.length) {
+        const chips = node("div", undefined, "clarify-options-grid");
+        for (const opt of q.options) {
+          const chip = button(opt, "clarify-opt-chip apple-tactile");
+          chip.type = "button";
+          chip.onclick = () => {
+            input.value = opt;
+            chips.querySelectorAll(".clarify-opt-chip").forEach((c) => c.classList.remove("active"));
+            chip.classList.add("active");
+          };
+          chips.append(chip);
+        }
+        qBlock.append(chips);
+      }
+      qBlock.append(input);
+      container.append(qBlock);
+    }
+  }
+
+  modal.classList.remove("hidden");
+}
+
+function closeClarificationModal() {
+  const modal = $("clarification-modal");
+  if (modal) modal.classList.add("hidden");
+  state.activeClarificationTodoId = null;
+}
+
+async function refreshHub({ force = false } = {}) {
+  try {
+    const overview = await api(`/v1/hub/overview${force ? "?refresh=1" : ""}`);
+    if (overview && overview.schemaVersion === 1) {
+      state.hubOverview = overview;
+      state.hubConfig = overview.config;
+      state.hubEcosystem = overview.ecosystem;
+      state.hubTodos = overview.todos || [];
+      state.hubPlaybooks = overview.playbooks || [];
+      state.hubError = null;
+    }
+  } catch (error) {
+    state.hubError = error.message;
+  }
+  renderHubEcosystem();
+  renderHubTodos();
+  renderHubPlaybooks();
+  renderHubSettings();
+}
+
+async function refreshLogs() {
+  try {
+    const res = await api("/v1/logs?lines=160");
+    if ($("log-path")) $("log-path").textContent = `로그 경로: ${res.path || "%LOCALAPPDATA%\\IntegratedPower\\state\\broker.log"}`;
+    if ($("log-lines")) $("log-lines").textContent = Array.isArray(res.lines) && res.lines.length ? res.lines.join("\n") : "기록된 브로커 로그가 없습니다.";
+  } catch (error) {
+    if ($("log-lines")) $("log-lines").textContent = `로그 조회 실패: ${error.message}`;
+  }
+}
+
+async function refreshAutoStart() {
+  try {
+    const res = await api("/v1/system/autostart");
+    state.autoStartEnabled = Boolean(res.enabled);
+    const toggle = $("setting-autostart-toggle");
+    if (toggle) toggle.checked = state.autoStartEnabled;
+  } catch {
+    // ignore
+  }
+}
+
+let refreshSeq = 0;
+let refreshInFlight = false;
+let refreshQueuedForce = null;
+
+async function refresh({ force = false } = {}) {
+  // Overlapping polls (5s timer vs slow broker) used to let an older response
+  // overwrite a newer one. Run one at a time; remember a pending request.
+  if (refreshInFlight) {
+    refreshQueuedForce = Boolean(refreshQueuedForce) || force;
+    return;
+  }
+  refreshInFlight = true;
+  const mySeq = ++refreshSeq;
+  try {
+    await refreshOnce({ force });
+  } finally {
+    refreshInFlight = false;
+    if (refreshQueuedForce !== null && mySeq === refreshSeq) {
+      const queuedForce = refreshQueuedForce;
+      refreshQueuedForce = null;
+      void refresh({ force: queuedForce });
+    }
+  }
+}
+
+async function refreshOnce({ force = false } = {}) {
+  try {
+    state.brokerHealth = await api("/health");
+    setConnection("online", `브로커 정상 (${BROKER_PORT})`);
+    if ($("status")) $("status").textContent = `브로커 정상 가동 중 (127.0.0.1:${BROKER_PORT})`;
+
+    const tokenPath = force ? "/v1/tokens/status?force=1" : "/v1/tokens/status";
+    const runsUrl = workspaceReadUrl("/v1/runs");
+    const metricsUrl = workspaceReadUrl("/v1/metrics/local-llm");
+    const unselected = () => ({ error: Object.assign(new Error("워크스페이스를 선택하거나 경로를 입력하세요."), { kind: "unselected" }) });
+    const [capRes, taskRes, appRes, tokenRes, runsRes, metricsRes, workspacesRes, settingsRes, hubRes] = await Promise.all([
+      api("/v1/capabilities").catch(() => ({ capabilities: [] })),
+      api("/v1/tasks").catch(() => ({ tasks: [] })),
+      api("/v1/approvals").catch(() => ({ approvals: [] })),
+      api(tokenPath).then((response) => ({ ...response, error: undefined })).catch((error) => ({ tokenStatus: null, error })),
+      runsUrl ? api(runsUrl).then((response) => ({ response })).catch((error) => ({ error })) : Promise.resolve(unselected()),
+      metricsUrl ? api(metricsUrl).then((response) => ({ response })).catch((error) => ({ error })) : Promise.resolve(unselected()),
+      api("/v1/workspaces").catch(() => ({ workspaces: [] })),
+      api("/v1/settings/quota").catch((error) => ({ ok: false, error })),
+      api(force ? "/v1/hub/overview?refresh=1" : "/v1/hub/overview").catch((error) => ({ ok: false, error })),
+    ]);
+
+    if (Array.isArray(capRes.capabilities)) state.capabilities = capRes.capabilities;
+    if (Array.isArray(taskRes.tasks)) state.tasks = taskRes.tasks;
+    if (Array.isArray(appRes.approvals)) state.approvals = appRes.approvals;
+    state.workspaces = Array.isArray(workspacesRes.workspaces) ? workspacesRes.workspaces : [];
+    renderWorkspaceChoices();
+    if (settingsRes?.ok) applyQuotaSettingsEnvelope(settingsRes);
+
+    if (hubRes && !hubRes.error && hubRes.schemaVersion === 1) {
+      state.hubOverview = hubRes;
+      state.hubConfig = hubRes.config;
+      state.hubEcosystem = hubRes.ecosystem;
+      state.hubTodos = hubRes.todos || [];
+      state.hubPlaybooks = hubRes.playbooks || [];
+      state.hubError = null;
+    } else if (hubRes?.error) {
+      state.hubError = hubRes.error.message || String(hubRes.error);
+    }
+
+    if (tokenRes && tokenRes.tokenStatus) {
+      state.previousTokenStatus = state.tokenStatus;
+      state.tokenStatus = tokenRes.tokenStatus;
+      state.tokenStatusError = "";
+      const measuredAt = Date.parse(tokenRes.tokenStatus.lastSync || "");
+      state.lastSyncAt = Number.isFinite(measuredAt) && measuredAt > 0 ? new Date(measuredAt) : null;
+      if (state.brokerHealth?.capabilities?.includes("quota.notifications.claim")) {
+        try {
+          const claim = await api("/v1/notifications/quota-refill", { method: "POST", body: JSON.stringify({}) });
+          if (claim.ok && Array.isArray(claim.notifications) && claim.notifications.length) {
+            playFullChime();
+            for (const item of claim.notifications) {
+              showToast(`⚡ [100% 완충] ${item.message || item.title || item.window || item.model || item.id}`);
+              sendDesktopNotification("⚡ [Integrated Power] 100% 충전 완료", item.message || item.title || item.model || item.window || "쿼터가 100% 충전되었습니다.");
+            }
+          }
+        } catch (error) {
+          if (!state.quotaNotificationClaimWarningShown) {
+            state.quotaNotificationClaimWarningShown = true;
+            showToast(`쿼터 알림 확인 실패: ${error.message}`, true);
+          }
+        }
+      } else {
+        checkTokenFullNotification(state.previousTokenStatus, state.tokenStatus);
+      }
+      if (state.brokerHealth?.capabilities?.includes("quota.prewarm.notifications")) {
+        try {
+          const prewarmClaim = await api("/v1/notifications/prewarm?consumer=ipcc", { method: "POST", body: JSON.stringify({}) });
+          if (prewarmClaim.ok && Array.isArray(prewarmClaim.notifications) && prewarmClaim.notifications.length) {
+            const now = Date.now();
+            const recentManual2500 = (now - (state.lastManualPrewarmAt || 0)) < 2500;
+            const recentManual3000 = (now - (state.lastManualPrewarmAt || 0)) < 3000;
+            for (const item of prewarmClaim.notifications) {
+              if (!item || !item.id) continue;
+              if (state.seenPrewarmNotificationIds.has(item.id)) continue;
+              state.seenPrewarmNotificationIds.add(item.id);
+              if (state.seenPrewarmNotificationIds.size > 200) {
+                const oldest = state.seenPrewarmNotificationIds.values().next().value;
+                if (oldest) state.seenPrewarmNotificationIds.delete(oldest);
+              }
+
+              const msg = item.message || item.title || (typeof item === "string" ? item : `프리웜: ${item.model || item.target || "모델"}`);
+              if (item.status === "verified" || item.timerConfirmed === true) {
+                showToast(`✅ [Pre-warm 확인] ${msg}`, false);
+                sendDesktopNotification("✅ [Integrated Power] 프리웜 타이머 시작 확인", msg);
+              } else if (item.status === "unconfirmed") {
+                showToast(`⚠️ [Pre-warm 미확인] ${msg}`, true);
+                sendDesktopNotification("⚠️ [Integrated Power] 프리웜 미확인", msg);
+              } else if (item.status === "failed" || item.level === "error") {
+                if (!recentManual2500) {
+                  showToast(`⚠️ [Pre-warm 실패] ${msg}`, true);
+                  sendDesktopNotification("⚠️ [Integrated Power] 프리웜 실패", msg);
+                }
+              } else if (item.status === "skipped" || item.level === "warn") {
+                if (!recentManual2500) {
+                  showToast(`ℹ️ [Pre-warm 건너뜀] ${msg}`, false);
+                }
+              } else if (item.status === "dispatched") {
+                if (!recentManual3000) {
+                  showToast(`⚡ [Pre-warm 실행] ${msg}`, false);
+                }
+              } else {
+                showToast(`⚡ [Pre-warm] ${msg}`, false);
+              }
+            }
+            if (state.activeTab === "logs") void refreshLogs();
+          }
+        } catch (error) {
+          if (!state.prewarmNotificationClaimWarningShown) {
+            state.prewarmNotificationClaimWarningShown = true;
+            showToast(`프리웜 알림 확인 실패: ${error.message}`, true);
+          }
+        }
+      }
+    } else {
+      state.previousTokenStatus = state.tokenStatus;
+      state.tokenStatus = null;
+      state.tokenStatusError = tokenRes?.error?.message || "쿼터 측정 소스가 응답하지 않았습니다.";
+      state.lastSyncAt = null;
+    }
+
+    renderTokens();
+    renderMainAgent();
+    renderHomeStats();
+    renderAgents();
+    renderTasks();
+    renderRuns(runsRes);
+    renderLocalLlmMetrics(metricsRes);
+    renderHubEcosystem();
+    renderHubTodos();
+    renderHubPlaybooks();
+    renderHubSettings();
+    if (state.activeTab === "logs") void refreshLogs();
+  } catch (error) {
+    state.previousTokenStatus = state.tokenStatus;
+    state.tokenStatus = null;
+    state.tokenStatusError = error.message || "브로커에서 쿼터 측정을 읽지 못했습니다.";
+    state.lastSyncAt = null;
+    setConnection("offline", `브로커 오프라인 (${BROKER_PORT})`);
+    if ($("status")) $("status").textContent =
+      `브로커 연결 대기 중 (127.0.0.1:${BROKER_PORT}) — 브로커가 기동하면 자동 복구됩니다`;
+    renderTokens();
+    renderMainAgent();
+    renderHomeStats();
+    renderAgents();
+    renderTasks();
+    renderHubEcosystem();
+    renderHubTodos();
+    renderHubPlaybooks();
+    renderHubSettings();
+  }
+}
+
+let activeDragItem = null;
+let activeDragContainer = null;
+let suppressClick = false;
+
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "click",
+    (e) => {
+      if (suppressClick) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        suppressClick = false;
+      }
+    },
+    true
+  );
+}
+
+export function setupDragAndDropReorder({
+  containerSelector,
+  itemSelector,
+  storageKey,
+  getId = (el) => el.dataset.launcher || el.dataset.provider || el.id,
+  findItem,
+  anchorSelector,
+}) {
+  const container = typeof containerSelector === "string" ? document.querySelector(containerSelector) : containerSelector;
+  if (!container) return { restoreOrder: () => {}, saveOrder: () => {}, bindAll: () => {}, bindItem: () => {} };
+
+  const defaultFindItem = (cont, id) => {
+    try {
+      const escaped = CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, '\\$&');
+      return cont.querySelector(`[data-launcher="${escaped}"], [data-provider="${escaped}"], #${escaped}, #provider-${escaped}`);
+    } catch {
+      return Array.from(cont.querySelectorAll(`:scope > ${itemSelector}`)).find((el) =>
+        el.dataset.launcher === id || el.dataset.provider === id || el.id === id || el.id === `provider-${id}`
+      );
+    }
+  };
+  const resolveItem = findItem || defaultFindItem;
+
+  const saveOrder = () => {
+    const currentItems = Array.from(container.querySelectorAll(`:scope > ${itemSelector}`));
+    const order = currentItems.map(getId).filter(Boolean);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(order));
+    } catch {
+      /* non-critical */
+    }
+  };
+
+  const restoreOrder = () => {
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(storageKey));
+    } catch {
+      saved = null;
+    }
+    if (!Array.isArray(saved) || !saved.length) return;
+
+    const anchor = anchorSelector ? container.querySelector(anchorSelector) : null;
+    const currentItems = Array.from(container.querySelectorAll(`:scope > ${itemSelector}`));
+    const itemMap = new Map();
+    for (const el of currentItems) {
+      const id = getId(el);
+      if (id) itemMap.set(id, el);
+    }
+
+    const orderedItems = [];
+    for (const id of saved) {
+      const el = itemMap.get(id) || resolveItem(container, id);
+      if (el && el.parentElement === container && !orderedItems.includes(el)) {
+        orderedItems.push(el);
+      }
+    }
+    for (const el of currentItems) {
+      if (!orderedItems.includes(el)) {
+        if (el.dataset.provider?.startsWith("account:") || el.id === "provider-antigravity-2" || el.dataset.provider === "antigravity-2") {
+          const agyIdx = orderedItems.findIndex((item) => item.id === "provider-antigravity" || item.dataset.provider === "antigravity");
+          if (agyIdx !== -1) {
+            orderedItems.splice(agyIdx + 1, 0, el);
+            continue;
+          }
+        }
+        orderedItems.push(el);
+      }
+    }
+
+    for (const el of orderedItems) {
+      if (anchor) {
+        container.insertBefore(el, anchor);
+      } else {
+        container.appendChild(el);
+      }
+    }
+  };
+
+  const bindItem = (item) => {
+    if (!item || item.__dndBound) return;
+    item.__dndBound = true;
+    item.setAttribute("draggable", "true");
+
+    item.addEventListener("mousedown", (e) => {
+      const interactive = e.target.closest(
+        "button, input, select, textarea, a, label, .provider-toggle, .prewarm-action, .switch-toggle"
+      );
+      if (interactive && interactive !== item && item.contains(interactive)) {
+        item.draggable = false;
+      } else {
+        item.draggable = true;
+      }
+    });
+
+    item.addEventListener("mouseup", () => {
+      item.draggable = true;
+    });
+
+    item.addEventListener("dragstart", (e) => {
+      const interactive = e.target.closest(
+        "button, input, select, textarea, a, label, .provider-toggle, .prewarm-action, .switch-toggle"
+      );
+      if (interactive && interactive !== item && item.contains(interactive)) {
+        e.preventDefault();
+        return;
+      }
+
+      activeDragItem = item;
+      activeDragContainer = container;
+      suppressClick = true;
+
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", getId(item) || "");
+      }
+
+      setTimeout(() => {
+        if (activeDragItem === item) {
+          item.classList.add("is-dragging");
+        }
+      }, 0);
+    });
+
+    item.addEventListener("dragenter", () => {
+      if (activeDragItem && activeDragItem !== item && activeDragContainer === container && item.parentElement === container) {
+        item.classList.add("drag-over");
+      }
+    });
+
+    item.addEventListener("dragover", (e) => {
+      if (!activeDragItem || activeDragItem === item || activeDragContainer !== container || item.parentElement !== container) return;
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "move";
+      }
+      if (!item.classList.contains("drag-over")) {
+        item.classList.add("drag-over");
+      }
+    });
+
+    item.addEventListener("dragleave", (e) => {
+      if (!item.contains(e.relatedTarget)) {
+        item.classList.remove("drag-over");
+      }
+    });
+
+    item.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      item.classList.remove("drag-over");
+
+      if (!activeDragItem || activeDragItem === item || activeDragContainer !== container || item.parentElement !== container) return;
+
+      const currentItems = Array.from(container.querySelectorAll(`:scope > ${itemSelector}`));
+      const fromIndex = currentItems.indexOf(activeDragItem);
+      const toIndex = currentItems.indexOf(item);
+
+      if (fromIndex !== -1 && toIndex !== -1) {
+        if (fromIndex < toIndex) {
+          container.insertBefore(activeDragItem, item.nextSibling);
+        } else {
+          container.insertBefore(activeDragItem, item);
+        }
+        saveOrder();
+      }
+    });
+
+    item.addEventListener("dragend", () => {
+      item.classList.remove("is-dragging");
+      container.querySelectorAll(itemSelector).forEach((el) => el.classList.remove("drag-over"));
+      activeDragItem = null;
+      activeDragContainer = null;
+      setTimeout(() => {
+        suppressClick = false;
+      }, 150);
+    });
+  };
+
+  const bindAll = () => {
+    container.querySelectorAll(`:scope > ${itemSelector}`).forEach(bindItem);
+  };
+
+  // Restore saved order immediately using pure DOM operations (zero dynamic markup)
+  restoreOrder();
+  bindAll();
+
+  container.addEventListener("dragover", (e) => {
+    if (!activeDragItem || activeDragContainer !== container) return;
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = "move";
+    }
+  });
+
+  container.addEventListener("drop", (e) => {
+    if (e.target === container && activeDragItem && activeDragContainer === container) {
+      e.preventDefault();
+      const anchor = anchorSelector ? container.querySelector(anchorSelector) : null;
+      if (anchor) {
+        container.insertBefore(activeDragItem, anchor);
+      } else {
+        container.appendChild(activeDragItem);
+      }
+      saveOrder();
+    }
+  });
+
+  return { restoreOrder, saveOrder, bindAll, bindItem };
+}
+
+function bindEvents() {
+  // Navigation dock buttons
+  document.querySelectorAll(".nav-link").forEach((link) => {
+    link.onclick = () => switchTab(link.dataset.section);
+  });
+  $("workspace-context-select")?.addEventListener("change", () => {
+    if ($("workspace-context-path")) $("workspace-context-path").value = "";
+    updateWorkspaceContextFromControls();
+  });
+  $("workspace-context-apply")?.addEventListener("click", updateWorkspaceContextFromControls);
+  $("workspace-context-path")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") updateWorkspaceContextFromControls();
+  });
+
+  // Theme buttons
+  ["titanium", "pearl", "cashmere"].forEach((t) => {
+    const btn = $(`theme-btn-${t}`);
+    if (btn) btn.onclick = () => applyTheme(t);
+  });
+
+  // Squircle Launchers
+  document.querySelectorAll("[data-launcher]").forEach((btn) => {
+    btn.onclick = () => {
+      const target = btn.dataset.launcher;
+      if (target === "agents") switchTab("agents");
+      else if (target === "obsidian") switchTab("tasks");
+      else if (target === "hub") openIntegrationModal();
+      else if (target === "playbooks") switchTab("tasks");
+      else if (target === "runs") switchTab("tasks");
+      else if (target === "settings") switchTab("settings");
+    };
+  });
+  if ($("launcher-hub-folder")) {
+    $("launcher-hub-folder").onclick = () => openIntegrationModal();
+  }
+
+  // Setup Drag-and-Drop Reorder (Home squircle launchers + Token view provider cards)
+  setupDragAndDropReorder({
+    containerSelector: ".squircle-grid",
+    itemSelector: ".launcher-card",
+    storageKey: "ip_order_squircles",
+    getId: (el) => el.dataset.launcher,
+  });
+
+  providerDndController = setupDragAndDropReorder({
+    containerSelector: ".token-providers-grid",
+    itemSelector: ".provider-card",
+    storageKey: "ip_order_providers",
+    getId: (el) => el.dataset.provider || el.id,
+    anchorSelector: "#external-providers-host",
+  });
+  if ($("btn-close-integration-modal")) $("btn-close-integration-modal").onclick = closeIntegrationModal;
+  if ($("btn-dismiss-integration-modal")) $("btn-dismiss-integration-modal").onclick = closeIntegrationModal;
+
+  if ($("btn-close-clarification-modal")) $("btn-close-clarification-modal").onclick = closeClarificationModal;
+  if ($("btn-cancel-clarification")) $("btn-cancel-clarification").onclick = closeClarificationModal;
+  if ($("btn-submit-clarification")) {
+    $("btn-submit-clarification").onclick = async () => {
+      if (!state.activeClarificationTodoId) return;
+      const inputs = document.querySelectorAll("#clarification-questions-container input.clarify-answer-input");
+      const answers = [];
+      inputs.forEach((inp) => {
+        const val = inp.value.trim();
+        if (val) answers.push({ id: inp.dataset.questionId, answer: val });
+      });
+      if (!answers.length) {
+        showToast("답변을 입력하거나 옵션을 선택하세요.", true);
+        return;
+      }
+      try {
+        await api(`/v1/hub/todos/${encodeURIComponent(state.activeClarificationTodoId)}/clarify`, {
+          method: "POST",
+          body: JSON.stringify({ answers }),
+        });
+        closeClarificationModal();
+        await refreshHub({ force: true });
+        showToast("답변이 저장되고 자율 배당 요건이 재평가되었습니다.");
+      } catch (err) {
+        showToast(`답변 제출 실패: ${err.message}`, true);
+      }
+    };
+  }
+  if ($("btn-open-token-detail")) $("btn-open-token-detail").onclick = () => switchTab("tokens");
+  if ($("btn-quick-tokens-jump")) $("btn-quick-tokens-jump").onclick = () => switchTab("tokens");
+
+  // Ingest forms
+  if ($("omni-command-form")) {
+    $("omni-command-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const input = $("command-input");
+      const val = input?.value?.trim();
+      if (!val) return;
+      try {
+        await api("/v1/hub/ingest", {
+          method: "POST",
+          body: JSON.stringify({ title: val, text: val, rawText: val, originChannel: "omni-command" }),
+        });
+        input.value = "";
+        showToast("새 할 일이 등록되었습니다.");
+        await refreshHub({ force: true });
+      } catch (err) {
+        showToast(`등록 실패: ${err.message}`, true);
+      }
+    };
+  }
+  if ($("task-ingest-form")) {
+    $("task-ingest-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const input = $("task-input");
+      const val = input?.value?.trim();
+      if (!val) return;
+      try {
+        await api("/v1/hub/ingest", {
+          method: "POST",
+          body: JSON.stringify({ title: val, text: val, rawText: val, originChannel: "tasks-ingest" }),
+        });
+        input.value = "";
+        showToast("새 작업이 허브에 등록되었습니다.");
+        await refreshHub({ force: true });
+      } catch (err) {
+        showToast(`등록 실패: ${err.message}`, true);
+      }
+    };
+  }
+
+  // Segmented Task Filter Buttons
+  const filterActiveBtn = $("filter-tasks-active");
+  const filterCompletedBtn = $("filter-tasks-completed");
+  if (filterActiveBtn && filterCompletedBtn) {
+    filterActiveBtn.onclick = () => {
+      state.taskFilter = "active";
+      filterActiveBtn.classList.add("active");
+      filterCompletedBtn.classList.remove("active");
+      renderTasks();
+      renderHubTodos();
+    };
+    filterCompletedBtn.onclick = () => {
+      state.taskFilter = "completed";
+      filterCompletedBtn.classList.add("active");
+      filterActiveBtn.classList.remove("active");
+      renderTasks();
+      renderHubTodos();
+    };
+  }
+
+  // Quick nav buttons on home tab
+  document.addEventListener("click", async (e) => {
+    const quickBtn = e.target.closest(".quick-nav-btn");
+    if (quickBtn && quickBtn.dataset.target) switchTab(quickBtn.dataset.target);
+
+    const claudeBtn = e.target.closest(".register-claude");
+    if (claudeBtn) {
+      try {
+        await api("/v1/integrations/claude/register", { method: "POST", body: JSON.stringify({ confirm: true }) });
+        showToast("⚡ Claude Desktop에 Integrated Power MCP가 등록되었습니다.");
+      } catch (err) {
+        showToast(`Claude 등록 실패: ${err.message}`, true);
+      }
+    }
+
+    const chatgptBtn = e.target.closest(".copy-chatgpt-mcp");
+    if (chatgptBtn) {
+      await copyToClipboard(`${API}/mcp`, "📋 ChatGPT 맞춤형 MCP SSE URL이 복사되었습니다.");
+    }
+
+    const claudeCopyBtn = e.target.closest(".copy-claude-mcp");
+    if (claudeCopyBtn) {
+      try {
+        const spec = await api("/v1/integrations/claude/spec");
+        await copyToClipboard(spec.snippet || JSON.stringify(spec.spec, null, 2), "📋 Claude 설정 JSON이 복사되었습니다.");
+      } catch (err) {
+        showToast("설정 복사 실패: " + err.message, true);
+      }
+    }
+
+    const genericMcpBtn = e.target.closest(".copy-generic-mcp");
+    if (genericMcpBtn) {
+      try {
+        const spec = await api("/v1/integrations/mcp/spec");
+        await copyToClipboard(spec.snippet || JSON.stringify(spec.spec, null, 2), "📋 MCP 설정 JSON이 복사되었습니다.");
+      } catch (err) {
+        showToast("설정 복사 실패: " + err.message, true);
+      }
+    }
+
+    // Hub Clarify button -> opens clarification modal
+    const clarifyBtn = e.target.closest(".hub-btn-clarify");
+    if (clarifyBtn) {
+      const todoId = clarifyBtn.dataset.hubClarifyId;
+      if (todoId) {
+        openClarificationModal(todoId);
+        return;
+      }
+    }
+
+    // Hub Dispatch button
+    const dispatchBtn = e.target.closest(".hub-btn-dispatch");
+    if (dispatchBtn) {
+      const todoId = dispatchBtn.dataset.hubDispatchId;
+      try {
+        showToast("작업을 브로커에 자율 배당하는 중…");
+        await api(`/v1/hub/todos/${encodeURIComponent(todoId)}/dispatch`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        await refreshHub({ force: true });
+        await refresh();
+        showToast("🚀 작업이 브로커에 배당되었습니다.");
+      } catch (err) {
+        showToast(`배당 실패: ${err.message}`, true);
+      }
+    }
+
+    // Hub Approve button
+    const approveBtn = e.target.closest(".hub-btn-approve");
+    if (approveBtn) {
+      const todoId = approveBtn.dataset.hubApproveId;
+      try {
+        await api(`/v1/hub/todos/${encodeURIComponent(todoId)}/dispatch`, {
+          method: "POST",
+          body: JSON.stringify({ action: "approve" }),
+        });
+        await refreshHub({ force: true });
+        showToast("승인이 완료되었습니다.");
+      } catch (err) {
+        showToast(`승인 처리 실패: ${err.message}`, true);
+      }
+    }
+
+    // Pipeline quick action buttons
+    const pipelineBtn = e.target.closest(".pipeline-btn, [data-pipeline]");
+    if (pipelineBtn && pipelineBtn.dataset.pipeline) {
+      const p = pipelineBtn.dataset.pipeline;
+      const presets = {
+        research: { title: "리서치 및 웹 탐색", goal: "요구사항에 대한 심층 조사 및 사실 검증을 수행합니다." },
+        coding: { title: "코드 구현 및 검증", goal: "모듈 단위 기능 구현 및 테스트 검증을 진행합니다." },
+        ingestion: { title: "문서 및 미디어 수집", goal: "Docling/MinerU를 활용하여 문서를 표준 마크다운으로 파싱합니다." },
+        org: { title: "정리 및 중복 파일 정리", goal: "czkawka 및 볼트 린터를 실행하여 중복을 검사하고 정리합니다." },
+      };
+      const preset = presets[p];
+      if (preset && $("title") && $("goal")) {
+        $("title").value = preset.title;
+        $("goal").value = preset.goal;
+        showToast(`⚡ ${p.toUpperCase()} 파이프라인 템플릿이 입력되었습니다.`);
+      }
+    }
+  });
+
+  // Hub Todo & Settings Action Buttons
+  if ($("hub-todo-refresh-btn")) {
+    $("hub-todo-refresh-btn").onclick = async () => {
+      showToast("통합 할 일 목록을 갱신하는 중…");
+      await refreshHub({ force: true });
+      showToast("통합 할 일 목록이 갱신되었습니다.");
+    };
+  }
+
+  const handleTodoSync = async () => {
+    showToast("마크다운 할 일 파일을 동기화하는 중…");
+    try {
+      await api("/v1/hub/todos/sync", { method: "POST", body: "{}" });
+      await refreshHub({ force: true });
+      showToast("마크다운 할 일 동기화가 완료되었습니다.");
+    } catch (err) {
+      showToast(`동기화 실패: ${err.message}`, true);
+    }
+  };
+  if ($("hub-todo-sync-btn")) $("hub-todo-sync-btn").onclick = handleTodoSync;
+  if ($("hub-tasks-todo-sync-btn")) $("hub-tasks-todo-sync-btn").onclick = handleTodoSync;
+
+  const handleNewTodo = async () => {
+    const title = window.prompt("새 할 일 제목 또는 마크다운 항목 (- [ ] ...):");
+    if (!title || !title.trim()) return;
+    try {
+      await api("/v1/hub/ingest", {
+        method: "POST",
+        body: JSON.stringify({ title: title.trim(), text: title.trim(), rawText: title.trim(), originChannel: "dashboard" }),
+      });
+      await refreshHub({ force: true });
+      showToast("새 할 일이 등록되었습니다.");
+    } catch (err) {
+      showToast(`할 일 추가 실패: ${err.message}`, true);
+    }
+  };
+  if ($("hub-todo-new-btn")) $("hub-todo-new-btn").onclick = handleNewTodo;
+  if ($("hub-tasks-todo-new-btn")) $("hub-tasks-todo-new-btn").onclick = handleNewTodo;
+
+  if ($("btn-detect-vaults")) {
+    $("btn-detect-vaults").onclick = async () => {
+      showToast("옵시디언 볼트를 자동 탐색 중…");
+      try {
+        const eco = await api("/v1/hub/ecosystem?refresh=1");
+        const resultsBox = $("vault-discovery-results");
+        if (resultsBox) {
+          resultsBox.style.display = "";
+          resultsBox.replaceChildren();
+          const vaults = eco?.vaults || [];
+          if (vaults.length === 0) {
+            const emptyP = document.createElement("p");
+            emptyP.style.color = "var(--text-muted)";
+            emptyP.style.fontSize = "12px";
+            emptyP.textContent = "감지된 Obsidian 볼트가 없습니다.";
+            resultsBox.appendChild(emptyP);
+          } else {
+            const listDiv = document.createElement("div");
+            listDiv.style.display = "flex";
+            listDiv.style.flexDirection = "column";
+            listDiv.style.gap = "6px";
+            for (const v of vaults) {
+              const row = document.createElement("div");
+              row.style.display = "flex";
+              row.style.justifyContent = "space-between";
+              row.style.alignItems = "center";
+              row.style.background = "var(--glass-surface-subtle)";
+              row.style.padding = "6px 10px";
+              row.style.borderRadius = "4px";
+              row.style.border = "1px solid var(--glass-border-subtle)";
+
+              const span = document.createElement("span");
+              span.style.fontSize = "12px";
+              span.style.color = "var(--text-main)";
+              span.textContent = `${v.name} (${v.path})`;
+
+              const chooseBtn = document.createElement("button");
+              chooseBtn.className = "button secondary compact-btn apple-tactile";
+              chooseBtn.type = "button";
+              chooseBtn.textContent = "선택";
+              chooseBtn.onclick = () => {
+                if ($("setting-vault-path")) $("setting-vault-path").value = v.path;
+                showToast(`볼트 경로가 '${v.name}'(으)로 설정되었습니다.`);
+              };
+
+              row.append(span, chooseBtn);
+              listDiv.appendChild(row);
+            }
+            resultsBox.appendChild(listDiv);
+          }
+        }
+        showToast(`볼트 탐색 완료 (${eco?.vaults?.length || 0}개 발견)`);
+      } catch (err) {
+        showToast(`볼트 탐색 실패: ${err.message}`, true);
+      }
+    };
+  }
+
+  if ($("btn-save-vault-settings")) {
+    $("btn-save-vault-settings").onclick = async () => {
+      const customVaultPath = $("setting-vault-path")?.value?.trim() || "";
+      const customTodoFilePath = $("setting-todo-path")?.value?.trim() || "";
+      const autoSyncMarkdown = $("setting-todo-auto-sync")?.checked !== false;
+      try {
+        await api("/v1/hub/config", {
+          method: "PUT",
+          body: JSON.stringify({ customVaultPath, customTodoFilePath, autoSyncMarkdown }),
+        });
+        await refreshHub({ force: true });
+        showToast("💾 옵시디언 볼트 및 통합 할 일 저장소 설정이 저장되었습니다.");
+      } catch (err) {
+        showToast(`설정 저장 실패: ${err.message}`, true);
+      }
+    };
+  }
+
+  if ($("connection-refresh")) $("connection-refresh").onclick = () => void refresh();
+  if ($("token-refresh-btn")) $("token-refresh-btn").onclick = async () => {
+    showToast("실시간 쿼터를 갱신 중입니다…");
+    await refresh({ force: true });
+    showToast("AI 모델 쿼터가 최신 상태로 갱신되었습니다.");
+  };
+
+  document.querySelector(".token-providers-grid")?.addEventListener("click", (e) => {
+    const prewarmBtn = e.target.closest(".prewarm-settings-btn[data-prewarm-target]");
+    if (prewarmBtn) {
+      e.stopPropagation();
+      const cardEmail = prewarmBtn.closest(".provider-card")?.dataset.accountEmail || "";
+      openPrewarmModal(prewarmBtn.dataset.prewarmTarget, cardEmail);
+      return;
+    }
+    const toggleBtn = e.target.closest(".provider-toggle[data-provider]");
+    if (!toggleBtn || toggleBtn.classList.contains("provider-toggle-delete")) return;
+    const k = toggleBtn.dataset.provider;
+    if (k) toggleProvider(k);
+  });
+  if ($("provider-visibility-reset")) $("provider-visibility-reset").onclick = () => {
+    for (const k of Object.keys(providerVisibility)) providerVisibility[k] = true;
+    persistProviderVisibility();
+    applyProviderVisibility();
+    showToast("모든 제공자 블록을 펼쳤습니다.");
+  };
+  applyProviderVisibility();
+
+  $("btn-close-prewarm-modal")?.addEventListener("click", closePrewarmModal);
+  $("btn-dismiss-prewarm-modal")?.addEventListener("click", closePrewarmModal);
+  $("prewarm-settings-modal")?.addEventListener("click", (e) => {
+    if (e.target === $("prewarm-settings-modal")) closePrewarmModal();
+  });
+
+  const syncNotifyToggles = (checked) => {
+    const previous = state.notifyOnFullTokens;
+    state.notifyOnFullTokens = checked;
+    state.quotaSettings.notifyOnFull = checked;
+    if ($("token-notify-quick-toggle")) $("token-notify-quick-toggle").checked = checked;
+    if ($("setting-token-notify-toggle")) $("setting-token-notify-toggle").checked = checked;
+    if (checked) {
+      requestNotificationPermission();
+    }
+    void saveQuotaSettings({ message: checked ? "토큰 100% 완충 시 알림이 켜졌습니다." : "토큰 100% 완충 시 알림이 꺼졌습니다." }).then((saved) => {
+      if (!saved && state.notifyOnFullTokens === checked) {
+        state.notifyOnFullTokens = previous;
+        state.quotaSettings.notifyOnFull = previous;
+        if ($("token-notify-quick-toggle")) $("token-notify-quick-toggle").checked = previous;
+        if ($("setting-token-notify-toggle")) $("setting-token-notify-toggle").checked = previous;
+      }
+    });
+  };
+
+  if ($("token-notify-quick-toggle")) {
+    $("token-notify-quick-toggle").checked = state.notifyOnFullTokens;
+    $("token-notify-quick-toggle").onchange = (e) => syncNotifyToggles(e.target.checked);
+  }
+  if ($("setting-token-notify-toggle")) {
+    $("setting-token-notify-toggle").checked = state.notifyOnFullTokens;
+    $("setting-token-notify-toggle").onchange = (e) => syncNotifyToggles(e.target.checked);
+  }
+
+  if ($("btn-test-notification")) {
+    $("btn-test-notification").onclick = () => {
+      requestNotificationPermission();
+      playFullChime();
+      showToast("🔔 [테스트 알림] 토큰 100% 완충 알림 및 차임벨이 정상적으로 작동합니다.");
+      sendDesktopNotification("🎉 [테스트] Integrated Power 토큰 완충 알림", "AI 모델 토큰이 100% 충전되었을 때 이와 같은 알림과 사운드가 재생됩니다.");
+    };
+  }
+
+  if ($("setting-autostart-toggle")) {
+    $("setting-autostart-toggle").onchange = async (e) => {
+      const enabled = e.target.checked;
+      try {
+        const res = await api("/v1/system/autostart", {
+          method: "POST",
+          body: JSON.stringify({ enabled }),
+        });
+        state.autoStartEnabled = Boolean(res.enabled);
+        showToast(state.autoStartEnabled ? "OS 시작 시 자동 실행이 등록되었습니다." : "OS 시작 시 자동 실행이 해제되었습니다.");
+      } catch (err) {
+        showToast(`자동 실행 설정 실패: ${err.message}`, true);
+        e.target.checked = state.autoStartEnabled;
+      }
+    };
+  }
+
+  const pollSelect = $("setting-poll-interval-select");
+  if (pollSelect) {
+    pollSelect.value = String(state.pollInterval);
+    pollSelect.onchange = (e) => {
+      const newInterval = clampPollInterval(Number(e.target.value));
+      setPollInterval(newInterval);
+    };
+  }
+
+  const taskbarToggle = $("setting-taskbar-toggle");
+  const isTauriShell = () => {
+    try {
+      return isTauri() && Boolean(getCurrentWindow());
+    } catch {
+      return false;
+    }
+  };
+  if (taskbarToggle) {
+    taskbarToggle.checked = localStorage.getItem("ip_taskbar_visible") !== "false";
+    taskbarToggle.onchange = async (e) => {
+      const show = e.target.checked;
+      localStorage.setItem("ip_taskbar_visible", String(show));
+      if (!isTauriShell()) {
+        showToast(show ? "브라우저에서는 작업표시줄 제어 불가 — Tauri 앱에서 사용하세요." : "작업표시줄 표시 꺼짐 (Tauri 앱에서 적용).");
+        return;
+      }
+      try {
+        const win = getCurrentWindow();
+        await win.setSkipTaskbar(!show);
+        if (!show) await win.hide();
+        else await win.show();
+        showToast(show ? "창이 작업표시줄에 표시됩니다." : "창이 트레이로 축소되었습니다.");
+      } catch (err) {
+        showToast(`작업표시줄 설정 실패: ${err.message}`, true);
+        e.target.checked = localStorage.getItem("ip_taskbar_visible") !== "false";
+      }
+    };
+  }
+
+  const gaugeToggle = $("setting-gauge-ticks");
+  if (gaugeToggle) {
+    gaugeToggle.checked = gaugeTicksEnabled();
+    gaugeToggle.onchange = (e) => {
+      localStorage.setItem("ip_gauge_ticks", String(e.target.checked));
+      renderTokens();
+    };
+  }
+
+  const extErr = $("ext-error");
+  const extAdd = $("ext-add");
+  const readForm = () => ({
+    name: $("ext-name")?.value?.trim() || "",
+    baseUrl: $("ext-url")?.value?.trim() || "",
+    apiKey: $("ext-apikey")?.value?.trim() || "",
+    defaultModel: $("ext-model")?.value?.trim() || "",
+    quotaUrl: $("ext-quota")?.value?.trim() || "",
+    discoverModels: $("ext-discover")?.checked !== false,
+    pollMs: (Number($("ext-poll")?.value || 60) || 60) * 1000,
+  });
+  if (extAdd) {
+    extAdd.onclick = () => {
+      if (extErr) extErr.textContent = "";
+      const f = readForm();
+      const ok = addExternalProvider(f.name, f.baseUrl, f.quotaUrl, f.apiKey, f.defaultModel, f.discoverModels, f.pollMs);
+      if (ok) {
+        for (const id of ["ext-name", "ext-url", "ext-apikey", "ext-model", "ext-quota"]) {
+          const el = $(id);
+          if (el) el.value = "";
+        }
+        const tr = $("ext-test-result");
+        if (tr) { tr.style.display = "none"; tr.replaceChildren(); }
+      } else if (extErr) {
+        const { error } = validateExternalProvider(f);
+        extErr.textContent = error || "잘못된 값";
+      }
+    };
+  }
+  const extTest = $("ext-test");
+  if (extTest) {
+    extTest.onclick = () => {
+      if (extErr) extErr.textContent = "";
+      void testExternalProvider();
+    };
+  }
+  const extToggle = $("external-providers-toggle");
+  if (extToggle) {
+    extToggle.onclick = () => switchTab("settings");
+  }
+
+  if ($("btn-settings-claude")) {
+    $("btn-settings-claude").onclick = async () => {
+      try {
+        await api("/v1/integrations/claude/register", { method: "POST", body: JSON.stringify({ confirm: true }) });
+        showToast("⚡ Claude Desktop 설정에 Integrated Power MCP가 등록되었습니다.");
+      } catch (err) {
+        showToast("Claude 등록 실패: " + err.message, true);
+      }
+    };
+  }
+  if ($("btn-settings-claude-copy")) {
+    $("btn-settings-claude-copy").onclick = async () => {
+      try {
+        const spec = await api("/v1/integrations/claude/spec");
+        await copyToClipboard(spec.snippet || JSON.stringify(spec.spec, null, 2), "📋 Claude 설정 JSON이 복사되었습니다.");
+      } catch (err) {
+        showToast("설정 복사 실패: " + err.message, true);
+      }
+    };
+  }
+  if ($("btn-settings-chatgpt")) {
+    $("btn-settings-chatgpt").onclick = async () => {
+      await copyToClipboard(`${API}/mcp`, "📋 ChatGPT 맞춤형 MCP SSE URL이 복사되었습니다.");
+    };
+  }
+
+  if ($("log-refresh-btn")) $("log-refresh-btn").onclick = () => void refreshLogs();
+  if ($("log-copy-btn")) {
+    $("log-copy-btn").onclick = async () => {
+      const content = $("log-lines")?.textContent || "";
+      await copyToClipboard(content, "브로커 로그가 클립보드에 복사되었습니다.");
+    };
+  }
+
+  if ($("main-agent-select")) {
+    $("main-agent-select").onchange = (e) => {
+      state.mainProvider = e.target.value;
+      renderMainAgent();
+    };
+  }
+
+  if ($("create")) {
+    $("create").onclick = async () => {
+      try {
+        await api("/v1/tasks", {
+          method: "POST",
+          body: JSON.stringify({
+            title: $("title").value,
+            goal: $("goal").value,
+            workspacePath: $("workspace").value || undefined,
+            originProvider: state.mainProvider,
+            privacy: "private",
+          }),
+        });
+        showToast("새 작업이 성공적으로 등록되었습니다.");
+        await refresh();
+      } catch (error) {
+        showToast(`작업 생성 실패: ${error.message}`, true);
+      }
+    };
+  }
+
+  document.addEventListener("click", async (event) => {
+    const control = event.target.closest("button");
+    if (!control) return;
+
+    try {
+      if (control.classList.contains("select-main-btn") && control.dataset.provider) {
+        state.mainProvider = control.dataset.provider;
+        renderMainAgent();
+        switchTab("home");
+      } else if (control.classList.contains("copy-chatgpt-mcp")) {
+        await copyToClipboard(`${API}/mcp`, `ChatGPT 맞춤형 MCP URL ('${API}/mcp')이 복사되었습니다.`);
+      } else if (control.classList.contains("copy-chatgpt-stdio")) {
+        const spec = await api("/v1/integrations/chatgpt/spec").catch(() => null);
+        const entry = spec?.spec || spec?.snippet || { command: "node", args: [`${API}/mcp`] };
+        await copyToClipboard(JSON.stringify({ mcpServers: { "integrated-power": entry } }, null, 2), "ChatGPT STDIO 설정 JSON이 복사되었습니다.");
+      } else if (control.classList.contains("register-claude")) {
+        const res = await api("/v1/integrations/claude/register", { method: "POST", body: JSON.stringify({ confirm: true }) });
+        showToast(`Claude Desktop에 Integrated Power MCP가 등록되었습니다 (${res.changed ? "신규 등록" : "이미 최신"}). Claude를 재시작하세요.`);
+        await refresh();
+      } else if (control.classList.contains("copy-claude-mcp") || control.classList.contains("copy-generic-mcp")) {
+        const res = await api("/v1/integrations/claude/spec").catch(() => null);
+        const snippet = res?.snippet || { mcpServers: { "integrated-power": { command: "node", args: [`${API}/mcp`] } } };
+        await copyToClipboard(JSON.stringify(snippet, null, 2), "MCP 설정 JSON이 클립보드에 복사되었습니다.");
+      } else if (control.classList.contains("delegate")) {
+        await api("/v1/tasks/delegate", {
+          method: "POST",
+          body: JSON.stringify({ taskId: control.dataset.task, provider: state.mainProvider, prompt: $("goal")?.value || "작업 위임", expectedRevision: Number(control.dataset.revision) }),
+        });
+        showToast("작업이 성공적으로 위임되었습니다.");
+        await refresh();
+      } else if (control.classList.contains("cancel")) {
+        await api(`/v1/tasks/${encodeURIComponent(control.dataset.task)}/cancel`, {
+          method: "POST",
+          body: JSON.stringify({ expectedRevision: Number(control.dataset.revision) }),
+        });
+        showToast("작업이 취소되었습니다.");
+        await refresh();
+      } else if (control.classList.contains("approve")) {
+        await api(`/v1/approvals/${encodeURIComponent(control.dataset.approval)}/approve`, {
+          method: "POST",
+          body: JSON.stringify({ expectedRevision: Number(control.dataset.revision) }),
+        });
+        showToast("요청이 승인되었습니다.");
+        await refresh();
+      }
+    } catch (err) {
+      showToast(`동작 실패: ${err.message}`, true);
+    }
+  });
+}
+
+const PROVIDER_VIS_KEY = "ip_provider_visibility";
+const PROVIDER_KEYS = ["antigravity", "antigravity-2", "openai", "claude", "local"];
+const loadProviderVisibility = () => {
+  let stored = null;
+  try {
+    stored = JSON.parse(localStorage.getItem(PROVIDER_VIS_KEY) || "{}");
+  } catch {
+    stored = null;
+  }
+  const out = typeof stored === "object" && stored !== null ? { ...stored } : {};
+  for (const k of PROVIDER_KEYS) {
+    if (typeof out[k] !== "boolean") out[k] = true;
+  }
+  return out;
+};
+const persistProviderVisibility = () => {
+  try {
+    localStorage.setItem(PROVIDER_VIS_KEY, JSON.stringify(providerVisibility));
+  } catch {
+    /* non-critical */
+  }
+};
+const providerVisibility = loadProviderVisibility();
+const toggleProvider = (k) => {
+  const current = providerVisibility[k] !== false;
+  providerVisibility[k] = !current;
+  persistProviderVisibility();
+  applyProviderVisibility();
+};
+const applyProviderVisibility = () => {
+  document.querySelectorAll(".token-providers-grid .provider-card").forEach((card) => {
+    if (card.dataset.slotEmpty === "true") {
+      card.style.display = "none";
+      return;
+    }
+    const toggleBtn = card.querySelector(".provider-toggle[data-provider]");
+    const key = card.dataset.provider || toggleBtn?.dataset.provider;
+    if (!key) return;
+    const isExpanded = providerVisibility[key] !== false;
+    card.classList.toggle("is-collapsed", !isExpanded);
+    card.style.display = "";
+    if (toggleBtn) {
+      toggleBtn.textContent = isExpanded ? "접기" : "펼치기";
+      toggleBtn.title = "블록 접기/펼치기";
+      toggleBtn.classList.toggle("is-off", !isExpanded);
+    }
+  });
+};
+
+const EXTERNAL_KEY = "ip_external_providers";
+
+const loadExternalProviders = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(EXTERNAL_KEY) || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((p) => p && typeof p === "object" && p.id && p.name && (p.baseUrl || p.url))
+      : [];
+  } catch {
+    return [];
+  }
+};
+const persistExternalProviders = () => {
+  try {
+    localStorage.setItem(EXTERNAL_KEY, JSON.stringify(state.externalProviders));
+  } catch {
+    /* non-critical */
+  }
+};
+const externalCard = (p) => {
+  const existing = document.getElementById(`provider-external-${p.id}`);
+  if (existing) return existing;
+  const card = document.createElement("div");
+  card.className = "card provider-card provider-card-external liquid-card";
+  card.id = `provider-external-${p.id}`;
+  card.dataset.externalId = p.id;
+  card.dataset.provider = `external-${p.id}`;
+  const header = document.createElement("div");
+  header.className = "provider-header";
+  const pill = document.createElement("span");
+  pill.className = "provider-pill";
+  pill.textContent = p.name;
+  const pillTitle = [p.baseUrl || p.url].filter(Boolean).join(" · ");
+  if (pillTitle) pill.title = pillTitle;
+  const statusTag = document.createElement("span");
+  statusTag.className = "provider-state-tag";
+  statusTag.textContent = "연결 중…";
+  statusTag.id = `external-status-${p.id}`;
+  const toggle = document.createElement("button");
+  toggle.className = "provider-toggle apple-tactile";
+  toggle.dataset.provider = `external-${p.id}`;
+  toggle.title = "블록 접기/펼치기";
+  toggle.textContent = providerVisibility[`external-${p.id}`] !== false ? "접기" : "펼치기";
+  toggle.onclick = (e) => {
+    e.stopPropagation();
+    toggleProvider(`external-${p.id}`);
+  };
+  const del = document.createElement("button");
+  del.className = "provider-toggle provider-toggle-delete apple-tactile";
+  del.title = "이 외부 provider를 제거합니다";
+  del.textContent = "✕";
+  del.onclick = (e) => {
+    e.stopPropagation();
+    deleteExternalProvider(p.id);
+  };
+  header.append(pill, statusTag, toggle, del);
+  const sub = document.createElement("p");
+  sub.className = "window-countdown";
+  sub.style.margin = "2px 0 6px 0";
+  sub.textContent = (p.baseUrl || p.url) + (p.defaultModel ? " · " + p.defaultModel : "");
+  const models = document.createElement("div");
+  models.className = "provider-models";
+  models.id = `external-windows-${p.id}`;
+  card.append(header, sub, models);
+  const host = $("external-providers-host");
+  const grid = host?.parentElement || document.querySelector(".token-providers-grid");
+  if (host && grid) {
+    grid.insertBefore(card, host);
+  } else if (host) {
+    host.appendChild(card);
+  }
+  return card;
+};
+const renderExternalProviders = () => {
+  const host = $("external-providers-host");
+  if (!host) return;
+  for (const p of state.externalProviders) externalCard(p);
+  for (const el of Array.from(document.querySelectorAll(".provider-card-external"))) {
+    const id = el.dataset.externalId;
+    const stillRegistered = state.externalProviders.some((p) => p.id === id);
+    if (!stillRegistered) el.remove();
+  }
+  for (const p of state.externalProviders) renderExternalCard(p);
+  if (providerDndController) {
+    providerDndController.bindAll();
+    providerDndController.restoreOrder();
+  }
+  applyProviderVisibility();
+  const toggleBtn = $("external-providers-toggle");
+  if (toggleBtn) toggleBtn.style.display = state.externalProviders.length ? "none" : "";
+};
+const renderExternalCard = (p) => {
+  const card = document.getElementById(`provider-external-${p.id}`);
+  if (!card) return;
+  const data = state.externalData[p.id];
+  const models = state.externalModels[p.id];
+  const statusTag = document.getElementById(`external-status-${p.id}`);
+  const container = document.getElementById(`external-windows-${p.id}`);
+  if (container) container.replaceChildren();
+
+  const modelChip = (name, isDefault) => {
+    const chip = document.createElement("span");
+    chip.className = "model-chip" + (isDefault ? " model-chip-default" : "");
+    chip.textContent = name;
+    chip.title = isDefault ? `기본 모델: ${name}` : name;
+    return chip;
+  };
+  const renderModels = () => {
+    if (!models || models.length === 0) return;
+    const wrap = document.createElement("div");
+    wrap.className = "external-models";
+    const count = document.createElement("span");
+    count.className = "external-models-count";
+    count.textContent = `모델 ${models.length}개`;
+    wrap.appendChild(count);
+    const shown = models.slice(0, 12);
+    for (const m of shown) wrap.appendChild(modelChip(m, m === p.defaultModel));
+    if (models.length > shown.length) {
+      const more = document.createElement("span");
+      more.className = "model-chip model-chip-more";
+      more.textContent = `+${models.length - shown.length}`;
+      more.title = models.slice(12).join("\n");
+      wrap.appendChild(more);
+    }
+    if (container) container.appendChild(wrap);
+  };
+
+  if (!data) {
+    if (statusTag) {
+      if (!quotaTargetOf(p)) {
+        statusTag.textContent = models && models.length ? `정상 · ${models.length}개 모델` : "모델 조회";
+        statusTag.className = "provider-state-tag" + (models && models.length ? " online" : "");
+      } else {
+        statusTag.textContent = "연결 중…";
+        statusTag.className = "provider-state-tag";
+      }
+    }
+    renderModels();
+    return;
+  }
+  if (!data.ok) {
+    if (!state.brokerOnline) {
+      if (statusTag) {
+        statusTag.textContent = "브로커 오프라인";
+        statusTag.className = "provider-state-tag";
+        statusTag.title = `브로커 연결이 끊겨 외부 provider를 조회할 수 없습니다 (127.0.0.1:${BROKER_PORT})`;
+      }
+      const offErr = document.createElement("p");
+      offErr.className = "muted";
+      offErr.style.fontSize = "11px";
+      offErr.textContent = "브로커 오프라인 — 연결이 복구되면 자동으로 갱신됩니다.";
+      if (container) container.appendChild(offErr);
+      renderModels();
+      return;
+    }
+    const stale = brokerStale || data.staleBroker;
+    if (statusTag) {
+      statusTag.textContent = stale ? "브로커 재시작 필요" : "quota 오류";
+      statusTag.className = "provider-state-tag critical";
+      statusTag.title = stale
+        ? `브로커가 외부 provider 기능 없이 기동 중입니다. ${STALE_BROKER_HINT}`
+        : (data.error || "quota fetch failed");
+    }
+    const err = document.createElement("p");
+    err.className = "muted";
+    err.style.fontSize = "11px";
+    err.textContent = stale
+      ? `브로커 재시작 필요 — 구버전 브로커가 외부 provider 라우트를 응답하지 않습니다. ${STALE_BROKER_HINT}`
+      : (data.error || "응답을 읽을 수 없습니다");
+    if (container) container.appendChild(err);
+    renderModels();
+    return;
+  }
+  const okTag = data.windows.length > 1 ? "정상 · " + data.windows.length + "개 윈도우" : "정상";
+  if (statusTag) {
+    statusTag.textContent = okTag;
+    statusTag.className = "provider-state-tag online";
+  }
+  data.windows.forEach((w) => {
+    const row = document.createElement("div");
+    row.className = "quota-window-row";
+    const info = document.createElement("div");
+    info.className = "window-info";
+    const name = document.createElement("span");
+    name.className = "window-name";
+    name.textContent = w.label;
+    const val = document.createElement("span");
+    val.className = "window-val";
+    if (w.unavailable) {
+      val.textContent = "데이터 없음";
+    } else {
+      val.textContent = w.percentage.toFixed(1) + "% remaining";
+    }
+    info.append(name, val);
+    const noteEl = document.createElement("p");
+    noteEl.className = "window-countdown";
+    noteEl.textContent = w.note ? "· " + w.note : "· 외부 엔드포인트 응답";
+    const track = document.createElement("div");
+    track.className = "progress-track";
+    const fill = document.createElement("div");
+    fill.className = "progress-fill external" + (w.unavailable ? "" : ` ${w.tone}`);
+    fill.style.width = w.unavailable ? "0%" : w.percentage.toFixed(1) + "%";
+    track.appendChild(fill);
+    row.append(info, noteEl, track);
+    if (container) container.appendChild(row);
+  });
+  renderModels();
+  const stamp = document.createElement("p");
+  stamp.className = "muted";
+  stamp.style.fontSize = "10px";
+  stamp.style.marginTop = "6px";
+  stamp.textContent = "최근 갱신: " + new Date().toLocaleTimeString("ko-KR");
+  if (container) container.appendChild(stamp);
+};
+const externalDueAt = {};
+const externalSeen = new Set();
+const quotaTargetOf = (p) => p.quotaUrl || (p.baseUrl ? undefined : p.url);
+const fetchExternal = (url, key) =>
+  api(`/v1/providers/external?url=${encodeURIComponent(url)}${key ? `&key=${encodeURIComponent(key)}` : ""}`);
+
+const pollExternalProviders = async () => {
+  const due = state.externalProviders.filter(
+    (p) => p.enabled !== false && (!externalDueAt[p.id] || Date.now() >= externalDueAt[p.id]),
+  );
+  if (!due.length) return;
+  for (const p of due) {
+    externalDueAt[p.id] = Date.now() + (p.pollMs || 60_000);
+    const quotaTarget = quotaTargetOf(p);
+    if (quotaTarget) {
+      try {
+        const res = await fetchExternal(quotaTarget, p.apiKey);
+        brokerStale = false;
+        state.externalData[p.id] = parseExternalPayload(p.name, res && res.payload !== undefined ? res.payload : res);
+      } catch (error) {
+        if (isStaleBrokerError(error)) brokerStale = true;
+        state.externalData[p.id] = {
+          ok: false,
+          name: p.name,
+          windows: [],
+          error: error instanceof Error ? error.message : String(error),
+          staleBroker: isStaleBrokerError(error),
+        };
+      }
+    }
+    if (p.discoverModels !== false && p.baseUrl) {
+      const candidates = modelDiscoveryUrls(p.baseUrl);
+      let found = undefined;
+      for (const candidate of candidates) {
+        try {
+          const res = await fetchExternal(candidate, p.apiKey);
+          brokerStale = false;
+          const list = parseModelList(res && res.payload !== undefined ? res.payload : res);
+          if (list.length) { found = list; break; }
+        } catch (error) {
+          if (isStaleBrokerError(error)) brokerStale = true;
+        }
+      }
+      state.externalModels[p.id] = found || state.externalModels[p.id] || [];
+    }
+    if (!externalSeen.has(p.id) && (state.externalData[p.id] || state.externalModels[p.id])) {
+      externalSeen.add(p.id);
+    }
+  }
+  renderExternalProviders();
+};
+
+const addExternalProvider = (name, baseUrl, quotaUrl, apiKey, defaultModel, discoverModels, pollMs) => {
+  const { spec, error } = validateExternalProvider({
+    name, baseUrl, quotaUrl, apiKey, defaultModel, discoverModels, pollMs,
+  });
+  if (error || !spec) {
+    showToast("외부 provider 등록 실패: " + (error || "잘못된 값"), true);
+    return false;
+  }
+  const dup = state.externalProviders.some(
+    (p) => (p.baseUrl || p.url) === spec.baseUrl || (spec.quotaUrl && (p.quotaUrl || p.url) === spec.quotaUrl),
+  );
+  if (dup) {
+    showToast("이미 등록된 엔드포인트입니다.", true);
+    return false;
+  }
+  state.externalProviders.push(spec);
+  persistExternalProviders();
+  showToast(`외부 provider "${spec.name}"가 등록되었습니다.`);
+  externalDueAt[spec.id] = 0;
+  void pollExternalProviders();
+  renderExternalProviders();
+  return true;
+};
+
+const deleteExternalProvider = (id) => {
+  const target = state.externalProviders.find((p) => p.id === id);
+  state.externalProviders = state.externalProviders.filter((p) => p.id !== id);
+  delete state.externalData[id];
+  delete state.externalModels[id];
+  delete externalDueAt[id];
+  persistExternalProviders();
+  if (target) showToast(`외부 provider "${target.name}"가 제거되었습니다.`);
+  const card = document.getElementById(`provider-external-${id}`);
+  if (card) card.remove();
+  if (providerDndController) {
+    providerDndController.saveOrder();
+  }
+  renderExternalProviders();
+};
+
+const testExternalProvider = async () => {
+  const resultBox = $("ext-test-result");
+  const name = $("ext-name")?.value?.trim() || "테스트";
+  const baseUrl = $("ext-url")?.value?.trim() || "";
+  const apiKey = $("ext-apikey")?.value?.trim() || "";
+  const quotaUrl = $("ext-quota")?.value?.trim() || "";
+  const discover = $("ext-discover")?.checked !== false;
+  if (!resultBox) return;
+  resultBox.style.display = "";
+  resultBox.replaceChildren();
+  const line = (text, tone) => {
+    const row = document.createElement("p");
+    row.style.margin = "2px 0";
+    row.style.color = tone === "ok" ? "var(--accent-emerald)" : tone === "err" ? "var(--accent-rose)" : "var(--text-muted)";
+    row.textContent = text;
+    resultBox.appendChild(row);
+  };
+  line("테스트 중…", "info");
+  if (!baseUrl) {
+    line("엔드포인트 URL을 입력하세요.", "err");
+    return;
+  }
+  const { spec, error } = validateExternalProvider({ name, baseUrl, quotaUrl, apiKey, discoverModels: discover });
+  if (error || !spec) {
+    line("입력값 오류: " + (error || ""), "err");
+    return;
+  }
+  let staleSeen = false;
+  if (spec.discoverModels) {
+    let discovered = false;
+    for (const candidate of modelDiscoveryUrls(spec.baseUrl)) {
+      try {
+        const res = await fetchExternal(candidate, spec.apiKey);
+        staleSeen = false;
+        const payload = res && res.payload !== undefined ? res.payload : res;
+        const models = parseModelList(payload);
+        if (models.length) {
+          discovered = true;
+          line(`✅ 연결 성공 — ${models.length}개 모델 발견`, "ok");
+          const shown = models.slice(0, 8).join(", ");
+          line(`   ${shown}${models.length > 8 ? ` … (+${models.length - 8})` : ""}`, "info");
+          break;
+        }
+      } catch (error) {
+        if (isStaleBrokerError(error)) staleSeen = true;
+      }
+    }
+    if (staleSeen) {
+      line(`⚠️ 브로커 재시작 필요 — ${STALE_BROKER_HINT}`, "err");
+    } else if (!discovered) {
+      line("⚠️ 모델 목록 조회 불가 (서버가 /v1/models·/api/tags를 안 열 수 있음)", "info");
+    }
+  }
+  if (spec.quotaUrl) {
+    try {
+      const res = await fetchExternal(spec.quotaUrl, spec.apiKey);
+      staleSeen = false;
+      const data = parseExternalPayload(name, res && res.payload !== undefined ? res.payload : res);
+      if (data.ok) {
+        line(`✅ quota — ${data.windows.length}개 윈도우`, "ok");
+        for (const w of data.windows) {
+          line(`   ${w.label}: ${w.unavailable ? "데이터 없음" : w.percentage.toFixed(1) + "% remaining"}`, "info");
+        }
+      } else {
+        line(`⚠️ quota 응답 해석 불가 — ${data.error}`, "info");
+      }
+    } catch (error) {
+      if (isStaleBrokerError(error)) {
+        line(`⚠️ 브로커 재시작 필요 — ${STALE_BROKER_HINT}`, "err");
+      } else {
+        line("❌ quota 연결 실패: " + (error instanceof Error ? error.message : String(error)), "err");
+      }
+    }
+  }
+  line("테스트 완료. 문제없으면 [💾 등록]을 누르세요.", "info");
+};
+
+let pollTimer = null;
+let pollTimerInterval = state.pollInterval;
+function setPollInterval(ms) {
+  const previous = state.pollInterval;
+  state.pollInterval = ms;
+  state.quotaSettings.pollIntervalMs = ms;
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(refresh, ms);
+  pollTimerInterval = ms;
+  void saveQuotaSettings({ message: `데이터 자동 갱신 주기가 ${ms / 1000}초로 설정되었습니다.` }).then((saved) => {
+    if (!saved && state.pollInterval === ms) {
+      state.pollInterval = previous;
+      state.quotaSettings.pollIntervalMs = previous;
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(refresh, previous);
+      pollTimerInterval = previous;
+      if ($("setting-poll-interval-select")) $("setting-poll-interval-select").value = String(previous);
+    }
+  });
+}
+
+function getModelPrewarmMode(prefix) {
+  return state.quotaSettings.prewarmModes[prefix] || "click";
+}
+
+function setModelPrewarmMode(prefix, mode) {
+  const previous = state.quotaSettings.prewarmModes[prefix];
+  state.quotaSettings = { ...state.quotaSettings, prewarmModes: { ...state.quotaSettings.prewarmModes, [prefix]: mode }, prewarmMode: prefix === "antigravity" ? mode : state.quotaSettings.prewarmMode };
+  renderPrewarmToolbar(state.activePrewarmTarget || "all");
+  void saveQuotaSettings({ message: `${prefix} 프리웜 모드가 '${mode}'(으)로 설정되었습니다.` }).then((saved) => {
+    if (!saved && state.quotaSettings.prewarmModes[prefix] === mode) {
+      state.quotaSettings.prewarmModes[prefix] = previous || "click";
+      renderPrewarmToolbar(state.activePrewarmTarget || "all");
+    }
+  });
+}
+
+function openPrewarmModal(targetKey = "all", accountEmail = "") {
+  state.activePrewarmTarget = targetKey;
+  const modal = $("prewarm-settings-modal");
+  if (!modal) return;
+  const titleEl = $("prewarm-modal-title");
+  const subEl = $("prewarm-modal-subtitle");
+  if ((targetKey === "antigravity" || targetKey === "antigravity-2") && accountEmail) {
+    if (titleEl) titleEl.textContent = `${accountEmail} 자동 프리웜 설정`;
+    if (subEl) subEl.textContent = `${accountEmail} 계정의 5시간 윈도우 프리웜 모드를 설정합니다.`;
+  } else if (targetKey === "antigravity") {
+    if (titleEl) titleEl.textContent = "Antigravity 자동 프리웜 설정";
+    if (subEl) subEl.textContent = "Antigravity 계정의 5시간 윈도우 프리웜 모드를 설정합니다.";
+  } else if (targetKey === "antigravity-2") {
+    if (titleEl) titleEl.textContent = "Antigravity 보조 계정 자동 프리웜 설정";
+    if (subEl) subEl.textContent = "Antigravity 계정의 5시간 윈도우 프리웜 모드를 설정합니다.";
+  } else if (targetKey === "openai") {
+    if (titleEl) titleEl.textContent = "OpenAI (ChatGPT) 자동 프리웜 설정";
+    if (subEl) subEl.textContent = "OpenAI ChatGPT의 5시간 윈도우 프리웜 모드를 설정합니다.";
+  } else {
+    if (titleEl) titleEl.textContent = "AI 모델 자동 프리웜 설정";
+    if (subEl) subEl.textContent = "5시간 윈도우 100% 충전 시 자동 프리웜 트리거 정책";
+  }
+  renderPrewarmToolbar(targetKey);
+  modal.classList.remove("hidden");
+}
+
+function closePrewarmModal() {
+  const modal = $("prewarm-settings-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  state.activePrewarmTarget = "all";
+  renderPrewarmToolbar("all");
+}
+
+function renderPrewarmToolbar(targetKey = state.activePrewarmTarget || "all") {
+  const modalBody = $("prewarm-modal-body");
+  const el = $("token-prewarm-toolbar") || modalBody;
+  if (!el) return;
+
+  const inner = node("div", undefined, "prewarm-toolbar-inner");
+  const titleGroup = node("div", undefined, "prewarm-title-group");
+  titleGroup.append(
+    node("span", "⚡", "prewarm-icon"),
+    node("span", "5시간 자동 프리웜 설정:", "prewarm-label"),
+  );
+
+  let targets = [
+    { key: "antigravity", label: "Gemini" },
+    { key: "argon", label: "Argon 4" },
+    { key: "opus", label: "Claude" },
+    { key: "codex", label: "ChatGPT" },
+  ];
+
+  if (targetKey === "antigravity" || targetKey === "antigravity-2") {
+    targets = [
+      { key: "antigravity", label: "Gemini" },
+      { key: "argon", label: "Argon 4" },
+      { key: "opus", label: "Claude" },
+    ];
+  } else if (targetKey === "openai") {
+    targets = [
+      { key: "codex", label: "ChatGPT" },
+    ];
+  }
+
+  const grid = node("div", undefined, "prewarm-targets-grid");
+  const modes = [
+    { key: "click", label: "Click", title: "수동 클릭 모드" },
+    { key: "once", label: "Once", title: "다음 100% 도달 시 1회 자동 실행 후 Click 모드로 복귀" },
+    { key: "always", label: "Always", title: "100% 완충 시마다 연속 자동 프리웜" },
+  ];
+
+  for (const t of targets) {
+    const currentMode = getModelPrewarmMode(t.key);
+    const row = node("div", undefined, "prewarm-target-row");
+    const label = node("span", t.label, "prewarm-target-label");
+    const options = node("div", undefined, "prewarm-mode-options");
+    options.setAttribute("role", "radiogroup");
+    options.setAttribute("aria-label", `${t.label} Pre-warm Mode`);
+
+    for (const m of modes) {
+      const btn = button(m.label, `prewarm-mode-btn ${currentMode === m.key ? "active" : ""}`.trim());
+      btn.type = "button";
+      btn.title = `${t.label} - ${m.title}`;
+      btn.onclick = () => {
+        setModelPrewarmMode(t.key, m.key);
+      };
+      options.append(btn);
+    }
+    row.append(label, options);
+    grid.append(row);
+  }
+
+  inner.append(titleGroup, grid);
+  el.replaceChildren(inner);
+}
+
+window.triggerPrewarmWindow = async function(windowId, accountEmail) {
+  const prefix = prewarmModelByWindow[windowId] || prefixOf[windowId] || windowId;
+  if (!prefix) return;
+  const windowType = String(windowId).endsWith("-weekly") ? "weekly" : "5h";
+  const targetLabel = `${prefix.toUpperCase()}${accountEmail ? ` (${accountEmail})` : ""} ${windowType === "weekly" ? "주간(168시간)" : "5시간"}`;
+  showToast(`⚡ ${targetLabel} 윈도우 프리웜 요청 중...`);
+  try {
+    const bodyObj = {
+      model: prefix,
+      window: windowType,
+      manual: true,
+      idempotencyKey: crypto.randomUUID(),
+      expectedSettingsRevision: state.quotaSettingsRevision,
+    };
+    if (accountEmail) bodyObj.account = accountEmail;
+    const res = await api("/v1/tokens/prewarm", {
+      method: "POST",
+      body: JSON.stringify(bodyObj),
+    });
+    const acct = res.account || accountEmail;
+    const acctTag = acct ? ` [${acct}]` : "";
+    if (res.status === "dispatched") {
+      state.lastManualPrewarmAt = Date.now();
+      const details = [];
+      if (res.cancelledEarly) details.push("즉시 취소(쿼터 보존)");
+      if (typeof res.durationMs === "number") details.push(`${res.durationMs}ms`);
+      if (acct) details.push(acct);
+      const detailStr = details.length ? ` (${details.join(" · ")})` : " (로그 탭에서 실행 기록 확인 가능)";
+      showToast(`⚡ ${prefix.toUpperCase()} 프리웜이 백그라운드에서 실행되었습니다.${detailStr}`);
+      setTimeout(() => void refresh(), 5500);
+      setTimeout(() => void refresh(), 18000);
+    } else if (res.status === "skipped") {
+      state.lastManualPrewarmAt = Date.now();
+      showToast(`ℹ️ ${prefix.toUpperCase()}${acctTag} 프리웜 건너뜀: ${res.error || res.message || "실행 조건 미충족"}`);
+    } else if (res.status === "duplicate") {
+      state.lastManualPrewarmAt = Date.now();
+      showToast(`⚡ ${prefix.toUpperCase()}${acctTag} 프리웜은 최근에 이미 실행되었습니다.`);
+    } else if (res.status === "failed") {
+      state.lastManualPrewarmAt = Date.now();
+      showToast(`⚠️ ${prefix.toUpperCase()}${acctTag} 프리웜 실패: ${res.error || res.message || "브로커 실행 실패"}`, true);
+    } else if (res.ok && !res.status) {
+      state.lastManualPrewarmAt = Date.now();
+      showToast(`${prefix}${acctTag} 구형 브로커가 요청을 접수했습니다. 실행 여부와 타이머 시작은 확인되지 않습니다.`);
+    } else {
+      state.lastManualPrewarmAt = Date.now();
+      const isFail = !res.ok;
+      showToast(`⚠️ ${prefix.toUpperCase()}${acctTag} 프리웜 ${isFail ? "실패" : "건너뜀"}: ${res.error || res.message || "브로커에서 실행하지 않았습니다."}`, isFail);
+    }
+    void refresh();
+  } catch (err) {
+    const acctTag = accountEmail ? ` [${accountEmail}]` : "";
+    showToast(`⚠️ ${prefix.toUpperCase()}${acctTag} 프리웜 요청 실패: ${err.message}`, true);
+  }
+};
+
+// Initial theme setup
+applyTheme(localStorage.getItem("ipcc.liquidTheme") || "titanium");
+
+// Initial setup
+state.externalProviders = loadExternalProviders();
+bindEvents();
+switchTab("tokens"); // DEFAULT ON OPEN
+renderTokens();
+renderMainAgent();
+renderHomeStats();
+renderAgents();
+renderTasks();
+renderExternalProviders();
+renderHubEcosystem();
+renderHubTodos();
+renderHubPlaybooks();
+renderHubSettings();
+
+if (localStorage.getItem("ip_taskbar_visible") === "false") {
+  try {
+    if (isTauri()) {
+      const win = getCurrentWindow();
+      void win.setSkipTaskbar(true).then(() => win.hide()).catch(() => {});
+    }
+  } catch {
+    /* browser dev — nothing to do */
+  }
+}
+void refresh();
+void refreshAutoStart();
+void pollExternalProviders();
+pollTimer = setInterval(refresh, state.pollInterval);
+setInterval(() => {
+  void pollExternalProviders().catch(() => {});
+}, 5000);

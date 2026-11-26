@@ -62,7 +62,9 @@ export function resolveAutoStartTarget(): string {
   const candidates = [
     process.env.INTEGRATED_POWER_EXE,
     path.join(localAppData, "Programs", "Integrated Power Control Center", "integrated-power-control-center.exe"),
+    path.join(localAppData, "Integrated Power Control Center", "integrated-power-control-center.exe"),
     path.join(localAppData, "integrated-power-control-center", "integrated-power-control-center.exe"),
+    path.join(process.cwd(), "packages", "control-center", "src-tauri", "target", "release", "integrated-power-control-center.exe"),
     path.join(process.cwd(), "control-center", "src-tauri", "target", "release", "integrated-power-control-center.exe"),
     path.join(process.cwd(), "src-tauri", "target", "release", "integrated-power-control-center.exe"),
   ].filter(Boolean) as string[];
@@ -74,9 +76,18 @@ export function resolveAutoStartTarget(): string {
   }
 
   // 3. Fallback to node launcher for broker-server
-  const brokerServerPath = path.resolve(__dirname, "..", "..", "control-center", "broker-server.js");
-  if (fs.existsSync(brokerServerPath)) {
-    return `"${process.execPath}" "${brokerServerPath}"`;
+  const brokerCandidates = [
+    path.resolve(__dirname, "..", "..", "..", "packages", "control-center", "broker-server.js"),
+    path.resolve(__dirname, "..", "..", "packages", "control-center", "broker-server.js"),
+    path.resolve(__dirname, "..", "..", "control-center", "broker-server.js"),
+    path.resolve(process.cwd(), "packages", "control-center", "broker-server.js"),
+    path.resolve(process.cwd(), "control-center", "broker-server.js"),
+    "D:\\Workspace\\Integrated POWER\\packages\\control-center\\broker-server.js",
+  ];
+  for (const candidate of brokerCandidates) {
+    if (fs.existsSync(candidate)) {
+      return `"${process.execPath}" "${candidate}"`;
+    }
   }
 
   return `"${process.execPath}"`;

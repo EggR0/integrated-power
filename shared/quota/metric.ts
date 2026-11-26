@@ -225,9 +225,9 @@ export function buildTokenMetric(
   const weeklyKnownForPrewarm = !pairedWeeklyPrefix
     || (typeof weeklyExactForPrewarm === "number" && Number.isFinite(weeklyExactForPrewarm) && weeklyExactForPrewarm >= 0 && weeklyExactForPrewarm <= 100)
     || (weeklyExactForPrewarm === undefined && typeof weeklyLeftForPrewarm === "number" && typeof weeklyMaxForPrewarm === "number" && weeklyMaxForPrewarm > 0 && weeklyLeftForPrewarm >= 0 && weeklyLeftForPrewarm <= weeklyMaxForPrewarm);
-  const is5HourAt100 = label === "5Hours" && percentage !== undefined && percentage >= 99.95 && !isWeeklyExhausted;
+  const is5HourAt100 = label === "5Hours" && percentage !== undefined && percentage >= 99.995 && !isWeeklyExhausted;
   const is5HourReady = is5HourAt100 && weeklyKnownForPrewarm;
-  const isWeeklyAt100 = label === "Weekly" && percentage !== undefined && percentage >= 99.95;
+  const isWeeklyAt100 = label === "Weekly" && percentage !== undefined && percentage >= 99.995;
   const resetDate = effectiveResetTime ? new Date(effectiveResetTime) : undefined;
   const resetEpoch = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : undefined;
   const diffMs = resetEpoch !== undefined ? resetEpoch - Date.now() : undefined;
@@ -252,8 +252,9 @@ export function buildTokenMetric(
     isReady = true;
   }
 
-  const isDormantPastTimer = canPrewarm && diffMs !== undefined && diffMs <= 0;
-  if (countdown && !isDormantPastTimer) {
+  const fullWindowMs = label === "Weekly" ? 168 * 3600 * 1000 : 5 * 3600 * 1000;
+  const isDormantTopReset = canPrewarm && diffMs !== undefined && diffMs <= fullWindowMs;
+  if (countdown && !isDormantTopReset) {
     refreshFull = countdown.full;
     refreshMedium = countdown.medium || countdown.short;
     refreshShort = countdown.short;

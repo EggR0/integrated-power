@@ -534,9 +534,9 @@ var IPQuota = (() => {
     const weeklyLeftForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}TokensLeft`] : void 0;
     const weeklyMaxForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}Max`] : void 0;
     const weeklyKnownForPrewarm = !pairedWeeklyPrefix || typeof weeklyExactForPrewarm === "number" && Number.isFinite(weeklyExactForPrewarm) && weeklyExactForPrewarm >= 0 && weeklyExactForPrewarm <= 100 || weeklyExactForPrewarm === void 0 && typeof weeklyLeftForPrewarm === "number" && typeof weeklyMaxForPrewarm === "number" && weeklyMaxForPrewarm > 0 && weeklyLeftForPrewarm >= 0 && weeklyLeftForPrewarm <= weeklyMaxForPrewarm;
-    const is5HourAt100 = label === "5Hours" && percentage !== void 0 && percentage >= 99.95 && !isWeeklyExhausted;
+    const is5HourAt100 = label === "5Hours" && percentage !== void 0 && percentage >= 99.995 && !isWeeklyExhausted;
     const is5HourReady = is5HourAt100 && weeklyKnownForPrewarm;
-    const isWeeklyAt100 = label === "Weekly" && percentage !== void 0 && percentage >= 99.95;
+    const isWeeklyAt100 = label === "Weekly" && percentage !== void 0 && percentage >= 99.995;
     const resetDate = effectiveResetTime ? new Date(effectiveResetTime) : void 0;
     const resetEpoch = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : void 0;
     const diffMs = resetEpoch !== void 0 ? resetEpoch - Date.now() : void 0;
@@ -556,8 +556,9 @@ var IPQuota = (() => {
       canPrewarm = true;
       isReady = true;
     }
-    const isDormantPastTimer = canPrewarm && diffMs !== void 0 && diffMs <= 0;
-    if (countdown && !isDormantPastTimer) {
+    const fullWindowMs = label === "Weekly" ? 168 * 3600 * 1e3 : 5 * 3600 * 1e3;
+    const isDormantTopReset = canPrewarm && diffMs !== void 0 && diffMs <= fullWindowMs;
+    if (countdown && !isDormantTopReset) {
       refreshFull = countdown.full;
       refreshMedium = countdown.medium || countdown.short;
       refreshShort = countdown.short;
@@ -872,7 +873,7 @@ var IPQuota = (() => {
     /** Alternative chat/conversation containers in Antigravity IDE */
     chatContainers: ["#conversation", "#chat", "#cascade"]
   });
-  var PREWARM_PING_PROMPT = "integrated power";
+  var PREWARM_PING_PROMPT = "say hi";
   var PREWARM_MODE_OPTIONS = Object.freeze([
     {
       value: "click",
@@ -928,10 +929,10 @@ var IPQuota = (() => {
   ]);
   function canTriggerPrewarm(metric) {
     if (metric.label === "5Hours") {
-      return metric.percentage !== void 0 && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
+      return metric.percentage !== void 0 && metric.percentage >= 99.9 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
     }
     if (metric.label === "Weekly") {
-      return metric.percentage !== void 0 && metric.percentage >= 99.95 && Boolean(metric.canPrewarm);
+      return metric.percentage !== void 0 && metric.percentage >= 99.9 && Boolean(metric.canPrewarm);
     }
     return false;
   }

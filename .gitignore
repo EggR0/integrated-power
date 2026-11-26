@@ -53,3 +53,12 @@ src-tauri/target/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Monorepo migration & test backup artifacts
+.git.bak-*
+*.bak-*
+control-center.bak-pre-monorepo/
+.broker-isolated-*
+.dashboard-approval-*
+stderr.txt
+stdout.txt

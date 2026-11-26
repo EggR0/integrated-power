@@ -1,0 +1,1394 @@
+import * as vscode from "vscode";
+import * as path from "path";
+import {
+  DashboardConfiguration,
+  KnowledgeConfiguration,
+  OrchestratorConfiguration,
+  detectKnowledgeRemote,
+  formatOllamaInventorySummary,
+  installBundledKnowledgeTools,
+  loadConfigurationCenterSnapshot,
+  reconfigureKnowledgeRemote,
+  runPrivateKnowledgeConfiguration,
+  saveDashboardConfiguration,
+  saveOrchestratorConfiguration,
+  synchronizeOllamaModelInventory,
+} from "./configurationModel";
+import { AntigravityHistorySyncManager } from "./AntigravityHistorySync";
+
+export type ConfigurationSection =
+  | "overview"
+  | "dashboard"
+  | "orchestrator"
+  | "knowledge";
+
+type InstallOrchestrator = () => Promise<string>;
+
+export class ConfigurationCenter implements vscode.Disposable {
+  private static current: ConfigurationCenter | undefined;
+  private readonly disposables: vscode.Disposable[] = [];
+
+  public static open(
+    context: vscode.ExtensionContext,
+    section: ConfigurationSection,
+    refreshDashboard: () => Promise<void>,
+    installOrchestrator: InstallOrchestrator,
+  ): void {
+    if (ConfigurationCenter.current) {
+      ConfigurationCenter.current.panel.reveal(vscode.ViewColumn.One);
+      ConfigurationCenter.current.postSnapshot(section);
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      "integratedPower.configurationCenter",
+      "Integrated Power Configuration Center",
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.file(context.extensionPath)],
+      },
+    );
+    ConfigurationCenter.current = new ConfigurationCenter(
+      panel,
+      context,
+      refreshDashboard,
+      installOrchestrator,
+      section,
+    );
+  }
+
+  private constructor(
+    private readonly panel: vscode.WebviewPanel,
+    private readonly context: vscode.ExtensionContext,
+    private readonly refreshDashboard: () => Promise<void>,
+    private readonly installOrchestrator: InstallOrchestrator,
+    initialSection: ConfigurationSection,
+  ) {
+    this.panel.webview.html = this.getHtml(this.panel.webview);
+    this.disposables.push(
+      this.panel.onDidDispose(() => this.dispose()),
+      this.panel.webview.onDidReceiveMessage((message) =>
+        this.handleMessage(message),
+      ),
+    );
+    this.postSnapshot(initialSection);
+  }
+
+  public dispose(): void {
+    ConfigurationCenter.current = undefined;
+    while (this.disposables.length) this.disposables.pop()?.dispose();
+  }
+
+  private async handleMessage(message: unknown): Promise<void> {
+    if (!isRecord(message) || typeof message.type !== "string") return;
+    try {
+      switch (message.type) {
+        case "ready":
+        case "refresh":
+          this.postSnapshot(
+            isSection(message.section) ? message.section : undefined,
+          );
+          return;
+        case "forceSyncHistory":
+        case "repairAndRestartHistory": {
+          await AntigravityHistorySyncManager.repairAndRestart(this.context);
+          return;
+        }
+        case "saveDashboard": {
+          this.postBusy(true);
+          const input = parseDashboardConfiguration(message.value);
+          const savedPath = await saveDashboardConfiguration(
+            this.context,
+            input,
+            this.refreshDashboard,
+          );
+          this.postResult("success", `Dashboard 설정 저장 완료: ${savedPath}`);
+          this.postSnapshot("dashboard");
+          return;
+        }
+        case "saveOrchestrator": {
+          this.postBusy(true);
+          const configuration = parseOrchestratorConfiguration(message.value);
+          const savedPath = saveOrchestratorConfiguration(
+            this.context,
+            configuration,
+          );
+          const inventory =
+            configuration.enableLocalLlm && configuration.provider === "ollama"
+              ? await synchronizeOllamaModelInventory(
+                  this.context,
+                  configuration.endpoint,
+                )
+              : null;
+          this.postResult(
+            "success",
+            inventory
+              ? `Integrated Orchestrator 설정 저장 완료: ${savedPath}\n${formatOllamaInventorySummary(inventory)}`
+              : `Integrated Orchestrator 설정 저장 완료: ${savedPath}`,
+          );
+          this.postSnapshot("orchestrator");
+          return;
+        }
+        case "saveAndInstallOrchestrator": {
+          this.postBusy(true);
+          const configuration = parseOrchestratorConfiguration(message.value);
+          saveOrchestratorConfiguration(
+            this.context,
+            configuration,
+          );
+          const result = await this.installOrchestrator();
+          const inventory =
+            configuration.enableLocalLlm && configuration.provider === "ollama"
+              ? await synchronizeOllamaModelInventory(
+                  this.context,
+                  configuration.endpoint,
+                )
+              : null;
+          this.postResult(
+            "success",
+            inventory
+              ? `${result}\n${formatOllamaInventorySummary(inventory)}`
+              : result,
+          );
+          this.postSnapshot("orchestrator");
+          return;
+        }
+        case "syncOllamaInventory": {
+          this.postBusy(true);
+          const configuration = parseOrchestratorConfiguration(message.value);
+          if (!configuration.enableLocalLlm || configuration.provider !== "ollama") {
+            throw new Error("Ollama 공급자를 사용하도록 로컬 LLM 경로를 먼저 켜주세요.");
+          }
+          const inventory = await synchronizeOllamaModelInventory(
+            this.context,
+            configuration.endpoint,
+          );
+          this.postResult("success", formatOllamaInventorySummary(inventory));
+          this.postSnapshot("orchestrator");
+          return;
+        }
+        case "configureKnowledge": {
+          this.postBusy(true);
+          const result = await runPrivateKnowledgeConfiguration(
+            this.context,
+            parseKnowledgeConfiguration(message.value),
+          );
+          const configuredPath =
+            typeof result.knowledge_path === "string"
+              ? result.knowledge_path
+              : "설정한 Knowledge 저장소";
+          this.postResult(
+            "success",
+            `Private Git Knowledge 설정 완료: ${configuredPath}`,
+          );
+          this.postSnapshot("knowledge");
+          return;
+        }
+        case "installKnowledgeTools": {
+          this.postBusy(true);
+          const result = installBundledKnowledgeTools(
+            this.context,
+            requireString(message.value, "Knowledge 도구 설치 루트"),
+          );
+          this.postResult(
+            "success",
+            result.changed.length > 0
+              ? `Knowledge 도구 ${result.changed.length}개 설치·갱신 완료: ${result.installRoot}`
+              : `Knowledge 도구가 이미 최신입니다: ${result.installRoot}`,
+          );
+          this.postSnapshot("knowledge");
+          return;
+        }
+        case "detectKnowledgeRemote": {
+          const detected = detectKnowledgeRemote(
+            parseKnowledgeRemoteReconfiguration(message.value),
+          );
+          void this.panel.webview.postMessage({
+            type: "knowledgeRemoteDetected",
+            value: detected,
+          });
+          this.postResult(
+            "success",
+            `GitHub 로그인 ${detected.githubLogin} 기준 remote를 제안했습니다. 적용하려면 origin 재설정 버튼을 누르세요.`,
+          );
+          return;
+        }
+        case "reconfigureKnowledgeRemote": {
+          this.postBusy(true);
+          const result = reconfigureKnowledgeRemote(
+            parseKnowledgeRemoteReconfiguration(message.value),
+          );
+          this.postResult(
+            "success",
+            result.previousRemote
+              ? `Knowledge origin 재설정 완료: ${result.previousRemote} → ${result.remoteUrl}`
+              : `Knowledge origin 추가 완료: ${result.remoteUrl}`,
+          );
+          this.postSnapshot("knowledge");
+          return;
+        }
+        case "chooseStateRoot":
+          await this.chooseDirectory(
+            "Integrated Power 상태 폴더 선택",
+            "dashboardStateRoot",
+          );
+          return;
+        case "choosePluginRoot":
+          await this.chooseDirectory(
+            "Antigravity IDE 플러그인 루트 선택",
+            "pluginRoot",
+          );
+          return;
+        case "chooseWorkRoot":
+          await this.chooseDirectory(
+            "에이전트 공통 작업 루트 선택",
+            "workRoot",
+          );
+          return;
+        case "chooseToolsRoot":
+          await this.chooseDirectory(
+            "Knowledge 도구 설치 루트 선택",
+            "toolsRoot",
+          );
+          return;
+        case "chooseKnowledgePath":
+          await this.chooseDirectory(
+            "Private Git Knowledge 폴더 선택",
+            "knowledgePath",
+          );
+          return;
+        case "chooseCodexExe":
+          await this.chooseCodexExecutable();
+          return;
+        case "openKnowledgeGuide":
+          await this.openKnowledgeGuide();
+          return;
+        case "openGitHubNewRepository":
+          await vscode.env.openExternal(vscode.Uri.parse("https://github.com/new"));
+          return;
+      }
+    } catch (error) {
+      this.postResult("error", errorMessage(error));
+    } finally {
+      this.postBusy(false);
+    }
+  }
+
+  private postSnapshot(section?: ConfigurationSection): void {
+    try {
+      void this.panel.webview.postMessage({
+        type: "snapshot",
+        value: loadConfigurationCenterSnapshot(this.context),
+        section,
+      });
+    } catch (error) {
+      this.postResult("error", errorMessage(error));
+    }
+  }
+
+  private postBusy(value: boolean): void {
+    void this.panel.webview.postMessage({ type: "busy", value });
+  }
+
+  private postResult(kind: "success" | "error", message: string): void {
+    void this.panel.webview.postMessage({ type: "result", kind, message });
+  }
+
+  private async chooseDirectory(title: string, field: string): Promise<void> {
+    const selection = await vscode.window.showOpenDialog({
+      title,
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      openLabel: "이 폴더 사용",
+    });
+    if (selection?.[0]) {
+      void this.panel.webview.postMessage({
+        type: "fieldValue",
+        field,
+        value: selection[0].fsPath,
+      });
+    }
+  }
+
+  private async chooseCodexExecutable(): Promise<void> {
+    const selection = await vscode.window.showOpenDialog({
+      title: "Codex 실행 파일 선택",
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters:
+        process.platform === "win32"
+          ? { Executable: ["exe", "cmd"] }
+          : undefined,
+      openLabel: "이 실행 파일 사용",
+    });
+    if (selection?.[0]) {
+      void this.panel.webview.postMessage({
+        type: "fieldValue",
+        field: "codexExe",
+        value: selection[0].fsPath,
+      });
+    }
+  }
+
+  private async openKnowledgeGuide(): Promise<void> {
+    const guide = path.join(
+      this.context.extensionPath,
+      "assets",
+      "private-git-knowledge.md",
+    );
+    const document = await vscode.workspace.openTextDocument(
+      vscode.Uri.file(guide),
+    );
+    await vscode.window.showTextDocument(document, { preview: false });
+  }
+
+  private getHtml(webview: vscode.Webview): string {
+    const nonce = createNonce();
+    return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+  <title>Integrated Power Configuration Center</title>
+  <style nonce="${nonce}">
+    :root {
+      color-scheme: light dark;
+      --card: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-editor-foreground) 12%);
+      --line: color-mix(in srgb, var(--vscode-editor-foreground) 18%, transparent);
+      --muted: var(--vscode-descriptionForeground);
+      --ok: var(--vscode-testing-iconPassed);
+      --warn: var(--vscode-notificationsWarningIcon-foreground);
+      --bad: var(--vscode-testing-iconFailed);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      color: var(--vscode-editor-foreground);
+      background: var(--vscode-editor-background);
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      padding: 20px 28px 14px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--vscode-editor-background) 94%, transparent);
+      backdrop-filter: blur(10px);
+    }
+    h1 { margin: 0 0 5px; font-size: 24px; }
+    h2 { margin: 0 0 8px; font-size: 19px; }
+    h3 { margin: 0 0 8px; font-size: 15px; }
+    p { line-height: 1.55; }
+    .subtitle, .hint, .path { color: var(--muted); }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    nav button {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: inherit;
+    }
+    nav button.active {
+      color: var(--vscode-button-foreground);
+      background: var(--vscode-button-background);
+      border-color: transparent;
+    }
+    main { max-width: 1040px; margin: 0 auto; padding: 26px 28px 70px; }
+    section { display: none; }
+    section.active { display: block; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+    .card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--card);
+    }
+    .card + .card { margin-top: 14px; }
+    .grid .card + .card { margin-top: 0; }
+    .status { font-weight: 600; }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .field { margin: 15px 0; }
+    .field > label:first-child { display: block; margin-bottom: 6px; font-weight: 600; }
+    input[type="text"], input[type="email"], input[type="url"], input[type="number"], select {
+      width: 100%;
+      min-height: 32px;
+      padding: 6px 8px;
+      color: var(--vscode-input-foreground);
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-input-border, var(--line));
+    }
+    input:focus, select:focus, button:focus {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 1px;
+    }
+    .inline { display: flex; gap: 8px; align-items: center; }
+    .inline input { flex: 1; }
+    .check { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; }
+    .check input { margin-top: 2px; }
+    button {
+      min-height: 32px;
+      padding: 6px 12px;
+      border: 0;
+      border-radius: 3px;
+      color: var(--vscode-button-foreground);
+      background: var(--vscode-button-background);
+      cursor: pointer;
+    }
+    button:hover { background: var(--vscode-button-hoverBackground); }
+    button.secondary {
+      color: var(--vscode-button-secondaryForeground);
+      background: var(--vscode-button-secondaryBackground);
+    }
+    button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+    button:disabled { cursor: wait; opacity: .55; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .result {
+      position: sticky;
+      bottom: 12px;
+      display: none;
+      margin: 0 auto;
+      max-width: 980px;
+      padding: 11px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--vscode-notifications-background);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, .25);
+    }
+    .result.visible { display: block; }
+    .diag-list { margin: 10px 0 0; padding: 0; list-style: none; }
+    .diag-list li { margin: 7px 0; }
+    code.path {
+      display: block;
+      overflow-wrap: anywhere;
+      margin-top: 6px;
+      padding: 7px;
+      border-radius: 4px;
+      background: var(--vscode-textCodeBlock-background);
+    }
+    .notice {
+      border-left: 3px solid var(--vscode-focusBorder);
+      padding-left: 12px;
+    }
+    .subform { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .hidden { display: none !important; }
+
+    /* Modern Telemetry Guide & Section Dividers */
+    .telemetry-guide-card {
+      border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 32%, var(--line));
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 22px;
+      background: linear-gradient(135deg, color-mix(in srgb, var(--vscode-editor-background) 80%, var(--vscode-focusBorder) 10%), var(--card));
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+    .telemetry-guide-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .telemetry-guide-header h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+    .telemetry-guide-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+    }
+    .telemetry-provider-card {
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .telemetry-provider-card:hover {
+      border-color: color-mix(in srgb, var(--vscode-focusBorder) 50%, var(--line));
+      transform: translateY(-1px);
+    }
+    .provider-tag {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+      margin-bottom: 6px;
+    }
+    .tag-google { background: rgba(66, 133, 244, 0.18); color: #6ba4ff; }
+    .tag-openai { background: rgba(16, 163, 127, 0.18); color: #10a37f; }
+    .tag-anthropic { background: rgba(217, 119, 6, 0.18); color: #f59e0b; }
+    .tag-local { background: rgba(139, 92, 246, 0.18); color: #a78bfa; }
+    .telemetry-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.48;
+      margin: 0;
+    }
+
+    .section-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 26px 0 14px;
+    }
+    .section-divider h3 {
+      margin: 0;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--vscode-editor-foreground);
+      white-space: nowrap;
+      letter-spacing: -0.2px;
+    }
+    .section-divider .divider-pill {
+      font-size: 10.5px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--vscode-badge-background) 25%, transparent);
+      color: var(--vscode-badge-foreground);
+    }
+    .section-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .setting-card-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .setting-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: color-mix(in srgb, var(--card) 65%, transparent);
+      transition: background 0.15s ease, border-color 0.15s ease;
+      cursor: pointer;
+    }
+    .setting-item:hover {
+      background: color-mix(in srgb, var(--card) 95%, var(--vscode-editor-foreground) 4%);
+      border-color: color-mix(in srgb, var(--line) 85%, transparent);
+    }
+    .setting-item input[type="checkbox"] {
+      margin-top: 3px;
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--vscode-focusBorder);
+    }
+    .setting-text {
+      flex: 1;
+    }
+    .setting-name {
+      display: block;
+      font-weight: 500;
+      font-size: 13.5px;
+      color: var(--vscode-editor-foreground);
+      margin-bottom: 2px;
+      line-height: 1.35;
+    }
+    .setting-caption {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Integrated Power Configuration Center</h1>
+    <div class="subtitle">사용량 확인, 에이전트 작업 연결, 사용자 소유 지식 보존을 한 화면에서 각각 설정합니다.</div>
+    <nav aria-label="설정 영역">
+      <button type="button" data-section="overview">개요</button>
+      <button type="button" data-section="dashboard">Dashboard</button>
+      <button type="button" data-section="orchestrator">Integrated Orchestrator</button>
+      <button type="button" data-section="knowledge">Private Git Knowledge</button>
+    </nav>
+  </header>
+  <main>
+    <section id="overview">
+      <div class="grid">
+        <article class="card"><h3>Dashboard</h3><div id="status-dashboard" class="status">확인 중</div><p>Antigravity IDE·Codex의 제공자 사용량과 로컬 GPU 상태를 한곳에서 비교해, 어느 실행 경로를 쓸지 판단할 근거를 제공합니다.</p></article>
+        <article class="card"><h3>Integrated Orchestrator</h3><div id="status-orchestrator" class="status">확인 중</div><p><code>ip-orchestrator</code>가 현재 에이전트, Codex, 하드웨어에 맞는 로컬 LLM 사이에서 작업 경로를 고릅니다. Antigravity IDE에서는 같은 작업의 출력을 <code>ip-orchestrator.md</code> 하나로 합쳐 prompt/response 아티팩트가 계속 늘지 않게 합니다. Dashboard와 분리 설치되어 사용량 화면을 열었다고 실행 규칙이 바뀌지는 않습니다.</p></article>
+        <article class="card"><h3>Private Git Knowledge</h3><div id="status-knowledge" class="status">확인 중</div><p>Obsidian vault의 <code>main</code>을 전역 지식의 단일 기준으로 사용합니다. 에이전트는 기존 문서를 먼저 찾고 Project·Knowledge·Area·Inbox 중 정해진 경로에 저장하며, 지식 종류를 Git 브랜치로 만들지 않습니다.</p></article>
+      </div>
+      <article class="card">
+        <h2>환경 진단</h2>
+        <ul id="diagnostics" class="diag-list"></ul>
+        <p id="gpu-summary" class="hint"></p>
+      </article>
+      <article class="card">
+        <h2>이 PC의 경로 기준</h2>
+        <p class="hint">다른 사용자나 다른 PC의 경로를 가져오지 않습니다. 아래 로컬 설정과 각 탭에서 사용자가 확정한 경로만 사용합니다.</p>
+        <code id="roots-config-path" class="path"></code>
+      </article>
+      <article class="card">
+        <h2>의존성 안내</h2>
+        <ul class="diag-list">
+          <li><strong>Git for Windows</strong> — Private Git Knowledge에 필요합니다. 확장이 자동 설치하지 않습니다.</li>
+          <li><strong>GitHub CLI</strong> — GitHub 저장소 생성·로그인에 선택적으로 사용합니다. 기존 private remote가 있으면 필수가 아닙니다.</li>
+          <li><strong>Codex CLI</strong> — Codex 위임 경로를 켤 때만 필요합니다.</li>
+          <li><strong>Anthropic Claude (Desktop & CLI)</strong> — Claude Desktop MCP 연동 및 <code>@anthropic-ai/claude-code</code> CLI에 필요합니다. <code>ANTHROPIC_API_KEY</code> 환경변수 설정 시 API 사용량이 자동 집계됩니다.</li>
+          <li><strong>Ollama 또는 vLLM</strong> — 로컬 LLM 경로를 켤 때만 필요합니다. GPU driver와 모델은 묵시적으로 설치하지 않습니다.</li>
+          <li><strong>Agy</strong> — Agy 사용량을 표시할 때만 필요합니다.</li>
+        </ul>
+        <p class="hint">상태 다시 확인은 현재 Windows 사용자·시스템 PATH를 새로 읽으므로 IDE를 재시작하지 않아도 방금 설치한 CLI를 다시 찾습니다. 다른 사용자의 홈 폴더를 검색하거나 비슷한 이름의 폴더를 삭제하지 않습니다.</p>
+      </article>
+      <article class="card notice">
+        <h2>GEMINI.md 경계</h2>
+        <p>Integrated Power는 전역 <code>GEMINI.md</code>를 생성·추가·교체하지 않습니다. Antigravity IDE 연동은 관리 플러그인, <code>ip-orchestrator</code> 스킬, 제품 전용 설정·상태 파일을 사용합니다.</p>
+        <div id="gemini-status" class="hint"></div>
+        <code id="gemini-path" class="path"></code>
+      </article>
+      <div class="actions">
+        <button type="button" data-action="refresh">상태 다시 확인</button>
+        <button type="button" class="secondary" id="btn-repair-restart-overview" data-action="repairAndRestartHistory">대화 복구 및 IDE 재시작</button>
+      </div>
+    </section>
+
+    <section id="dashboard">
+      <article class="card">
+        <h2>Dashboard 설정</h2>
+        <p class="hint">사이드바 대시보드의 표시 항목과 Integrated Power 상태 저장 경로를 설정합니다. 프로젝트 소스 파일은 변경되지 않습니다.</p>
+
+        <!-- 프로바이더별 토큰 연동 가이드 배너 -->
+        <div class="telemetry-guide-card">
+          <div class="telemetry-guide-header">
+            <h3>프로바이더별 토큰 연동 및 수집 조건 안내</h3>
+          </div>
+          <div class="telemetry-guide-grid">
+            <div class="telemetry-provider-card">
+              <span class="provider-tag tag-google">Google Antigravity</span>
+              <p class="telemetry-desc">Windows 자격 증명 관리자의 OAuth 토큰으로 Google Cloud Code 쿼터 API를 직접 조회합니다. <strong>agy CLI 또는 Antigravity IDE에 구글 계정으로 1회 이상 로그인</strong>되어 있어야 정상 갱신됩니다.</p>
+            </div>
+            <div class="telemetry-provider-card">
+              <span class="provider-tag tag-openai">OpenAI Codex</span>
+              <p class="telemetry-desc">백그라운드 <code>codex app-server</code> RPC를 호출해 추론 토큰 소모 없이 실시간 쿼터를 조회합니다. <strong>codex CLI 설치 및 터미널 <code>codex login</code> 상태</strong>가 요구됩니다.</p>
+            </div>
+            <div class="telemetry-provider-card">
+              <span class="provider-tag tag-anthropic">Anthropic Claude</span>
+              <p class="telemetry-desc"><code>~/.claude</code> 및 <code>%APPDATA%\Claude</code>의 로컬 세션 로그를 오프라인 스캔합니다. 별도 API 로그인 없이 <strong>PC에서 Claude CLI/데스크톱 앱으로 작업한 이력</strong>이 있으면 일일/7일 사용량이 자동 집계됩니다.</p>
+            </div>
+            <div class="telemetry-provider-card">
+              <span class="provider-tag tag-local">로컬 LLM & GPU</span>
+              <p class="telemetry-desc">Ollama(<code>http://localhost:11434</code>) 또는 vLLM 엔드포인트와 GPU 드라이버를 조회합니다. <strong>로컬 모델 서버가 기동 중</strong>이어야 모델 인벤토리와 VRAM 점유 현황이 표시됩니다.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 그룹 1: 제공자 및 모델 사용량 표시 -->
+        <div class="section-divider">
+          <h3>제공자 및 모델 사용량</h3>
+          <span class="divider-pill">Providers & Quota</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="show-antigravity">
+            <input id="show-antigravity" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">Antigravity IDE 사용량 표시</span>
+              <span class="setting-caption">Google Gemini 및 Claude Opus의 5시간/주간 쿼터 잔여율 게이지를 표시합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-codex">
+            <input id="show-codex" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">OpenAI (ChatGPT · Codex) 사용량 표시</span>
+              <span class="setting-caption">Codex의 5시간 및 주간 쿼터 잔여율과 실시간 리셋 카운트다운을 표시합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-claude">
+            <input id="show-claude" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">Anthropic Claude (API · CLI) 사용량 표시</span>
+              <span class="setting-caption">로컬 CLI 및 Desktop 세션에서 발생한 오늘 및 7일간의 토큰 소비량을 집계합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-local-llm">
+            <input id="show-local-llm" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">로컬 LLM · GPU 상태 표시</span>
+              <span class="setting-caption">GPU VRAM 가용 용량과 로컬 서빙 모델(Ollama/vLLM)의 활성 상태를 확인합니다.</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- 그룹 2: 에이전트 대시보드 및 도구 패널 -->
+        <div class="section-divider">
+          <h3>에이전트 제어 및 대시보드 패널</h3>
+          <span class="divider-pill">Agent Panels</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="show-queue">
+            <input id="show-queue" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">AI Work Queue 패널 표시</span>
+              <span class="setting-caption">작업 큐 등록, 모델별 AI 태그 자동 분류, 원클릭 [▶ Run] 실행 패널을 사이드바에 표시합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-metrics">
+            <input id="show-metrics" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">최근 토큰/시간 측정 메트릭(Metrics) 패널 표시</span>
+              <span class="setting-caption">최근 실행된 작업들의 실제 소요 시간과 소모된 토큰량을 비교 분석합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="show-errors">
+            <input id="show-errors" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">에러(Errors) 패널 표시</span>
+              <span class="setting-caption">프로바이더 통신 장애 및 백오프 쿨다운 현황을 대시보드 하단에 실시간 진단합니다.</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- 그룹 3: 백그라운드 브로커 및 시스템 알림 -->
+        <div class="section-divider">
+          <h3>백그라운드 브로커 및 시스템 알림</h3>
+          <span class="divider-pill">Broker & System</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="notify-full-tokens">
+            <input id="notify-full-tokens" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">토큰 100% 완충 시 알림 발송</span>
+              <span class="setting-caption">5시간 주기 클라우드 쿼터가 100%로 완충되었을 때 윈도우 알림을 발송합니다.</span>
+            </div>
+          </label>
+          <label class="setting-item" for="auto-start-boot">
+            <input id="auto-start-boot" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">Windows 부팅 시 자동 시작</span>
+              <span class="setting-caption">IDE 종료 상태에서도 백그라운드 브로커가 유지되어 쿼터 완충 감지 및 5시간 프리웜을 지속합니다.</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- 그룹 4: 저장 경로 및 데이터 유지 관리 -->
+        <div class="section-divider">
+          <h3>데이터 영구 저장 및 유지 관리</h3>
+          <span class="divider-pill">Storage & Maintenance</span>
+        </div>
+        <div class="field">
+          <label for="dashboard-state-root">Integrated Power 상태 경로 (State Root)</label>
+          <div class="inline">
+            <input id="dashboard-state-root" type="text">
+            <button type="button" class="secondary" data-action="chooseStateRoot">찾기</button>
+          </div>
+          <div class="hint" style="margin-top: 5px;">암호화된 작업 큐 원장(events.enc.jsonl), 토큰 캐시, 영구 설정이 저장되는 정본 디렉터리입니다.</div>
+        </div>
+
+        <div class="actions" style="margin-top: 20px;">
+          <button type="button" data-action="saveDashboard">Dashboard 설정 저장</button>
+        </div>
+
+        <div id="antigravity-sync-card" class="subform" style="margin-top: 22px;">
+          <h3>Antigravity IDE 대화 기록 복구 및 재시작</h3>
+          <p class="hint">안티그래비티 IDE가 완전히 종료된 후, 몇 초 뒤 자동으로 다시 시작되며 대화 기록이 안전하게 복구됩니다.</p>
+          <div class="actions">
+            <button type="button" class="secondary" data-action="repairAndRestartHistory">대화 복구 및 IDE 재시작</button>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section id="orchestrator">
+      <article class="card">
+        <h2>Integrated Orchestrator 설정 및 설치</h2>
+        <p class="hint">다중 모델 라우팅 정책과 Antigravity IDE 전용 관리 플러그인을 설정합니다. 작업별 출력은 <code>ip-orchestrator.md</code> 하나로 통합되어 불필요한 아티팩트 증식을 방지합니다.</p>
+
+        <!-- 그룹 1: 플러그인 환경 및 마이그레이션 -->
+        <div class="section-divider">
+          <h3>Antigravity IDE 플러그인 관리</h3>
+          <span class="divider-pill">Plugin Environment</span>
+        </div>
+        <div id="plugin-status" class="status"></div>
+        <code id="plugin-path" class="path"></code>
+        <code id="orchestrator-settings-path" class="path"></code>
+        <div class="field" style="margin-top: 14px;">
+          <label for="plugin-root">Antigravity IDE 플러그인 루트</label>
+          <div class="inline">
+            <input id="plugin-root" type="text">
+            <button type="button" class="secondary" data-action="choosePluginRoot">찾기</button>
+          </div>
+          <div id="plugin-root-source" class="hint"></div>
+        </div>
+        <div class="subform">
+          <h3>배포 마이그레이션 계획</h3>
+          <div id="plugin-plan-status" class="status"></div>
+          <ul id="plugin-plan-actions" class="diag-list"></ul>
+          <p class="hint">Integrated Power가 소유한 <code>ip-orchestrator</code> 경로를 확인합니다. 인식되지 않은 폴더는 자동 이동하지 않으며 기존 항목은 백업됩니다.</p>
+        </div>
+
+        <!-- 그룹 2: Codex 위임 설정 -->
+        <div class="section-divider">
+          <h3>Codex 위임 실행 경로</h3>
+          <span class="divider-pill">Codex Delegation</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="enable-codex">
+            <input id="enable-codex" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">Codex 위임 경로 사용</span>
+              <span class="setting-caption">정밀한 로직 작성, 아키텍처 토론 및 Writer-Critic 상호 검증 작업을 OpenAI Codex CLI로 위임합니다.</span>
+            </div>
+          </label>
+        </div>
+        <div id="codex-options" class="subform" style="margin-top: 10px;">
+          <div class="field">
+            <label for="codex-exe">Codex 실행 파일 경로</label>
+            <div class="inline">
+              <input id="codex-exe" type="text" placeholder="예: codex 또는 C:\Users\...\codex.cmd">
+              <button type="button" class="secondary" data-action="chooseCodexExe">찾기</button>
+            </div>
+            <div class="hint" style="margin-top: 4px;">기본 시스템 PATH 외 별도 환경(nvm, 포터블 경로 등)에 설치된 경우 직접 지정합니다.</div>
+          </div>
+        </div>
+
+        <!-- 그룹 3: 로컬 LLM 위임 설정 -->
+        <div class="section-divider">
+          <h3>로컬 LLM (Ollama / vLLM) 위임 경로</h3>
+          <span class="divider-pill">Local Compute</span>
+        </div>
+        <div class="setting-card-group">
+          <label class="setting-item" for="enable-local-llm">
+            <input id="enable-local-llm" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">로컬 LLM 위임 경로 사용</span>
+              <span class="setting-caption">민감 데이터 로그 전처리, 자동완성 및 클라우드 쿼터 절약을 위해 로컬 GPU/CPU 모델로 위임합니다.</span>
+            </div>
+          </label>
+        </div>
+        <div id="local-llm-options" class="subform" style="margin-top: 10px;">
+          <div class="field">
+            <label for="local-provider">공급자 백엔드</label>
+            <select id="local-provider">
+              <option value="ollama">Ollama (기본 권장)</option>
+              <option value="vllm">vLLM / OpenAI 호환 API</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="local-endpoint">로컬 서버 Endpoint</label>
+            <input id="local-endpoint" type="url" placeholder="http://localhost:11434">
+          </div>
+          <div class="field">
+            <label for="selection-mode">하드웨어 최적 모델 선택</label>
+            <select id="selection-mode">
+              <option value="auto">현재 VRAM·GPU 스펙에 맞춰 최적 모델 자동 선택 (권장)</option>
+              <option value="user_default">사용자 지정 모델 우선</option>
+            </select>
+          </div>
+          <div id="model-field" class="field">
+            <label for="local-model">사용자 기본 모델 ID</label>
+            <input id="local-model" type="text" placeholder="예: qwen2.5-coder:14b">
+          </div>
+          <div class="field">
+            <label for="reserve-vram">시스템 디스플레이용 예약 VRAM (GB)</label>
+            <input id="reserve-vram" type="number" min="0" max="256" step="0.5">
+            <div class="hint" style="margin-top: 4px;">운영체제 및 화면 렌더링 안정성을 위해 로컬 모델이 침범하지 않고 남겨 둘 최소 VRAM입니다.</div>
+          </div>
+          <label class="setting-item" for="allow-cpu-offload" style="margin: 10px 0;">
+            <input id="allow-cpu-offload" type="checkbox">
+            <div class="setting-text">
+              <span class="setting-name">VRAM 부족 시 CPU Offload 허용</span>
+              <span class="setting-caption">모델 가중치가 GPU 메모리를 초과할 경우 시스템 RAM을 활용하여 작업 중단을 방지합니다.</span>
+            </div>
+          </label>
+          <div class="subform">
+            <h3>Ollama 모델 인벤토리</h3>
+            <p class="hint"><code>ollama list</code> 명령으로 로컬에 설치된 모델 목록을 조회하여 지원 가능한 모델 레지스트리와 동기화합니다.</p>
+            <div id="ollama-inventory-status" class="status">아직 동기화하지 않았습니다.</div>
+            <code id="ollama-registry-path" class="path"></code>
+            <div id="ollama-inventory-details" class="hint"></div>
+            <ul id="ollama-inventory-models" class="diag-list"></ul>
+            <div class="actions">
+              <button type="button" class="secondary" data-action="syncOllamaInventory">설치 모델 다시 확인·레지스트리 동기화</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 그룹 4: 기본 라우팅 정책 -->
+        <div class="section-divider">
+          <h3>기본 라우팅 정책</h3>
+          <span class="divider-pill">Default Routing</span>
+        </div>
+        <div class="field">
+          <label for="default-route">기본 실행 경로</label>
+          <select id="default-route">
+            <option value="main_agent">현재 에이전트 직접 처리 (Antigravity / Gemini)</option>
+            <option value="codex">Codex 위임 (OpenAI)</option>
+            <option value="local_llm">로컬 LLM 위임 (Ollama / vLLM)</option>
+          </select>
+          <div class="hint" style="margin-top: 4px;">작업 지시 시 명시적인 라우팅 대상이 없을 때 적용할 기본 실행 엔진입니다.</div>
+        </div>
+        <div class="actions" style="margin-top: 20px;">
+          <button type="button" class="secondary" data-action="saveOrchestrator">설정만 저장</button>
+          <button type="button" data-action="saveAndInstallOrchestrator">설정 저장 및 플러그인 설치·갱신</button>
+        </div>
+      </article>
+    </section>
+          <button type="button" data-action="saveAndInstallOrchestrator">설정 저장 및 플러그인 설치·갱신</button>
+        </div>
+      </article>
+    </section>
+
+    <section id="knowledge">
+      <article class="card">
+        <h2>Private Git Knowledge 설정</h2>
+        <p class="hint">개발자의 저장소가 아니라 각 사용자가 소유한 로컬 또는 private 원격 Git 저장소를 구성합니다. 공통 작업 루트와 Knowledge 경로는 이 PC에서 사용자가 확정하며, 다른 PC의 절대 경로를 복사하거나 사용자 홈을 훑어 추측하지 않습니다. 확장에 내장된 Win11 도구가 기존 문서를 덮어쓰지 않고 Obsidian 분류표와 빠진 기본 폴더만 추가합니다. 최초 설정 마법사는 commit·pull·push하지 않습니다. 이후 <code>route-knowledge</code>가 기존 문서와 허용 경로를 확인하고, <code>save-knowledge</code>와 <code>save-agent-worklog</code>만 명시된 파일을 canonical <code>main</code>에 저장합니다. 작업 이름으로 Knowledge 브랜치를 만들지 않습니다.</p>
+        <div id="knowledge-wizard-status" class="status"></div>
+        <div id="knowledge-github-status" class="hint"></div>
+        <div id="knowledge-routing-status" class="hint"></div>
+        <div class="field"><label for="knowledge-mode">저장 방식</label><select id="knowledge-mode"><option value="local_only">로컬 Git만 사용</option><option value="private_remote">Private 원격 Git 연결</option></select></div>
+        <div class="field">
+          <label for="work-root">에이전트 공통 작업 루트</label>
+          <div class="inline"><input id="work-root" type="text"><button type="button" class="secondary" data-action="chooseWorkRoot">찾기</button></div>
+          <div id="work-root-source" class="hint"></div>
+        </div>
+        <div class="field">
+          <label for="tools-root">Knowledge 도구 설치 루트</label>
+          <div class="inline"><input id="tools-root" type="text"><button type="button" class="secondary" data-action="chooseToolsRoot">찾기</button></div>
+          <div id="tools-root-source" class="hint"></div>
+        </div>
+        <div class="field">
+          <label for="knowledge-path">Knowledge 경로</label>
+          <div class="inline"><input id="knowledge-path" type="text"><button type="button" class="secondary" data-action="chooseKnowledgePath">찾기</button></div>
+          <div id="knowledge-path-source" class="hint"></div>
+        </div>
+        <div id="remote-field" class="field"><label for="knowledge-remote">Private Git 원격 URL</label><input id="knowledge-remote" type="text" placeholder="https://github.com/owner/private-repo.git 또는 git@github.com:owner/private-repo.git"></div>
+        <div class="grid">
+          <div class="field"><label for="author-name">Git 작성자 이름</label><input id="author-name" type="text"></div>
+          <div class="field"><label for="author-email">Git 작성자 이메일</label><input id="author-email" type="email"></div>
+        </div>
+        <label class="check"><input id="allow-non-empty" type="checkbox"><span>검토한 비어 있지 않은 폴더에 Git 초기화 허용</span></label>
+        <label class="check"><input id="skip-remote-check" type="checkbox"><span>오프라인 설정: 원격 연결 확인을 생략</span></label>
+        <div class="actions">
+          <button type="button" class="secondary" data-action="installKnowledgeTools">내장 Knowledge 도구 설치·복구</button>
+          <button type="button" data-action="configureKnowledge">Knowledge 설정·재설정 실행</button>
+          <button type="button" class="secondary" data-action="detectKnowledgeRemote">현재 GitHub 로그인으로 remote 감지</button>
+          <button type="button" class="secondary" data-action="reconfigureKnowledgeRemote">입력한 remote로 origin 재설정</button>
+          <button type="button" class="secondary" data-action="openGitHubNewRepository">GitHub private 저장소 만들기</button>
+          <button type="button" class="secondary" data-action="openKnowledgeGuide">설치·보안 안내 열기</button>
+        </div>
+      </article>
+    </section>
+  </main>
+  <div id="result" class="result" role="status" aria-live="polite"></div>
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    let currentSection = "overview";
+    let busy = false;
+
+    const byId = (id) => document.getElementById(id);
+    const bool = (id) => byId(id).checked;
+    const value = (id) => byId(id).value;
+    const setValue = (id, next) => { byId(id).value = next ?? ""; };
+    const setChecked = (id, next) => { byId(id).checked = next === true; };
+
+    function showSection(section) {
+      currentSection = ["overview", "dashboard", "orchestrator", "knowledge"].includes(section) ? section : "overview";
+      document.querySelectorAll("main section").forEach((item) => item.classList.toggle("active", item.id === currentSection));
+      document.querySelectorAll("nav button").forEach((item) => item.classList.toggle("active", item.dataset.section === currentSection));
+      vscode.setState({ section: currentSection });
+    }
+
+    function statusText(element, complete) {
+      element.textContent = complete ? "✓ 설정 완료" : "– 설정 필요";
+      element.className = "status " + (complete ? "ok" : "warn");
+    }
+
+    function render(snapshot) {
+      statusText(byId("status-dashboard"), snapshot.status.dashboard);
+      statusText(byId("status-orchestrator"), snapshot.status.orchestrator);
+      statusText(byId("status-knowledge"), snapshot.status.knowledge);
+      const diagnostics = byId("diagnostics");
+      diagnostics.replaceChildren();
+      snapshot.diagnostics.forEach((item) => {
+        const li = document.createElement("li");
+        li.className = item.available ? "ok" : (item.optional ? "hint" : "warn");
+        li.textContent =
+          (item.available ? "✓ " : (item.optional ? "○ 선택 사항 · " : "! 필요 · ")) +
+          item.label +
+          (item.path ? " · " + item.path : "");
+        diagnostics.appendChild(li);
+      });
+      byId("gpu-summary").textContent = snapshot.gpuSummary;
+      byId("roots-config-path").textContent = "canonical roots: " + snapshot.paths.roots;
+      byId("gemini-status").textContent = snapshot.installation.globalGeminiExists
+        ? "기존 파일이 있습니다. Integrated Power가 읽거나 수정하지 않습니다."
+        : "파일이 없습니다. Integrated Power 설치 과정에서도 생성하지 않습니다.";
+      byId("gemini-path").textContent = snapshot.paths.globalGemini;
+
+      const isAg = snapshot.isAntigravityHost === true;
+      if (byId("btn-repair-restart-overview")) byId("btn-repair-restart-overview").classList.toggle("hidden", !isAg);
+      if (byId("antigravity-sync-card")) byId("antigravity-sync-card").classList.toggle("hidden", !isAg);
+
+      setChecked("show-antigravity", snapshot.dashboard.showAntigravity);
+      setChecked("show-codex", snapshot.dashboard.showCodex);
+      setChecked("show-claude", snapshot.dashboard.showClaude ?? true);
+      setChecked("show-local-llm", snapshot.dashboard.showLocalLlm);
+      setChecked("show-queue", snapshot.dashboard.showQueue ?? true);
+      setChecked("show-metrics", snapshot.dashboard.showMetrics ?? true);
+      setChecked("show-errors", snapshot.dashboard.showErrors ?? true);
+      setChecked("notify-full-tokens", snapshot.dashboard.notifyOnFullTokens ?? true);
+      setChecked("auto-start-boot", snapshot.dashboard.autoStartOnBoot ?? false);
+      setValue("dashboard-state-root", snapshot.dashboard.stateRoot);
+
+      setChecked("enable-codex", snapshot.orchestrator.enableCodex);
+      setChecked("enable-local-llm", snapshot.orchestrator.enableLocalLlm);
+      setValue("codex-exe", snapshot.orchestrator.codexExe);
+      setValue("local-provider", snapshot.orchestrator.provider === "none" ? "ollama" : snapshot.orchestrator.provider);
+      setValue("local-endpoint", snapshot.orchestrator.endpoint);
+      setValue("selection-mode", snapshot.orchestrator.selectionMode);
+      setValue("local-model", snapshot.orchestrator.model);
+      setValue("reserve-vram", String(snapshot.orchestrator.reserveVramGB));
+      setChecked("allow-cpu-offload", snapshot.orchestrator.allowCpuOffload);
+      setValue("default-route", snapshot.orchestrator.defaultRoute);
+      setValue("plugin-root", snapshot.orchestrator.pluginRoot);
+      byId("plugin-root-source").textContent = snapshot.paths.pluginRootConfigured
+        ? "이 PC에 저장된 설치 루트입니다."
+        : "현재 사용자 홈에서 계산한 제안값입니다. 저장 및 설치 전에 확인하세요.";
+      byId("plugin-status").textContent = snapshot.installation.pluginInstalled
+        ? "✓ ip-orchestrator 플러그인 설치됨"
+        : snapshot.installation.legacyPluginInstalled
+          ? "△ 이전 orchestrator 플러그인 발견 · 다음 설치에서 백업 후 ip-orchestrator로 전환"
+          : "– 플러그인 설치 필요";
+      byId("plugin-status").className = "status " + (snapshot.installation.pluginInstalled ? "ok" : "warn");
+      byId("plugin-path").textContent = "플러그인: " + snapshot.paths.plugin;
+      byId("orchestrator-settings-path").textContent =
+        "설정: " + snapshot.paths.orchestrator +
+        (snapshot.installation.settingsSource !== "integrated-power" && snapshot.installation.settingsSource !== "none"
+          ? " (이전 설정을 읽음; 저장 시 Integrated Power 경로로 전환)"
+          : "");
+      const inventory = snapshot.ollamaInventory;
+      byId("ollama-inventory-status").textContent = inventory
+        ? (inventory.status === "ready" ? "✓ 모델 인벤토리 동기화됨" : "△ " + inventory.status)
+        : "– 아직 동기화하지 않았습니다.";
+      byId("ollama-inventory-status").className = "status " + (inventory?.status === "ready" ? "ok" : "warn");
+      byId("ollama-registry-path").textContent = inventory?.registryPath
+        ? "사용자 레지스트리: " + inventory.registryPath
+        : "";
+      byId("ollama-inventory-details").textContent = inventory
+        ? "설치 " + inventory.installedModels.length + "개 · 등록·설치됨 " + inventory.registeredInstalled.length +
+          "개 · 새 등록 " + inventory.newlyRegistered.length + "개 · 등록됐지만 미설치 " +
+          inventory.registryModelsNotInstalled.length + "개" +
+          (inventory.inventorySource ? " · 탐지: " + inventory.inventorySource : "")
+        : "최초 설정 저장 또는 수동 동기화 때 확인합니다.";
+      const inventoryModels = byId("ollama-inventory-models");
+      inventoryModels.replaceChildren();
+      const inventoryRows = inventory ? [
+        ["설치됨", inventory.installedModels],
+        ["이번에 등록", inventory.newlyRegistered],
+        ["등록됐지만 미설치", inventory.registryModelsNotInstalled],
+        ["설치 제안(확인 필요)", inventory.suggestedInstalls]
+      ] : [];
+      inventoryRows.forEach(([label, models]) => {
+        if (!models.length) return;
+        const li = document.createElement("li");
+        li.textContent = label + ": " + models.join(", ");
+        inventoryModels.appendChild(li);
+      });
+      if (inventory?.agentPrompt) {
+        const li = document.createElement("li");
+        li.textContent = inventory.agentPrompt;
+        inventoryModels.appendChild(li);
+      }
+      const plan = snapshot.installation.pluginPlan;
+      byId("plugin-plan-status").textContent = plan.blocked
+        ? "설치 중단: " + plan.blockingReason
+        : "설치 가능 · ip 상태: " + plan.destinationState + " · eggr 이전 상태: " + plan.previousState + " · codex 이전 상태: " + plan.legacyState;
+      byId("plugin-plan-status").className = "status " + (plan.blocked ? "bad" : "ok");
+      const planActions = byId("plugin-plan-actions");
+      planActions.replaceChildren();
+      (plan.actions.length ? plan.actions : ["변경할 항목이 없습니다."]).forEach((description) => {
+        const li = document.createElement("li");
+        li.textContent = description;
+        planActions.appendChild(li);
+      });
+
+      setValue("knowledge-mode", snapshot.knowledge.mode);
+      setValue("work-root", snapshot.knowledge.workRoot);
+      setValue("tools-root", snapshot.knowledge.toolsRoot);
+      setValue("knowledge-path", snapshot.knowledge.knowledgePath);
+      byId("work-root-source").textContent = snapshot.knowledge.workRootConfigured
+        ? "이 PC의 canonical roots.json에 저장됨"
+        : "제안값입니다. 다른 PC에서는 자동 승계하지 않으며 사용자가 확정해야 합니다.";
+      byId("tools-root-source").textContent = snapshot.knowledge.toolsRootConfigured
+        ? "이 PC의 canonical roots.json에 저장됨"
+        : "현재 OS의 사용자 데이터 위치에서 계산한 제안값입니다.";
+      byId("knowledge-path-source").textContent = snapshot.knowledge.knowledgePathConfigured
+        ? "이 PC의 canonical roots.json에 저장됨"
+        : "공통 작업 루트 아래의 제안값입니다. 필요하면 다른 위치를 선택할 수 있습니다.";
+      setValue("knowledge-remote", snapshot.knowledge.remoteUrl);
+      setValue("author-name", snapshot.knowledge.authorName);
+      setValue("author-email", snapshot.knowledge.authorEmail);
+      setChecked("allow-non-empty", false);
+      setChecked("skip-remote-check", false);
+      byId("knowledge-github-status").textContent =
+        "GitHub CLI 로그인: " + (snapshot.knowledge.githubLogin || "확인되지 않음") +
+        " · 실제 origin: " + (snapshot.knowledge.repositoryRemote || "없음");
+      byId("knowledge-routing-status").textContent =
+        "현재 브랜치: " + (snapshot.knowledge.currentBranch || "확인되지 않음") +
+        " · Obsidian 분류표: " + (snapshot.knowledge.routingPolicyExists ? "준비됨" : "없음") +
+        " · 남아 있는 agent 브랜치: " + snapshot.knowledge.taskBranchCount +
+        (snapshot.knowledge.currentBranch && snapshot.knowledge.currentBranch !== "main"
+          ? " · ⚠ Knowledge는 main으로 통합해야 합니다."
+          : "");
+      byId("knowledge-wizard-status").textContent = snapshot.installation.knowledgeWizardInstalled
+        ? "✓ 확장 내장 Windows Knowledge 도구 준비됨 · " + snapshot.installation.knowledgeToolsRoot
+        : "– 내장 Knowledge 도구 설치·복구를 실행하세요.";
+      byId("knowledge-wizard-status").className = "status " + (snapshot.installation.knowledgeWizardInstalled ? "ok" : "warn");
+      syncConditionalFields();
+    }
+
+    function syncConditionalFields() {
+      byId("codex-options").classList.toggle("hidden", !bool("enable-codex"));
+      byId("local-llm-options").classList.toggle("hidden", !bool("enable-local-llm"));
+      byId("model-field").classList.toggle("hidden", value("selection-mode") !== "user_default");
+      byId("remote-field").classList.toggle("hidden", value("knowledge-mode") !== "private_remote");
+      for (const option of byId("default-route").options) {
+        option.disabled =
+          (option.value === "codex" && !bool("enable-codex")) ||
+          (option.value === "local_llm" && !bool("enable-local-llm"));
+      }
+      const selected = value("default-route");
+      if ((selected === "codex" && !bool("enable-codex")) || (selected === "local_llm" && !bool("enable-local-llm"))) {
+        setValue("default-route", "main_agent");
+      }
+    }
+
+    function dashboardConfiguration() {
+      return {
+        showAntigravity: bool("show-antigravity"),
+        showCodex: bool("show-codex"),
+        showClaude: bool("show-claude"),
+        showLocalLlm: bool("show-local-llm"),
+        showQueue: bool("show-queue"),
+        showMetrics: bool("show-metrics"),
+        showErrors: bool("show-errors"),
+        notifyOnFullTokens: bool("notify-full-tokens"),
+        autoStartOnBoot: bool("auto-start-boot"),
+        stateRoot: value("dashboard-state-root")
+      };
+    }
+
+    function orchestratorConfiguration() {
+      return {
+        enableCodex: bool("enable-codex"),
+        enableLocalLlm: bool("enable-local-llm"),
+        defaultRoute: value("default-route"),
+        codexExe: value("codex-exe"),
+        provider: value("local-provider"),
+        endpoint: value("local-endpoint"),
+        selectionMode: value("selection-mode"),
+        model: value("local-model"),
+        reserveVramGB: Number(value("reserve-vram")),
+        allowCpuOffload: bool("allow-cpu-offload"),
+        pluginRoot: value("plugin-root")
+      };
+    }
+
+    function knowledgeConfiguration() {
+      return {
+        mode: value("knowledge-mode"),
+        workRoot: value("work-root"),
+        toolsRoot: value("tools-root"),
+        knowledgePath: value("knowledge-path"),
+        remoteUrl: value("knowledge-remote"),
+        authorName: value("author-name"),
+        authorEmail: value("author-email"),
+        allowNonEmptyDirectory: bool("allow-non-empty"),
+        skipRemoteCheck: bool("skip-remote-check")
+      };
+    }
+
+    document.querySelectorAll("nav button").forEach((button) => button.addEventListener("click", () => showSection(button.dataset.section)));
+    ["enable-codex", "enable-local-llm", "selection-mode", "knowledge-mode"].forEach((id) => byId(id).addEventListener("change", syncConditionalFields));
+    document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => {
+      if (busy) return;
+      const action = button.dataset.action;
+      if (action === "saveDashboard") vscode.postMessage({ type: action, value: dashboardConfiguration() });
+      else if (action === "saveOrchestrator" || action === "saveAndInstallOrchestrator" || action === "syncOllamaInventory") vscode.postMessage({ type: action, value: orchestratorConfiguration() });
+      else if (action === "configureKnowledge") vscode.postMessage({ type: action, value: knowledgeConfiguration() });
+      else if (action === "installKnowledgeTools") vscode.postMessage({ type: action, value: value("tools-root") });
+      else if (action === "detectKnowledgeRemote" || action === "reconfigureKnowledgeRemote") {
+        vscode.postMessage({
+          type: action,
+          value: {
+            knowledgePath: value("knowledge-path"),
+            remoteUrl: value("knowledge-remote")
+          }
+        });
+      }
+      else vscode.postMessage({ type: action, section: currentSection });
+    }));
+
+    window.addEventListener("message", (event) => {
+      const message = event.data;
+      if (message.type === "snapshot") {
+        render(message.value);
+        if (message.section) showSection(message.section);
+      } else if (message.type === "busy") {
+        busy = message.value === true;
+        document.querySelectorAll("button[data-action]").forEach((button) => { button.disabled = busy; });
+      } else if (message.type === "result") {
+        const result = byId("result");
+        result.textContent = message.message;
+        result.className = "result visible " + (message.kind === "error" ? "bad" : "ok");
+      } else if (message.type === "fieldValue") {
+        const map = { dashboardStateRoot: "dashboard-state-root", pluginRoot: "plugin-root", workRoot: "work-root", toolsRoot: "tools-root", knowledgePath: "knowledge-path", codexExe: "codex-exe" };
+        if (map[message.field]) setValue(map[message.field], message.value);
+      } else if (message.type === "knowledgeRemoteDetected") {
+        setValue("knowledge-remote", message.value.remoteUrl);
+        byId("knowledge-github-status").textContent =
+          "GitHub CLI 로그인: " + message.value.githubLogin +
+          " · 현재 origin: " + (message.value.currentRemote || "없음") +
+          " · 제안: " + message.value.remoteUrl;
+      }
+    });
+
+    showSection((vscode.getState() || {}).section || "overview");
+    vscode.postMessage({ type: "ready", section: currentSection });
+  </script>
+</body>
+</html>`;
+  }
+}
+
+function parseKnowledgeRemoteReconfiguration(value: unknown): {
+  knowledgePath: string;
+  remoteUrl: string;
+} {
+  if (!isRecord(value)) {
+    throw new Error("Knowledge remote 설정 형식이 올바르지 않습니다.");
+  }
+  return {
+    knowledgePath: requireString(value.knowledgePath, "Knowledge 경로"),
+    remoteUrl: optionalString(value.remoteUrl),
+  };
+}
+
+function parseDashboardConfiguration(value: unknown): DashboardConfiguration {
+  if (!isRecord(value)) throw new Error("Dashboard 설정 형식이 올바르지 않습니다.");
+  return {
+    showAntigravity: value.showAntigravity === true,
+    showCodex: value.showCodex === true,
+    showClaude: value.showClaude !== false,
+    showLocalLlm: value.showLocalLlm === true,
+    showQueue: value.showQueue !== false,
+    showMetrics: value.showMetrics !== false,
+    showErrors: value.showErrors !== false,
+    notifyOnFullTokens: value.notifyOnFullTokens === true,
+    autoStartOnBoot: value.autoStartOnBoot === true,
+    stateRoot: requireString(value.stateRoot, "Integrated Power 상태 경로"),
+  };
+}
+
+function parseOrchestratorConfiguration(
+  value: unknown,
+): OrchestratorConfiguration {
+  if (!isRecord(value)) throw new Error("Integrated Orchestrator 설정 형식이 올바르지 않습니다.");
+  const defaultRoute = value.defaultRoute;
+  const provider = value.provider;
+  const selectionMode = value.selectionMode;
+  if (
+    defaultRoute !== "main_agent" &&
+    defaultRoute !== "codex" &&
+    defaultRoute !== "local_llm"
+  ) {
+    throw new Error("기본 실행 경로가 올바르지 않습니다.");
+  }
+  if (provider !== "none" && provider !== "ollama" && provider !== "vllm") {
+    throw new Error("로컬 LLM 공급자가 올바르지 않습니다.");
+  }
+  if (selectionMode !== "auto" && selectionMode !== "user_default") {
+    throw new Error("모델 선택 방식이 올바르지 않습니다.");
+  }
+  return {
+    enableCodex: value.enableCodex === true,
+    enableLocalLlm: value.enableLocalLlm === true,
+    defaultRoute,
+    codexExe: optionalString(value.codexExe),
+    provider,
+    endpoint: optionalString(value.endpoint),
+    selectionMode,
+    model: optionalString(value.model),
+    reserveVramGB:
+      typeof value.reserveVramGB === "number" ? value.reserveVramGB : Number.NaN,
+    allowCpuOffload: value.allowCpuOffload === true,
+    pluginRoot: requireString(value.pluginRoot, "Antigravity 플러그인 루트"),
+  };
+}
+
+function parseKnowledgeConfiguration(value: unknown): KnowledgeConfiguration {
+  if (!isRecord(value)) throw new Error("Knowledge 설정 형식이 올바르지 않습니다.");
+  if (value.mode !== "local_only" && value.mode !== "private_remote") {
+    throw new Error("Knowledge 저장 방식이 올바르지 않습니다.");
+  }
+  return {
+    mode: value.mode,
+    workRoot: requireString(value.workRoot, "공통 작업 루트"),
+    toolsRoot: requireString(value.toolsRoot, "Knowledge 도구 설치 루트"),
+    knowledgePath: requireString(value.knowledgePath, "Knowledge 경로"),
+    remoteUrl: optionalString(value.remoteUrl),
+    authorName: requireString(value.authorName, "Git 작성자 이름"),
+    authorEmail: requireString(value.authorEmail, "Git 작성자 이메일"),
+    allowNonEmptyDirectory: value.allowNonEmptyDirectory === true,
+    skipRemoteCheck: value.skipRemoteCheck === true,
+  };
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} 값이 필요합니다.`);
+  }
+  return value;
+}
+
+function optionalString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function isSection(value: unknown): value is ConfigurationSection {
+  return (
+    value === "overview" ||
+    value === "dashboard" ||
+    value === "orchestrator" ||
+    value === "knowledge"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function createNonce(): string {
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let nonce = "";
+  for (let index = 0; index < 32; index++) {
+    nonce += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return nonce;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

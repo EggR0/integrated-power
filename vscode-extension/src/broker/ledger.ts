@@ -68,7 +68,11 @@ export function createPreferredEventLedger(filePath: string, key?: Buffer): Even
   if (fs.existsSync(filePath)) {
     const format = detectLedgerFormat(filePath);
     if (format === "jsonl") return new EncryptedEventLedger(filePath, key);
-    return new SqlCipherEventLedger(filePath, key);
+    try {
+      return new SqlCipherEventLedger(filePath, key);
+    } catch {
+      return new EncryptedEventLedger(filePath, key);
+    }
   }
   if (fs.existsSync(fallbackPath)) return new EncryptedEventLedger(fallbackPath, key);
   try { return new SqlCipherEventLedger(filePath, key); } catch (error) {
@@ -124,9 +128,16 @@ export async function migrateBrokerLedgers(
   const expected = destination.length > latestSource.length ? destination : latestSource;
   if (destination.length >= latestSource.length) return "destination-current";
 
-  const target = destinationExists && detectLedgerFormat(destinationPath) === "sqlite"
-    ? new SqlCipherEventLedger(destinationPath, destinationKey)
-    : new EncryptedEventLedger(destinationPath, destinationKey);
+  let target: EventLedger;
+  if (destinationExists && detectLedgerFormat(destinationPath) === "sqlite") {
+    try {
+      target = new SqlCipherEventLedger(destinationPath, destinationKey);
+    } catch {
+      target = new EncryptedEventLedger(destinationPath, destinationKey);
+    }
+  } else {
+    target = new EncryptedEventLedger(destinationPath, destinationKey);
+  }
   for (const event of latestSource.slice(destination.length)) await target.append(event);
   const readBack = await target.list();
   if (readBack.length !== expected.length || !isEventPrefix(expected, readBack)) {
@@ -160,6 +171,7 @@ function detectLedgerFormat(filePath: string): "jsonl" | "sqlite" {
   try {
     const header = Buffer.alloc(16);
     const count = fs.readSync(descriptor, header, 0, header.length, 0);
+    if (count === 0) return "jsonl";
     const prefix = header.subarray(0, count);
     if (prefix.toString("utf8").trimStart().startsWith("{")) return "jsonl";
     // SQLCipher encrypts the SQLite page header, so encrypted databases do not

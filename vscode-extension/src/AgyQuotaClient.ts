@@ -48,15 +48,55 @@ export class AgyNotAuthenticatedError extends Error {
 
 export class AgyQuotaClient {
   private static inMemoryCachedTokens: Map<string, { token: QuotaToken; credentialKey: string }> = new Map();
+  private static cachedCredentials?: {
+    data: { accounts: Record<string, any>; gcpProjects: Record<string, any>; activeIdeAccount?: string; defaultTargetEmail?: string };
+    cachedAt: number;
+    vscdbMtime?: number;
+  };
+  private static clientSecretsCache = new Map<string, { mtimeMs: number; secrets: string[] }>();
+  private static agyVersionCache = new Map<string, { mtimeMs: number; version: string }>();
   private extensionPath: string;
 
   constructor(extensionPath: string = __dirname) {
     this.extensionPath = extensionPath;
   }
 
+  public static clearCredentialCache(): void {
+    AgyQuotaClient.cachedCredentials = undefined;
+  }
+
+  private static getStateVscdbPath(): string | undefined {
+    const appData = process.env.APPDATA;
+    if (!appData) return undefined;
+    const candidates = [
+      path.join(appData, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb'),
+      path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
+      path.join(appData, 'Code', 'User', 'globalStorage', 'state.vscdb'),
+    ];
+    return candidates.find((c) => fs.existsSync(c));
+  }
+
+  private static getStateVscdbMtime(): number | undefined {
+    const p = AgyQuotaClient.getStateVscdbPath();
+    if (!p) return undefined;
+    try {
+      return fs.statSync(p).mtimeMs;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private getFileMtimeMs(filePath: string): number {
+    try {
+      return fs.statSync(filePath).mtimeMs;
+    } catch {
+      return 0;
+    }
+  }
+
   private execFileAsync(file: string, args: string[], options: cp.ExecFileOptions = {}): Promise<string> {
     return new Promise((resolve, reject) => {
-      cp.execFile(file, args, options, (error, stdout, stderr) => {
+      cp.execFile(file, args, { windowsHide: true, ...options }, (error, stdout, stderr) => {
         if (error) {
           (error as any).stderr = stderr;
           reject(error);
@@ -83,8 +123,8 @@ export class AgyQuotaClient {
   public async readCredential(target: string = 'gemini:antigravity'): Promise<any> {
     const script = path.join(this.extensionPath, 'scripts', 'read-agy-credential.ps1');
     const stdout = await this.execFileAsync(
-      'cmd.exe',
-      ['/c', 'chcp', '65001', '>nul', '&&', 'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Target', target],
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', script, '-Target', target],
       { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 15000 }
     );
     const credential = JSON.parse(stdout.replace(/^\uFEFF/, ''));
@@ -94,28 +134,47 @@ export class AgyQuotaClient {
     return credential;
   }
 
-  public async readAllCredentials(): Promise<{ accounts: Record<string, any>; gcpProjects: Record<string, any>; activeIdeAccount?: string }> {
+  public async readAllCredentials(): Promise<{ accounts: Record<string, any>; gcpProjects: Record<string, any>; activeIdeAccount?: string; defaultTargetEmail?: string }> {
+    const now = Date.now();
+    const currentVscdbMtime = AgyQuotaClient.getStateVscdbMtime();
+    if (
+      AgyQuotaClient.cachedCredentials &&
+      now - AgyQuotaClient.cachedCredentials.cachedAt < 45_000 &&
+      AgyQuotaClient.cachedCredentials.vscdbMtime === currentVscdbMtime
+    ) {
+      return AgyQuotaClient.cachedCredentials.data;
+    }
+
     const script = path.join(this.extensionPath, 'scripts', 'read-all-credentials.ps1');
+    let creds: { accounts: Record<string, any>; gcpProjects: Record<string, any>; activeIdeAccount?: string; defaultTargetEmail?: string };
     try {
       const stdout = await this.execFileAsync(
-        'cmd.exe',
-        ['/c', 'chcp', '65001', '>nul', '&&', 'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+        'powershell.exe',
+        ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', script],
         { windowsHide: true, maxBuffer: 2 * 1024 * 1024, timeout: 15000 }
       );
-      return JSON.parse(stdout.replace(/^\uFEFF/, ''));
+      creds = JSON.parse(stdout.replace(/^\uFEFF/, ''));
     } catch {
       try {
         const cred = await this.readCredential('gemini:antigravity');
         const email = cred.id_token_email || 'default';
-        return {
+        creds = {
           accounts: { [email]: cred },
           gcpProjects: {},
           activeIdeAccount: email,
+          defaultTargetEmail: email,
         };
       } catch {
-        return { accounts: {}, gcpProjects: {} };
+        creds = { accounts: {}, gcpProjects: {} };
       }
     }
+
+    AgyQuotaClient.cachedCredentials = {
+      data: creds,
+      cachedAt: now,
+      vscdbMtime: currentVscdbMtime,
+    };
+    return creds;
   }
 
   private expiryEpoch(value: any): number {
@@ -146,13 +205,13 @@ export class AgyQuotaClient {
     refreshToken: string,
     expiresIn: number = 3599
   ): Promise<void> {
+    AgyQuotaClient.clearCredentialCache();
     const script = path.join(this.extensionPath, 'scripts', 'write-agy-credential.ps1');
     try {
       await this.execFileAsync(
-        'cmd.exe',
+        'powershell.exe',
         [
-          '/c', 'chcp', '65001', '>nul', '&&',
-          'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+          '-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
           '-File', script,
           '-Target', target,
           '-Email', email,
@@ -202,8 +261,15 @@ export class AgyQuotaClient {
   }
 
   private clientSecretsFromBinary(agyPath: string): string[] {
+    const mtimeMs = this.getFileMtimeMs(agyPath);
+    const cached = AgyQuotaClient.clientSecretsCache.get(agyPath);
+    if (cached && cached.mtimeMs === mtimeMs) {
+      return cached.secrets;
+    }
     const binary = fs.readFileSync(agyPath).toString('latin1');
-    return [...new Set(binary.match(/GOCSPX-[A-Za-z0-9_-]{28}/g) || [])];
+    const secrets = [...new Set(binary.match(/GOCSPX-[A-Za-z0-9_-]{28}/g) || [])];
+    AgyQuotaClient.clientSecretsCache.set(agyPath, { mtimeMs, secrets });
+    return secrets;
   }
 
   private async refreshAccessToken(refreshToken: string, agyPath: string): Promise<QuotaToken> {
@@ -242,16 +308,24 @@ export class AgyQuotaClient {
   }
 
   private async agyVersion(agyPath: string): Promise<string> {
+    const mtimeMs = this.getFileMtimeMs(agyPath);
+    const cached = AgyQuotaClient.agyVersionCache.get(agyPath);
+    if (cached && cached.mtimeMs === mtimeMs) {
+      return cached.version;
+    }
+    let version = '1.4.12';
     try {
       const output = await this.execFileAsync(agyPath, ['--version'], {
         windowsHide: true,
         timeout: 10000,
       });
       const match = output.match(/\d+\.\d+\.\d+/);
-      return match ? match[0] : '1.4.12';
+      if (match) version = match[0];
     } catch {
-      return '1.4.12';
+      version = '1.4.12';
     }
+    AgyQuotaClient.agyVersionCache.set(agyPath, { mtimeMs, version });
+    return version;
   }
 
   public async fetchMultiAccountQuota(): Promise<MultiAccountQuotaResult> {
@@ -270,6 +344,7 @@ export class AgyQuotaClient {
     await Promise.all(
       Object.entries(allCreds.accounts).map(async ([email, credData]) => {
         const isIdeActive = email === allCreds.activeIdeAccount;
+        const isDefaultTargetOwner = Boolean(allCreds.defaultTargetEmail && email === allCreds.defaultTargetEmail);
         let token: QuotaToken | undefined;
 
         try {
@@ -290,7 +365,7 @@ export class AgyQuotaClient {
               } else if (rawToken.refresh_token) {
                 token = await this.refreshAccessToken(rawToken.refresh_token, agyPath);
                 await this.writeCredential(`gemini:antigravity:${email}`, email, token.access_token, rawToken.refresh_token);
-                if (isIdeActive) {
+                if (isDefaultTargetOwner) {
                   await this.writeCredential('gemini:antigravity', email, token.access_token, rawToken.refresh_token);
                 }
               }
@@ -330,6 +405,7 @@ export class AgyQuotaClient {
             } catch (err: any) {
               const msg = String(err?.message || err);
               if ((msg.includes('HTTP 401') || msg.includes('authentication credentials')) && rawTokenRef?.refresh_token) {
+                AgyQuotaClient.clearCredentialCache();
                 AgyQuotaClient.inMemoryCachedTokens.delete(email);
                 const fresh = await this.refreshAccessToken(rawTokenRef.refresh_token, agyPath);
                 currentToken = fresh;
@@ -339,7 +415,7 @@ export class AgyQuotaClient {
                 AgyQuotaClient.inMemoryCachedTokens.set(email, { token: fresh, credentialKey: newKey });
 
                 await this.writeCredential(`gemini:antigravity:${email}`, email, fresh.access_token, rawTokenRef.refresh_token);
-                if (isIdeActive) {
+                if (isDefaultTargetOwner) {
                   await this.writeCredential('gemini:antigravity', email, fresh.access_token, rawTokenRef.refresh_token);
                 }
 
@@ -559,6 +635,7 @@ export class AgyQuotaClient {
       } catch (err: any) {
         const msg = String(err?.message || err);
         if ((msg.includes('HTTP 401') || msg.includes('authentication credentials')) && credential.token?.refresh_token) {
+          AgyQuotaClient.clearCredentialCache();
           const fresh = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
           token = fresh;
           headers.Authorization = `Bearer ${fresh.access_token}`;

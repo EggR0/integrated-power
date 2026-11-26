@@ -88,6 +88,7 @@ export interface PrewarmInput {
   model?: string;
   window?: "5h" | "weekly";
   manual: boolean;
+  account?: string;
   idempotencyKey: string;
   expectedSettingsRevision?: number;
 }
@@ -100,6 +101,30 @@ export interface PrewarmResult {
   error?: string;
   model?: string;
   targetModel?: string;
+  account?: string;
+  cancelledEarly?: boolean;
+  durationMs?: number;
+}
+
+export interface PrewarmNotificationEvent {
+  id: string;
+  seqId?: number;
+  timestamp: string;
+  level: "info" | "warn" | "error";
+  target: string;
+  targetModel?: string;
+  account?: string;
+  status: "dispatched" | "skipped" | "failed" | "verified" | "unconfirmed";
+  timerConfirmed?: boolean;
+  message: string;
+  cancelledEarly?: boolean;
+  durationMs?: number;
+}
+
+export interface PrewarmNotificationResult {
+  ok: boolean;
+  notifications: PrewarmNotificationEvent[];
+  latestSeqId?: number;
 }
 
 export interface QuotaRefillNotification {
@@ -180,6 +205,15 @@ export class BrokerClient {
   public async claimQuotaRefillNotifications(): Promise<QuotaRefillNotificationResult> {
     await this.requireCapability("quota.notifications.claim");
     return this.request("POST", "/v1/notifications/quota-refill", {});
+  }
+
+  /** Claims pending prewarm notifications from the broker's in-memory queue or per-consumer cursor. */
+  public async claimPrewarmNotifications(consumer?: string): Promise<PrewarmNotificationResult> {
+    await this.requireCapability("quota.prewarm.notifications");
+    const route = consumer && consumer.trim()
+      ? `/v1/notifications/prewarm?consumer=${encodeURIComponent(consumer.trim())}`
+      : "/v1/notifications/prewarm";
+    return this.request("POST", route, {});
   }
 
   public async createTask(input: CreateTaskInput): Promise<TaskEnvelope> {

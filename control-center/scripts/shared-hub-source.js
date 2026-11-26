@@ -22,7 +22,13 @@ function getSharedHubSource(env = process.env) {
   }
 
   const extensionRoot = getExtensionRoot();
-  return path.resolve(extensionRoot, "..", "shared", "hub", "index.ts");
+  const candidates = [
+    path.resolve(extensionRoot, "..", "shared", "hub", "index.ts"),
+    path.resolve(extensionRoot, "..", "..", "shared", "hub", "index.ts"),
+    path.resolve(extensionRoot, "..", "packages", "shared", "hub", "index.ts"),
+  ];
+  const found = candidates.find((c) => fs.existsSync(c));
+  return found || candidates[0];
 }
 
 module.exports = { getSharedHubSource };

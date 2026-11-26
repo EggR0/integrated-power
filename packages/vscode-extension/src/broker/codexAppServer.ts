@@ -1,0 +1,600 @@
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { ChildProcess, ChildProcessWithoutNullStreams, spawn } from "child_process";
+import * as readline from "readline";
+import { AgentCapability, AgentAdapter, AgentStateKind, ProviderId, TaskEnvelope } from "./protocol";
+import { findExecutableOnPath } from "./executable";
+
+type JsonRpcMessage = {
+  id?: number;
+  method?: string;
+  params?: Record<string, unknown>;
+  result?: Record<string, any>;
+  error?: { message?: string; code?: number };
+};
+
+type PendingRequest = { resolve: (value: any) => void; reject: (error: Error) => void };
+type ServerRequestHandler = (message: JsonRpcMessage) => void | Promise<void>;
+
+/** Minimal stable stdio client for the documented Codex app-server protocol. */
+export class CodexAppServerAdapter implements AgentAdapter {
+  public readonly provider: ProviderId = "openai.codex.app";
+  private readonly running = new Map<string, { process: ChildProcessWithoutNullStreams; client?: JsonRpcStdioClient; threadId?: string; turnId?: string }>();
+  private static cachedCapability?: {
+    capability: AgentCapability;
+    cachedAt: number;
+    executable?: string;
+    envExe?: string;
+  };
+
+  public constructor(private readonly executable?: string) {}
+
+  public static clearCache(): void {
+    CodexAppServerAdapter.cachedCapability = undefined;
+  }
+
+  public async discover(): Promise<AgentCapability> {
+    const envExe = process.env.INTEGRATED_POWER_CODEX_EXE;
+    const now = Date.now();
+    if (
+      CodexAppServerAdapter.cachedCapability &&
+      now - CodexAppServerAdapter.cachedCapability.cachedAt < 60_000 &&
+      CodexAppServerAdapter.cachedCapability.executable === this.executable &&
+      CodexAppServerAdapter.cachedCapability.envExe === envExe
+    ) {
+      return CodexAppServerAdapter.cachedCapability.capability;
+    }
+
+    const candidates = this.executable ? [this.executable] : envExe ? [envExe] : await findCodexCandidates();
+    const executable = await firstCallable(candidates) ?? candidates[0];
+    const callable = Boolean(executable && await canExecute(executable));
+    const installed = isCodexInstalled();
+    const stateKind: AgentStateKind = callable ? "available" : installed ? "waiting" : "not_installed";
+    const stateLabel = callable ? "사용가능" : installed ? "대기" : "설치X";
+    const reason = callable
+      ? undefined
+      : installed
+        ? "Codex 환경이 설치되어 있습니다 (~/.codex). Codex App Server 및 세션 대기 중입니다."
+        : "Codex CLI가 설치되어 있지 않거나 PATH에 없습니다.";
+    const capability: AgentCapability = {
+      provider: this.provider,
+      label: "Codex App Server",
+      available: callable,
+      stateKind,
+      stateLabel,
+      mode: "app-server",
+      capabilities: ["leader", "executor", "local-mcp", "code-write", "streaming", "cancel"],
+      endpoint: executable,
+      reason,
+    };
+    CodexAppServerAdapter.cachedCapability = {
+      capability,
+      cachedAt: now,
+      executable: this.executable,
+      envExe,
+    };
+    return capability;
+  }
+
+  public async connectConversation(_conversationId: string): Promise<void> {
+    // Conversation resume is intentionally scoped to explicit task linkage.
+  }
+
+  public async submit(task: TaskEnvelope, prompt: string): Promise<{ text: string; provider: ProviderId }> {
+    const candidates = this.executable ? [this.executable] : process.env.INTEGRATED_POWER_CODEX_EXE ? [process.env.INTEGRATED_POWER_CODEX_EXE] : await findCodexCandidates();
+    const executable = await firstCallable(candidates);
+    if (!executable) throw new Error(candidates.length ? "Codex executable was found but could not be launched by this process; app-server remains disabled." : "Codex CLI is unavailable for app-server stdio.");
+    const child = spawn(executable, ["app-server", "--listen", "stdio://"], {
+      cwd: task.workspacePath,
+      windowsHide: true,
+      shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(executable),
+    });
+    const client = new JsonRpcStdioClient(child, async (message) => {
+      // Keep child-process approvals fail-closed. Integrated Power exposes
+      // approvals in its own user-facing control center, not as hidden model
+      // prompts inside a delegated Codex process.
+      if (typeof message.id === "number") child.stdin.write(`${JSON.stringify({ id: message.id, result: { decision: "decline" } })}\n`);
+    });
+    this.running.set(task.id, { process: child, client });
+    const timeoutMs = Number.parseInt(process.env.INTEGRATED_POWER_CODEX_TIMEOUT_MS ?? "300000", 10);
+    const timeout = setTimeout(() => child.kill(), Number.isFinite(timeoutMs) ? Math.max(10_000, timeoutMs) : 300_000);
+    try {
+      await client.request("initialize", {
+        clientInfo: { name: "integrated_power", title: "Integrated Power", version: "0.8.0" },
+      });
+      client.notify("initialized", {});
+      const thread = await client.request("thread/start", {
+        cwd: task.workspacePath,
+        approvalPolicy: "never",
+        sandbox: "workspaceWrite",
+        serviceName: "integrated_power",
+      });
+      const threadId = thread?.thread?.id;
+      if (typeof threadId !== "string") throw new Error("Codex app-server did not return a thread id.");
+      this.running.set(task.id, { process: child, client, threadId });
+      const turn = await client.request("turn/start", {
+        threadId,
+        cwd: task.workspacePath,
+        input: [{ type: "text", text: prompt }],
+      });
+      const turnId = turn?.turn?.id;
+      if (typeof turnId === "string") this.running.set(task.id, { process: child, client, threadId, turnId });
+      const text = await client.collectTurn(threadId, turnId);
+      return { provider: this.provider, text };
+    } finally {
+      clearTimeout(timeout);
+      this.running.delete(task.id);
+      client.close();
+      if (!child.killed) child.kill();
+    }
+  }
+
+  public async cancel(taskId: string): Promise<void> {
+    const active = this.running.get(taskId);
+    if (!active) return;
+    if (active.turnId && active.threadId) {
+      try { active.client?.notify("turn/interrupt", { threadId: active.threadId, turnId: active.turnId }); } catch { /* process termination below is the final fallback */ }
+    }
+    active.process.kill();
+  }
+}
+
+export class JsonRpcStdioClient {
+  private nextId = 1;
+  private readonly pending = new Map<number, PendingRequest>();
+  private readonly messages: JsonRpcMessage[] = [];
+  private readonly waiters: Array<{ resolve: (message: JsonRpcMessage) => void; reject: (error: Error) => void }> = [];
+  private readonly reader: readline.Interface;
+
+  public constructor(private readonly child: ChildProcessWithoutNullStreams, private readonly serverRequestHandler?: ServerRequestHandler) {
+    this.reader = readline.createInterface({ input: child.stdout });
+    this.reader.on("line", (line) => {
+      let message: JsonRpcMessage;
+      try { message = JSON.parse(line) as JsonRpcMessage; } catch { return; }
+      if (typeof message.id === "number" && this.pending.has(message.id)) {
+        const pending = this.pending.get(message.id)!;
+        this.pending.delete(message.id);
+        if (message.error) pending.reject(new Error(message.error.message ?? "Codex app-server request failed."));
+        else pending.resolve(message.result ?? {});
+        return;
+      }
+      if (typeof message.id === "number" && typeof message.method === "string") {
+        void Promise.resolve(this.serverRequestHandler?.(message)).catch(() => undefined);
+        return;
+      }
+      const waiter = this.waiters.shift();
+      if (waiter) waiter.resolve(message); else this.messages.push(message);
+    });
+    child.on("error", (error) => this.rejectAll(error));
+    child.on("close", (code) => this.rejectAll(new Error(`Codex app-server exited (${code ?? "unknown"}).`)));
+  }
+
+  public request(method: string, params: Record<string, unknown>): Promise<any> {
+    const id = this.nextId++;
+    const promise = new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    this.child.stdin.write(`${JSON.stringify({ method, id, params })}\n`);
+    return promise;
+  }
+
+  public notify(method: string, params: Record<string, unknown>): void {
+    this.child.stdin.write(`${JSON.stringify({ method, params })}\n`);
+  }
+
+  public async collectTurn(threadId: string, turnId?: string): Promise<string> {
+    let text = "";
+    while (true) {
+      const message = await this.nextNotification();
+      if (message.method === "item/agentMessage/delta") {
+        const params = message.params ?? {};
+        if (!params.threadId || params.threadId === threadId) text += typeof params.delta === "string" ? params.delta : "";
+      }
+      if (message.method === "item/completed") {
+        const item = message.params?.item as { type?: string; text?: string } | undefined;
+        if (item?.type === "agentMessage" && typeof item.text === "string") text = item.text;
+      }
+      if (message.method === "turn/completed") {
+        const turn = message.params?.turn as { id?: string; status?: string; error?: { message?: string } } | undefined;
+        if (turnId && turn?.id && turn.id !== turnId) continue;
+        if (turn?.status !== "completed") throw new Error(turn?.error?.message ?? `Codex turn ${turn?.status ?? "failed"}.`);
+        return text.trim();
+      }
+    }
+  }
+
+  public close(): void {
+    this.reader.close();
+    this.rejectAll(new Error("Codex app-server connection closed."));
+  }
+
+  private nextNotification(): Promise<JsonRpcMessage> {
+    const queued = this.messages.shift();
+    if (queued) return Promise.resolve(queued);
+    return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }));
+  }
+
+  private rejectAll(error: Error): void {
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
+    for (const waiter of this.waiters) waiter.reject(error);
+    this.waiters.length = 0;
+  }
+}
+
+async function findCodexCandidates(): Promise<string[]> {
+  const explicit = process.env.INTEGRATED_POWER_CODEX_EXE?.trim();
+  if (explicit) return [explicit];
+  const candidates: string[] = [];
+
+  if (process.platform === "win32") {
+    const homedir = os.homedir();
+    const local = process.env.LOCALAPPDATA || path.join(homedir, "AppData", "Local");
+    // 1. Check CODEX_CLI_PATH in ~/.codex/config.toml
+    const configTomlPath = path.join(homedir, ".codex", "config.toml");
+    if (fs.existsSync(configTomlPath)) {
+      try {
+        const tomlContent = fs.readFileSync(configTomlPath, "utf8");
+        const match = tomlContent.match(/CODEX_CLI_PATH\s*=\s*['"]([^'"]+)['"]/);
+        if (match && match[1] && fs.existsSync(match[1])) {
+          candidates.push(match[1]);
+        }
+      } catch { /* best effort */ }
+    }
+    // 2. Check AppData/Local/OpenAI/Codex/bin/**/codex.exe
+    const codexBinRoot = path.join(local, "OpenAI", "Codex", "bin");
+    if (fs.existsSync(codexBinRoot)) {
+      try {
+        const subdirs = fs.readdirSync(codexBinRoot);
+        for (const sub of subdirs) {
+          const exe = path.join(codexBinRoot, sub, "codex.exe");
+          if (fs.existsSync(exe)) candidates.push(exe);
+        }
+      } catch { /* best effort */ }
+    }
+    // 3. Check ProgramFiles / Local Programs
+    const directCandidates = [
+      path.join(local, "Programs", "Codex", "codex.exe"),
+      path.join(local, "Programs", "ChatGPT", "resources", "codex.exe"),
+      path.join(homedir, ".codex", ".sandbox-bin", "codex.exe"),
+    ];
+    for (const direct of directCandidates) {
+      if (fs.existsSync(direct)) candidates.push(direct);
+    }
+  }
+
+  // 4. PATH lookup
+  const names = process.platform === "win32" ? ["codex.exe", "codex.cmd", "codex"] : ["codex"];
+  const onPath = findExecutableOnPath(names);
+  if (onPath) candidates.push(onPath);
+  return [...new Set(candidates)];
+}
+
+async function firstCallable(candidates: string[]): Promise<string | undefined> {
+  for (const candidate of candidates) if (await canExecute(candidate)) return candidate;
+  return undefined;
+}
+
+async function canExecute(executable: string): Promise<boolean> {
+  const { execFile } = await import("child_process");
+  const { promisify } = await import("util");
+  try {
+    await promisify(execFile)(executable, ["--version"], {
+      windowsHide: true,
+      timeout: 5000,
+      shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(executable),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isCodexInstalled(): boolean {
+  if (process.platform === "win32") {
+    const homedir = os.homedir();
+    const local = process.env.LOCALAPPDATA || path.join(homedir, "AppData", "Local");
+    const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+    const candidates = [
+      path.join(homedir, ".codex"),
+      path.join(local, "OpenAI", "Codex"),
+      path.join(local, "Programs", "Codex"),
+      path.join(local, "Programs", "ChatGPT"),
+      path.join(programFiles, "ChatGPT"),
+      path.join(programFiles, "Codex"),
+    ];
+    if (candidates.some((c) => fs.existsSync(c))) return true;
+    const packagesDir = path.join(local, "Packages");
+    try {
+      if (fs.existsSync(packagesDir)) {
+        const entries = fs.readdirSync(packagesDir);
+        if (entries.some((e) => e.startsWith("OpenAI.Codex") || e.startsWith("OpenAI.ChatGPT"))) return true;
+      }
+    } catch { /* best effort */ }
+  }
+  return fs.existsSync(path.join(os.homedir(), ".codex"));
+}
+
+export interface CodexModelResolution {
+  model: string;
+  reasoningEffort: string;
+  source: "cache" | "fallback";
+}
+
+export function resolveLowestCodexModelFromList(models: any[]): CodexModelResolution | undefined {
+  if (!Array.isArray(models) || models.length === 0) return undefined;
+
+  // 1. Preferred lightweight models in order of known affordability
+  const candidates = ["gpt-6-luna", "gpt-5.6-luna", "gpt-reserve", "gpt-6.1-sol", "gpt-6-sol"];
+  for (const candidate of candidates) {
+    const match = models.find((m: any) => m?.slug === candidate);
+    if (match) {
+      const hasLow = match.supported_reasoning_levels?.some((l: any) => l?.effort === "low");
+      return {
+        model: match.slug,
+        reasoningEffort: hasLow ? "low" : (match.default_reasoning_level || "low"),
+        source: "cache",
+      };
+    }
+  }
+
+  // 2. Keyword search for lightweight tiers (luna, mini, flash, affordable, efficient, small, low)
+  const affordable = models.find((m: any) => {
+    const text = `${m?.slug || ""} ${m?.description || ""}`.toLowerCase();
+    return text.includes("luna") || text.includes("mini") || text.includes("flash") || text.includes("affordable") || text.includes("efficient") || text.includes("small");
+  });
+  if (affordable) {
+    const hasLow = affordable.supported_reasoning_levels?.some((l: any) => l?.effort === "low");
+    return {
+      model: affordable.slug,
+      reasoningEffort: hasLow ? "low" : (affordable.default_reasoning_level || "low"),
+      source: "cache",
+    };
+  }
+
+  // 3. Fallback to any model supporting "low" reasoning effort
+  const anyLow = models.find((m: any) => m?.supported_reasoning_levels?.some((l: any) => l?.effort === "low"));
+  if (anyLow) {
+    return {
+      model: anyLow.slug,
+      reasoningEffort: "low",
+      source: "cache",
+    };
+  }
+
+  // 4. Fallback to the first available model
+  if (models[0]?.slug) {
+    return {
+      model: models[0].slug,
+      reasoningEffort: models[0].default_reasoning_level || "low",
+      source: "cache",
+    };
+  }
+
+  return undefined;
+}
+
+export function getLowestCodexModel(customCachePath?: string): CodexModelResolution {
+  try {
+    const cachePath = customCachePath || path.join(os.homedir(), ".codex", "models_cache.json");
+    if (fs.existsSync(cachePath)) {
+      const raw = fs.readFileSync(cachePath, "utf8");
+      const data = JSON.parse(raw);
+      const resolved = resolveLowestCodexModelFromList(data?.models);
+      if (resolved) return resolved;
+    }
+  } catch {
+    // Best effort parse
+  }
+
+  return {
+    model: "gpt-6-luna",
+    reasoningEffort: "low",
+    source: "fallback",
+  };
+}
+
+export function findCodexCliSync(): string | undefined {
+  const explicit = process.env.INTEGRATED_POWER_CODEX_EXE?.trim() || process.env.CODEX_PATH?.trim();
+  if (explicit && fs.existsSync(explicit)) return explicit;
+
+  if (process.platform === "win32") {
+    const homedir = os.homedir();
+    const local = process.env.LOCALAPPDATA || path.join(homedir, "AppData", "Local");
+    const codexBinRoot = path.join(local, "OpenAI", "Codex", "bin");
+    if (fs.existsSync(codexBinRoot)) {
+      try {
+        const subdirs = fs.readdirSync(codexBinRoot);
+        for (const sub of subdirs) {
+          const exe = path.join(codexBinRoot, sub, "codex.exe");
+          if (fs.existsSync(exe)) return exe;
+        }
+      } catch {}
+    }
+
+    const localBinExe = path.join(homedir, ".local", "bin", "codex.exe");
+    if (fs.existsSync(localBinExe)) return localBinExe;
+    const directCandidates = [
+      path.join(local, "Programs", "Codex", "codex.exe"),
+      path.join(local, "Programs", "ChatGPT", "resources", "codex.exe"),
+      path.join(homedir, ".codex", ".sandbox-bin", "codex.exe"),
+    ];
+    for (const direct of directCandidates) {
+      if (fs.existsSync(direct)) return direct;
+    }
+  }
+
+  const names = process.platform === "win32" ? ["codex.exe", "codex.cmd", "codex"] : ["codex"];
+  return findExecutableOnPath(names);
+}
+
+export interface LiveCodexRateLimits {
+  codexPercentage?: number;
+  codexResetTime?: string;
+  codexWeeklyPercentage?: number;
+  codexWeeklyResetTime?: string;
+  codexWindowDurationMins?: number;
+  codexWeeklyWindowDurationMins?: number;
+  measuredAt?: string;
+  resetCredits?: number;
+}
+
+export function selectCodexRateLimitWindows(result: any): { fiveHour?: any; weekly?: any } {
+  const rateLimits = result?.rateLimits;
+  const byLimitId = result?.rateLimitsByLimitId;
+  const entries = Array.isArray(byLimitId)
+    ? byLimitId.map((item: any) => ({ id: item?.limitId ?? item?.limit_id, item }))
+    : byLimitId && typeof byLimitId === "object"
+      ? Object.entries(byLimitId).map(([id, item]) => ({ id, item }))
+      : [];
+  const codexBucket = entries.find(({ id, item }: any) =>
+    String(id ?? "").toLowerCase() === "codex" || String(item?.limitId ?? item?.limit_id ?? "").toLowerCase() === "codex");
+  const selectedSnapshot = codexBucket?.item;
+  const legacyId = String(rateLimits?.limitId ?? rateLimits?.limit_id ?? "").toLowerCase();
+  const legacyIsOtherBucket = Boolean(legacyId && legacyId !== "codex");
+  const snapshot = selectedSnapshot ?? (!byLimitId && !legacyIsOtherBucket ? rateLimits : undefined);
+  if (!snapshot || typeof snapshot !== "object") return {};
+
+  const primary = snapshot.primary;
+  const secondary = snapshot.secondary;
+  const windows = [primary, secondary].filter((item: any) => item && typeof item === "object");
+  const hasWindowDurations = windows.some((item: any) => typeof item.windowDurationMins === "number");
+  return {
+    fiveHour: hasWindowDurations ? windows.find((item: any) => item.windowDurationMins === 300) : primary,
+    weekly: hasWindowDurations ? windows.find((item: any) => item.windowDurationMins === 10080) : secondary,
+  };
+}
+
+let cachedCodexRateLimits: { fetchedAt: number; data: LiveCodexRateLimits } | undefined;
+
+export async function fetchLiveCodexRateLimits(force = false): Promise<LiveCodexRateLimits | undefined> {
+  const now = Date.now();
+  // 60 second cache to keep it fresh and responsive without overhead
+  if (!force && cachedCodexRateLimits && now - cachedCodexRateLimits.fetchedAt < 60_000) {
+    return cachedCodexRateLimits.data;
+  }
+
+  const codexCli = findCodexCliSync();
+  if (!codexCli) return undefined;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let child: ChildProcess | undefined;
+    let rl: readline.Interface | undefined;
+
+    const finish = (res?: LiveCodexRateLimits) => {
+      if (!settled) {
+        settled = true;
+        try { rl?.close(); } catch {}
+        if (child) {
+          try { child.stdin?.end(); } catch {}
+          try { child.stdin?.destroy(); } catch {}
+          try { child.stdout?.destroy(); } catch {}
+          try {
+            if (!child.killed) child.kill();
+          } catch {}
+          try { child.unref(); } catch {}
+        }
+        if (res) {
+          cachedCodexRateLimits = { fetchedAt: Date.now(), data: res };
+        }
+        resolve(res);
+      }
+    };
+
+    const timer = setTimeout(() => finish(undefined), 3500);
+    timer.unref?.();
+
+    try {
+      child = spawn(codexCli, ["app-server", "--listen", "stdio://"], {
+        stdio: ["pipe", "pipe", "ignore"],
+        windowsHide: true,
+        shell: codexCli === "codex" || codexCli.endsWith(".cmd") || codexCli.endsWith(".bat"),
+      });
+    } catch {
+      clearTimeout(timer);
+      return resolve(undefined);
+    }
+
+    if (!child || !child.stdout || !child.stdin) {
+      clearTimeout(timer);
+      return resolve(undefined);
+    }
+
+    const activeChild = child;
+    activeChild.on("error", () => {
+      clearTimeout(timer);
+      finish(undefined);
+    });
+
+    rl = readline.createInterface({ input: activeChild.stdout! });
+    let nextId = 1;
+
+    const sendRpc = (method: string, params: any) => {
+      const id = nextId++;
+      try {
+        activeChild.stdin?.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+      } catch {
+        finish(undefined);
+      }
+      return id;
+    };
+
+    rl.on("line", (line) => {
+      if (!line.trim()) return;
+      try {
+        const data = JSON.parse(line);
+        if (data.id === 1) {
+          sendRpc("account/rateLimits/read", null);
+        } else if (data.id === 2 && data.result) {
+          clearTimeout(timer);
+          let codexPercentage: number | undefined;
+          let codexResetTime: string | undefined;
+          let codexWeeklyPercentage: number | undefined;
+          let codexWeeklyResetTime: string | undefined;
+
+          const { fiveHour: fiveHourLimit, weekly: weeklyLimit } = selectCodexRateLimitWindows(data.result);
+          const readWindow = (limit: any): { percentage?: number; resetTime?: string; duration?: number } => {
+            if (!limit) return {};
+            const usedPercent = typeof limit.usedPercent === "number" && Number.isFinite(limit.usedPercent) && limit.usedPercent >= 0 && limit.usedPercent <= 100
+              ? limit.usedPercent
+              : undefined;
+            const resetsAt = typeof limit.resetsAt === "number" && Number.isFinite(limit.resetsAt) ? limit.resetsAt : undefined;
+            return {
+              percentage: usedPercent === undefined ? undefined : 100 - usedPercent,
+              resetTime: resetsAt !== undefined && resetsAt * 1000 > Date.now() ? new Date(resetsAt * 1000).toISOString() : undefined,
+              duration: typeof limit.windowDurationMins === "number" ? limit.windowDurationMins : undefined,
+            };
+          };
+          const fiveHour = readWindow(fiveHourLimit);
+          const weekly = readWindow(weeklyLimit);
+          codexPercentage = fiveHour.percentage;
+          codexResetTime = fiveHour.resetTime;
+          codexWeeklyPercentage = weekly.percentage;
+          codexWeeklyResetTime = weekly.resetTime;
+
+          const resetCredits = typeof data.result.rateLimitResetCredits?.availableCount === "number"
+            ? data.result.rateLimitResetCredits.availableCount
+            : undefined;
+
+          finish({
+            codexPercentage,
+            codexResetTime,
+            codexWeeklyPercentage,
+            codexWeeklyResetTime,
+            codexWindowDurationMins: fiveHour.duration,
+            codexWeeklyWindowDurationMins: weekly.duration,
+            measuredAt: new Date().toISOString(),
+            resetCredits,
+          });
+        }
+      } catch {
+        // ignore malformed line
+      }
+    });
+
+    sendRpc("initialize", {
+      clientInfo: { name: "integrated_power", title: "Integrated Power", version: "0.9.21" },
+    });
+  });
+}
+

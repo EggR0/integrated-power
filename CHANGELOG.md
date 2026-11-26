@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.14.0] - 2026-11-26
+
+### Added & Changed
+
+- **Account-Centric Antigravity Banners (`packages/control-center`, `packages/vscode-extension/webview`)**:
+  - Updated Control Center provider cards and Antigravity IDE sidebar sections to display the logged-in account email as the primary banner pill/header instead of hardcoded `Antigravity IDE` / `Antigravity 2.0` labels.
+  - Added deduplicated account slot ordering (`Active IDE` → `Active 2.0` → remaining saved accounts) and hid unused secondary slots when fewer than two distinct accounts are present.
+  - Updated pre-warm settings modal headers to display the selected account email.
+- **Dynamic `Active IDE` / `Active 2.0` Status Badges & Narrow-Width Hardening**:
+  - Dynamically render `Active IDE`, `Active 2.0`, `Active IDE · 2.0`, `연결됨`, or `오류` badges based on each account's live login state across Antigravity IDE and Antigravity 2.0.
+  - Hardened grid column containment (`minmax(0, 1fr)`) in the IDE sidebar webview so long account emails never cause horizontal overflow at `199px`, `160px`, or `120px`.
+
+## [0.13.0] - 2026-11-22
+
+### Added & Fixed
+
+- **Dynamic Antigravity IDE & Antigravity 2.0 Account Detection & Cache Invalidation**:
+  - Replaced fragile regex base64 extraction in `extract-ide-auth.py` with a protobuf wire-format + recursive base64 parser and added Antigravity 2.0 `app_storage.json` / `credential-user-scope` detection (`activeIdeAccountEmail`, `activeAgy2AccountEmail`, `isIdeActive`, `isAgy2Active`).
+  - Added auth-fingerprint cache invalidation across `AgyQuotaClient`, `TokenManager`, and `tokenScanner` plus `LastWritten` freshness precedence in `read-all-credentials.ps1`.
+- **Dynamic Dual-Card IPCC UI & Serialized Account-Accurate Pre-warm**:
+  - Removed all hardcoded email fallbacks in `control-center/src/main.js`, `DashboardController.ts`, and `broker/server.ts` while preserving both `Antigravity IDE` and `Antigravity 2.0` cards.
+  - Serialized `agy.exe` pre-warms with `withAgyCredentialLock`, live `gemini:antigravity` baseline verification/restoration, and fail-closed error handling when no account is specified.
+- **Antigravity 2.0 Automatic Broker Startup**:
+  - Updated `packages/control-center/mcp-server.js` to launch the canonical loopback HTTP broker (`127.0.0.1:37241`) in-process when not already running, keeping MCP stdio `stdout` strictly clean.
+
 ## [0.11.5] - 2026-10-19
 
 ### Fixed & Enhanced

@@ -11,6 +11,10 @@ function getExtensionRoot() {
   }
   const candidates = [
     path.resolve(__dirname, "..", "..", "vscode-extension"),
+    path.resolve(__dirname, "..", "..", "packages", "vscode-extension"),
+    path.resolve(__dirname, "..", "..", "..", "packages", "vscode-extension"),
+    path.resolve(__dirname, "..", "..", "..", "vscode-extension"),
+    path.resolve(__dirname, "..", "..", "Integrated POWER", "packages", "vscode-extension"),
     path.resolve(__dirname, "..", "..", "Integrated POWER", "vscode-extension"),
   ];
   const result = candidates.find((candidate) => require("node:fs").existsSync(path.join(candidate, "package.json")));

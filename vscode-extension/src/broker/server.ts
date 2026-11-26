@@ -24,7 +24,7 @@ import { eggRWorkspaceId, resolveEggRWorkspaceDescriptor, resolveIntegratedPower
 export const BROKER_SCHEMA_VERSION = 2;
 export const BROKER_CAPABILITIES = [
   "tasks.read", "tasks.write", "approvals.read", "approvals.userDecision", "tokens.read",
-  "providers.external", "quota.prewarm", "workspaces.read", "runs.read", "metrics.localLlm.read",
+  "providers.external", "quota.prewarm", "quota.prewarm.notifications", "workspaces.read", "runs.read", "metrics.localLlm.read",
   "quota.settings.read", "quota.settings.write", "quota.notifications.claim",
   "hub.read", "hub.write", "hub.dispatch",
 ];
@@ -48,17 +48,23 @@ export interface BrokerServerHandle {
   close(): Promise<void>;
 }
 
+import { PrewarmNotificationEvent } from "./client";
+
 export interface BrokerServerOptions {
   stateRoot?: string;
+  staticDir?: string;
   tokenStatusReader?: () => Promise<LiveTokenStatus>;
-  prewarmDispatcher?: (target: "antigravity" | "argon" | "opus" | "codex", model: string) => Promise<{ spawned: boolean; error?: string }>;
+  prewarmDispatcher?: (target: "antigravity" | "argon" | "opus" | "codex", model: string, stateRoot?: string, account?: string) => Promise<{ spawned: boolean; cancelledEarly?: boolean; durationMs?: number; error?: string }>;
   autoSchedule?: boolean;
+  prewarmVerifyDelayMs?: number;
+  prewarmVerifyRetryDelayMs?: number;
 }
 
 interface PrewarmRequest {
   model?: string;
   window?: "5h" | "weekly";
   manual?: boolean;
+  account?: string;
   idempotencyKey?: string;
   expectedSettingsRevision?: number;
 }
@@ -71,6 +77,9 @@ interface PrewarmResult {
   error?: string;
   model?: string;
   targetModel?: string;
+  account?: string;
+  cancelledEarly?: boolean;
+  durationMs?: number;
 }
 
 interface PersistedPrewarmArbitration {
@@ -79,20 +88,186 @@ interface PersistedPrewarmArbitration {
   idempotency: Record<string, { fingerprint: string; result: PrewarmResult }>;
 }
 
+const STATIC_MIME_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".eot": "application/vnd.ms-fontobject",
+  ".txt": "text/plain; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".map": "application/json; charset=utf-8",
+};
+
+export function resolveStaticDirectory(optionsStaticDir?: string): string | undefined {
+  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+  const candidates: Array<string | undefined> = [
+    optionsStaticDir,
+    process.env.INTEGRATED_POWER_STATIC_DIR,
+    path.join(localAppData, "IntegratedPower", "dist"),
+    "D:\\Workspace\\Integrated POWER\\packages\\control-center\\dist",
+    path.resolve(__dirname, "../../dist"),
+    path.resolve(__dirname, "../dist"),
+    path.resolve(__dirname, "../../../packages/control-center/dist"),
+    path.resolve(__dirname, "../../packages/control-center/dist"),
+    path.resolve(__dirname, "../control-center/dist"),
+    path.resolve(process.cwd(), "packages/control-center/dist"),
+    path.resolve(process.cwd(), "dist"),
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const resolved = path.resolve(candidate);
+    try {
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        const indexPath = path.join(resolved, "index.html");
+        if (fs.existsSync(indexPath) && fs.statSync(indexPath).isFile()) {
+          return resolved;
+        }
+      }
+    } catch {
+      // ignore access/filesystem errors
+    }
+  }
+  return undefined;
+}
+
+export function tryServeStaticFile(
+  staticDir: string,
+  pathname: string,
+  response: http.ServerResponse,
+  method: string,
+): boolean {
+  if (method !== "GET" && method !== "HEAD") {
+    return false;
+  }
+
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(pathname);
+  } catch {
+    return false;
+  }
+
+  // Sanitize path and prevent directory traversal
+  const resolvedRoot = path.resolve(staticDir);
+  const cleanRelative = path.normalize(decodedPath).replace(/^(\.\.[\/\\])+/, "").replace(/^[\/\\]+/, "");
+  let targetPath = path.resolve(resolvedRoot, cleanRelative);
+
+  const relative = path.relative(resolvedRoot, targetPath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    return false;
+  }
+
+  try {
+    if (fs.existsSync(targetPath)) {
+      const stat = fs.statSync(targetPath);
+      if (stat.isDirectory()) {
+        targetPath = path.join(targetPath, "index.html");
+      }
+    } else {
+      // If not found and pathname has no file extension (SPA route), fallback to index.html
+      if (pathname.startsWith("/v1/") || pathname.startsWith("/api/")) {
+        return false;
+      }
+      const ext = path.extname(cleanRelative);
+      if (!ext) {
+        targetPath = path.join(resolvedRoot, "index.html");
+      } else {
+        return false;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  let stat: fs.Stats;
+  try {
+    if (!fs.existsSync(targetPath)) {
+      return false;
+    }
+    stat = fs.statSync(targetPath);
+    if (!stat.isFile()) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  const ext = path.extname(targetPath).toLowerCase();
+  const contentType = STATIC_MIME_TYPES[ext] ?? "application/octet-stream";
+
+  let cacheControl = "no-cache";
+  if (ext === ".html" || ext === ".htm") {
+    cacheControl = "no-cache";
+  } else if (pathname.startsWith("/assets/")) {
+    cacheControl = "public, max-age=31536000, immutable";
+  } else {
+    cacheControl = "no-cache";
+  }
+
+  response.statusCode = 200;
+  response.setHeader("Content-Type", contentType);
+  response.setHeader("Cache-Control", cacheControl);
+  response.setHeader("Content-Length", stat.size);
+
+  if (method === "HEAD") {
+    response.end();
+    return true;
+  }
+
+  const stream = fs.createReadStream(targetPath);
+  stream.on("error", () => {
+    if (!response.headersSent) {
+      response.statusCode = 500;
+      response.end();
+    }
+  });
+  stream.pipe(response);
+  return true;
+}
+
 export async function startBrokerServer(
   broker: IntegratedPowerBroker,
   requestedPort = 0,
   options: BrokerServerOptions = {},
 ): Promise<BrokerServerHandle> {
   const stateRoot = path.resolve(options.stateRoot ?? resolveIntegratedPowerStateRoot());
+  const staticDir = resolveStaticDirectory(options.staticDir);
   const hubController = broker.hubController ?? new HubController(stateRoot, broker);
   if (!broker.hubController) broker.hubController = hubController;
   const quotaSettingsStore = new QuotaSettingsStore(stateRoot);
   const readTokenStatus = options.tokenStatusReader ?? (() => scanLiveTokenStatus());
-  const dispatchPrewarm = options.prewarmDispatcher ?? spawnPrewarm;
+  const dispatchPrewarm = options.prewarmDispatcher ?? ((target, model, root, account) => spawnPrewarm(target, model, root ?? stateRoot, account));
   const prewarmStatePath = path.join(stateRoot, "broker", "prewarm-arbitration.json");
   const quotaNotificationStatePath = path.join(stateRoot, "broker", "quota-notification-state.json");
   let quotaNotificationQueue = Promise.resolve();
+  let serverClosed = false;
+  const serverClosedRef = { closed: false };
+  let nextPrewarmSeqId = 1;
+  const prewarmConsumerCursors = new Map<string, number>();
+  const prewarmNotificationQueue: PrewarmNotificationEvent[] = [];
+  const emitPrewarmNotification = (event: PrewarmNotificationEvent) => {
+    const assigned: PrewarmNotificationEvent = {
+      ...event,
+      seqId: event.seqId ?? nextPrewarmSeqId++,
+    };
+    prewarmNotificationQueue.push(assigned);
+    if (prewarmNotificationQueue.length > 50) prewarmNotificationQueue.shift();
+  };
   const server = http.createServer(async (request, response) => {
     response.setHeader("Content-Type", "application/json; charset=utf-8");
     response.setHeader("Cache-Control", "no-store");
@@ -151,6 +326,30 @@ export async function startBrokerServer(
         } finally {
           finishQueue();
         }
+      }
+      if (request.method === "POST" && url.pathname === "/v1/notifications/prewarm") {
+        const consumer = url.searchParams.get("consumer")?.trim();
+        const afterIdRaw = url.searchParams.get("afterId");
+        const afterId = afterIdRaw !== null && afterIdRaw !== undefined && /^\d+$/.test(afterIdRaw.trim())
+          ? parseInt(afterIdRaw.trim(), 10)
+          : undefined;
+        const latestSeqId = nextPrewarmSeqId - 1;
+
+        if (consumer || afterId !== undefined) {
+          const sinceSeq = afterId !== undefined ? afterId : (consumer ? (prewarmConsumerCursors.get(consumer) ?? 0) : 0);
+          const notifications = prewarmNotificationQueue.filter((item) => (item.seqId ?? 0) > sinceSeq);
+          if (consumer && afterId === undefined) {
+            prewarmConsumerCursors.set(consumer, latestSeqId);
+          } else if (consumer && notifications.length > 0) {
+            const maxSeq = Math.max(...notifications.map((n) => n.seqId ?? 0));
+            const current = prewarmConsumerCursors.get(consumer) ?? 0;
+            if (maxSeq > current) prewarmConsumerCursors.set(consumer, maxSeq);
+          }
+          return send(response, 200, { ok: true, notifications, latestSeqId });
+        }
+
+        const notifications = prewarmNotificationQueue.splice(0, prewarmNotificationQueue.length);
+        return send(response, 200, { ok: true, notifications, latestSeqId });
       }
       if (request.method === "GET" && url.pathname === "/v1/workspaces") {
         const workspacesRoot = path.join(stateRoot, "workspaces");
@@ -213,7 +412,6 @@ export async function startBrokerServer(
       if (request.method === "GET" && url.pathname === "/v1/logs") {
         const requestedLines = Number.parseInt(url.searchParams.get("lines") ?? "160", 10);
         const lines = Number.isFinite(requestedLines) ? Math.min(500, Math.max(20, requestedLines)) : 160;
-        const stateRoot = process.env.INTEGRATED_POWER_STATE_ROOT || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), ".local", "share"), "IntegratedPower", "state");
         const logPath = path.join(stateRoot, "broker.log");
         const content = await fs.promises.readFile(logPath, "utf8").catch(() => "");
         return send(response, 200, { path: logPath, lines: content.split(/\r?\n/).filter(Boolean).slice(-lines) });
@@ -372,7 +570,7 @@ export async function startBrokerServer(
       }
       if (request.method === "POST" && (url.pathname === "/prewarm" || url.pathname === "/v1/tokens/prewarm")) {
         const input = await readJson(request) as PrewarmRequest;
-        const outcome = await executePrewarmRequest(input, quotaSettingsStore, prewarmStatePath, readTokenStatus, dispatchPrewarm);
+        const outcome = await executePrewarmRequest(input, quotaSettingsStore, prewarmStatePath, readTokenStatus, dispatchPrewarm, undefined, stateRoot, emitPrewarmNotification, serverClosedRef, options);
         return send(response, outcome.httpStatus, outcome.result);
       }
       if (request.method === "GET" && url.pathname === "/v1/tasks") {
@@ -548,6 +746,10 @@ export async function startBrokerServer(
         const body = await readJson(request) as any;
         return send(response, 200, { ok: true, playbook: hubController.savePlaybook(body) });
       }
+      const activeStaticDir = staticDir || resolveStaticDirectory(options.staticDir);
+      if (activeStaticDir && tryServeStaticFile(activeStaticDir, url.pathname, response, request.method ?? "GET")) {
+        return;
+      }
       return send(response, 404, { error: "not_found" });
     } catch (error) {
       if (error instanceof BrokerConflictError) {
@@ -567,7 +769,7 @@ export async function startBrokerServer(
   let schedulerActive = false;
   let lastSchedulerPoll = 0;
   const schedulerTimer = options.autoSchedule === false ? undefined : setInterval(() => {
-    if (schedulerActive) return;
+    if (schedulerActive || serverClosed) return;
     const settingsSnapshot = quotaSettingsStore.get();
     if (!settingsSnapshot.initialized || !Object.values(settingsSnapshot.settings.prewarmModes).some((mode) => mode !== "click")) return;
     if (Date.now() - lastSchedulerPoll < settingsSnapshot.settings.pollIntervalMs) return;
@@ -579,23 +781,46 @@ export async function startBrokerServer(
         if (!options.tokenStatusReader) {
           try {
             const arb = readPrewarmState(prewarmStatePath);
-            const bucketId = `policy-5h-${Math.floor(Date.now() / (5 * 60 * 60 * 1000))}`;
-            const weeklyBucketId = `policy-weekly-${Math.floor(Date.now() / (168 * 60 * 60 * 1000))}`;
-            for (const t of ["antigravity", "argon", "opus", "codex"] as const) {
-              if ((settingsSnapshot.settings.prewarmModes[t] ?? "click") === "click") continue;
-              const prev = arb.windows[`${t}:5h:${bucketId}`] || arb.windows[`${t}:weekly:${weeklyBucketId}`];
-              if (prev && prev.status === "dispatched" && Date.now() - prev.attemptedAt >= 60_000 && Date.now() - prev.attemptedAt < 180_000) {
-                forceRefreshForVerify = true;
-                break;
+            for (const [key, prev] of Object.entries(arb.windows)) {
+              if (/:(antigravity|argon|opus|codex):(5h|weekly):/.test(key) && prev.status === "dispatched") {
+                const age = Date.now() - prev.attemptedAt;
+                if (age >= 60_000 && age < 180_000) {
+                  forceRefreshForVerify = true;
+                  break;
+                }
               }
             }
           } catch {}
         }
         const status = forceRefreshForVerify ? await scanLiveTokenStatus({ force: true }) : await readTokenStatus();
+        const accountsObj = (status as any)?.accounts;
+        const hasAccounts = accountsObj && typeof accountsObj === "object" && !Array.isArray(accountsObj) && Object.keys(accountsObj).length > 0;
+        const accountsToIterate: Array<string | undefined> = hasAccounts ? Object.keys(accountsObj) : [undefined];
+
         for (const target of ["antigravity", "argon", "opus", "codex"] as const) {
-          if ((settingsSnapshot.settings.prewarmModes[target] ?? "click") === "click") continue;
-          const autoWindow = target === "argon" && (status as any).argonPercentage === undefined && (status as any).argonWeeklyPercentage !== undefined ? "weekly" : "5h";
-          await executePrewarmRequest({ model: target, window: autoWindow, manual: false, idempotencyKey: crypto.randomUUID(), expectedSettingsRevision: settingsSnapshot.revision }, quotaSettingsStore, prewarmStatePath, readTokenStatus, dispatchPrewarm, status);
+          const mode = settingsSnapshot.settings.prewarmModes[target] ?? "click";
+          if (mode === "click") continue;
+          for (const account of accountsToIterate) {
+            const accountData = account && hasAccounts ? accountsObj[account] : undefined;
+            const argonPct = accountData ? accountData.argonPercentage : (status as any).argonPercentage;
+            const argonWeeklyPct = accountData ? accountData.argonWeeklyPercentage : (status as any).argonWeeklyPercentage;
+            const autoWindow = target === "argon" && argonPct === undefined && argonWeeklyPct !== undefined ? "weekly" : "5h";
+            const outcome = await executePrewarmRequest(
+              { model: target, window: autoWindow, manual: false, account, idempotencyKey: crypto.randomUUID(), expectedSettingsRevision: settingsSnapshot.revision },
+              quotaSettingsStore,
+              prewarmStatePath,
+              readTokenStatus,
+              dispatchPrewarm,
+              status,
+              stateRoot,
+              emitPrewarmNotification,
+              serverClosedRef,
+              options,
+            );
+            if (mode === "once" && outcome.result.status === "dispatched") {
+              break;
+            }
+          }
         }
       } catch {
         // A failed collection is retryable on the next broker-owned poll.
@@ -608,6 +833,8 @@ export async function startBrokerServer(
   return {
     port,
     close: () => {
+      serverClosed = true;
+      serverClosedRef.closed = true;
       if (schedulerTimer) clearInterval(schedulerTimer);
       const result = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       (server as http.Server & { closeIdleConnections?: () => void; closeAllConnections?: () => void }).closeIdleConnections?.();
@@ -617,6 +844,65 @@ export async function startBrokerServer(
   };
 }
 
+function parseTimestampMs(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    if (/^\d+$/.test(trimmed)) {
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    }
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isFinite(time) && time > 0 ? time : undefined;
+  }
+  return undefined;
+}
+
+function extractQuotaSnapshot(
+  status: LiveTokenStatus,
+  target: string,
+  windowType: "5h" | "weekly",
+  account?: string,
+): { pct?: number; resetMs?: number; resetStr?: string; measuredMs?: number } {
+  const weeklyTarget = `${target}Weekly`;
+  const accountsMap = (status as any)?.accounts;
+  const acctData = account && accountsMap && typeof accountsMap === "object" && !Array.isArray(accountsMap)
+    ? accountsMap[account]
+    : undefined;
+  const pools = Array.isArray(acctData?.quotaPools)
+    ? acctData.quotaPools
+    : (Array.isArray((status as any).quotaPools) ? (status as any).quotaPools : []);
+  const pool = windowType === "weekly"
+    ? pools.find((p: any) => p?.id === `${target}.weekly` || (p?.provider === (target === "opus" ? "anthropic" : target) && p?.windowDurationMins === 10080))
+    : pools.find((p: any) => p?.id === `${target}.5h` || p?.id === `${target}.default` || (p?.provider === (target === "opus" ? "anthropic" : target) && p?.windowDurationMins === 300));
+
+  const pct = windowType === "weekly"
+    ? (acctData ? quotaPercentageOrUndefined(acctData[`${weeklyTarget}Percentage`]) : undefined) ?? (pool ? quotaPercentageOrUndefined(pool.remainingPercentage) : undefined) ?? quotaPercentageOrUndefined((status as any)[`${weeklyTarget}Percentage`])
+    : (acctData ? quotaPercentageOrUndefined(acctData[`${target}Percentage`]) : undefined) ?? (pool ? quotaPercentageOrUndefined(pool.remainingPercentage) : undefined) ?? quotaPercentageOrUndefined((status as any)[`${target}Percentage`]);
+
+  const resetStr = windowType === "weekly"
+    ? (acctData ? (acctData[`${weeklyTarget}ResetTime`] || pool?.resetTime) : ((status as any)[`${weeklyTarget}ResetTime`] || pool?.resetTime))
+    : (acctData ? (acctData[`${target}ResetTime`] || pool?.resetTime) : ((status as any)[`${target}ResetTime`] || pool?.resetTime));
+  const resetDate = resetStr ? new Date(resetStr) : undefined;
+  const resetMs = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : undefined;
+
+  const acctFallbackTs = acctData
+    ? (parseTimestampMs(acctData.fetchedAt) ?? parseTimestampMs(acctData.measuredAt) ?? parseTimestampMs(acctData.lastSync))
+    : undefined;
+  const fallbackTs = acctFallbackTs
+    ?? parseTimestampMs((status as any).lastSync)
+    ?? parseTimestampMs((status as any).updatedAt)
+    ?? parseTimestampMs((status as any).directUsage?.lastMeasuredAt);
+  const measuredMs = parseTimestampMs(pool?.measuredAt) ?? fallbackTs;
+
+  return { pct, resetMs, resetStr: resetStr ? String(resetStr) : undefined, measuredMs };
+}
+
 async function executePrewarmRequest(
   input: PrewarmRequest,
   settingsStore: QuotaSettingsStore,
@@ -624,108 +910,361 @@ async function executePrewarmRequest(
   readTokenStatus: () => Promise<LiveTokenStatus>,
   dispatcher: BrokerServerOptions["prewarmDispatcher"],
   statusOverride?: LiveTokenStatus,
+  stateRoot?: string,
+  emitNotification?: (event: PrewarmNotificationEvent) => void,
+  serverClosedRef?: { closed: boolean },
+  options?: BrokerServerOptions,
 ): Promise<{ httpStatus: number; result: PrewarmResult }> {
   const resolved = resolvePrewarmTarget(input.model);
   const manual = input.manual !== false;
+  if (manual) appendBrokerLog(stateRoot, `[PREWARM] Request received: model=${input.model ?? "default"}, window=${input.window ?? "auto"}, manual=${manual}`);
   const idempotencyKey = input.idempotencyKey?.trim() || `legacy-${crypto.randomUUID()}`;
-  if (idempotencyKey.length > 128) return { httpStatus: 400, result: { ok: false, status: "failed", timerConfirmed: false, error: "idempotencyKey must not exceed 128 characters." } };
+  if (idempotencyKey.length > 128) {
+    if (manual) {
+      emitNotification?.({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        level: "error",
+        target: resolved.target,
+        targetModel: resolved.model,
+        account: input.account,
+        status: "failed",
+        message: "idempotencyKey must not exceed 128 characters.",
+      });
+    }
+    return { httpStatus: 400, result: { ok: false, status: "failed", timerConfirmed: false, error: "idempotencyKey must not exceed 128 characters." } };
+  }
+
   const liveStatus = statusOverride ?? await readTokenStatus();
+  const accountsMap = (liveStatus as any)?.accounts;
+  if (input.account && accountsMap && typeof accountsMap === "object" && !Array.isArray(accountsMap)) {
+    if (!accountsMap[input.account]) {
+      if (manual) {
+        emitNotification?.({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          target: resolved.target,
+          targetModel: resolved.model,
+          account: input.account,
+          status: "skipped",
+          message: `Account '${input.account}' quota telemetry was not found.`,
+        });
+      }
+      return {
+        httpStatus: 200,
+        result: {
+          ok: false,
+          status: "skipped",
+          timerConfirmed: false,
+          model: resolved.target,
+          targetModel: resolved.model,
+          account: input.account,
+          error: `Account '${input.account}' quota telemetry was not found.`,
+        },
+      };
+    }
+  }
+
+  const accountData = (input.account && accountsMap && typeof accountsMap === "object" && !Array.isArray(accountsMap))
+    ? accountsMap[input.account]
+    : undefined;
+
+  const argonPct = accountData ? accountData.argonPercentage : (liveStatus as any).argonPercentage;
+  const argonWeeklyPct = accountData ? accountData.argonWeeklyPercentage : (liveStatus as any).argonWeeklyPercentage;
+
   const windowType: "5h" | "weekly" = input.window === "weekly"
     ? "weekly"
-    : (!input.window && resolved.target === "argon" && (liveStatus as any).argonPercentage === undefined && (liveStatus as any).argonWeeklyPercentage !== undefined)
+    : (!input.window && resolved.target === "argon" && argonPct === undefined && argonWeeklyPct !== undefined)
       ? "weekly"
       : "5h";
-  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ target: resolved.target, model: resolved.model, window: windowType, manual, expectedSettingsRevision: input.expectedSettingsRevision ?? null })).digest("hex");
-  // Read after the awaited status refresh so concurrent requests observe a
-  // claim committed by the request that resumed first.
+
+  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({
+    target: resolved.target,
+    model: resolved.model,
+    window: windowType,
+    manual,
+    account: input.account ?? null,
+    expectedSettingsRevision: input.expectedSettingsRevision ?? null,
+  })).digest("hex");
+
   const state = readPrewarmState(statePath);
   const priorIdempotency = state.idempotency[idempotencyKey];
   if (priorIdempotency) {
     if (priorIdempotency.fingerprint !== fingerprint) return { httpStatus: 409, result: { ok: false, status: "duplicate", timerConfirmed: false, error: "Idempotency key was already used for a different prewarm request." } };
     return { httpStatus: 200, result: priorIdempotency.result };
   }
+
   const prefix = resolved.target;
   const weeklyPrefix = `${prefix}Weekly`;
   const windowId = windowType === "weekly"
     ? `policy-weekly-${Math.floor(Date.now() / (168 * 60 * 60 * 1000))}`
     : `policy-5h-${Math.floor(Date.now() / (5 * 60 * 60 * 1000))}`;
-  const windowKey = `${prefix}:${windowType}:${windowId}`;
+  const accountScope = (input.account || "default").toLowerCase();
+  const windowKey = `${accountScope}:${prefix}:${windowType}:${windowId}`;
   const previous = state.windows[windowKey];
   const duplicateCooldownMs = manual ? 5_000 : 60_000;
   if (previous && (previous.status === "dispatching" || (previous.status === "dispatched" && Date.now() - previous.attemptedAt < duplicateCooldownMs) || Date.now() - previous.attemptedAt < (manual ? 5_000 : 30_000))) {
-    return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "duplicate", timerConfirmed: false, claimId: previous.claimId, model: prefix, targetModel: resolved.model, error: "This quota window already has an active or completed prewarm claim." } });
+    if (manual) appendBrokerLog(stateRoot, `[PREWARM] Duplicate request for windowKey=${windowKey}; prior claimId=${previous.claimId}, status=${previous.status}`);
+    return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "duplicate", timerConfirmed: false, claimId: previous.claimId, model: prefix, targetModel: resolved.model, account: input.account, error: "This quota window already has an active or completed prewarm claim." } });
   }
+
   const settings = settingsStore.get();
   if (typeof input.expectedSettingsRevision === "number" && input.expectedSettingsRevision !== settings.revision) {
-    return { httpStatus: 409, result: { ok: false, status: "skipped", timerConfirmed: false, model: resolved.target, targetModel: resolved.model, error: `Quota settings revision conflict; current revision is ${settings.revision}.` } };
+    appendBrokerLog(stateRoot, `[PREWARM] Revision conflict for target=${resolved.target}; expected ${input.expectedSettingsRevision}, got ${settings.revision}`);
+    if (manual) {
+      emitNotification?.({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        level: "warn",
+        target: resolved.target,
+        targetModel: resolved.model,
+        account: input.account,
+        status: "skipped",
+        message: `Quota settings revision conflict; current revision is ${settings.revision}.`,
+      });
+    }
+    return { httpStatus: 409, result: { ok: false, status: "skipped", timerConfirmed: false, model: resolved.target, targetModel: resolved.model, account: input.account, error: `Quota settings revision conflict; current revision is ${settings.revision}.` } };
   }
+
   const mode = settings.settings.prewarmModes[resolved.target];
   if (!manual && (!settings.initialized || mode === "click")) {
-    return { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: resolved.target, targetModel: resolved.model, error: "Automatic prewarm is not armed for this target." } };
+    return { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: resolved.target, targetModel: resolved.model, account: input.account, error: "Automatic prewarm is not armed for this target." } };
   }
-  const pools = Array.isArray((liveStatus as any).quotaPools) ? (liveStatus as any).quotaPools : [];
+
+  const pools = Array.isArray(accountData?.quotaPools)
+    ? accountData.quotaPools
+    : (Array.isArray((liveStatus as any).quotaPools) ? (liveStatus as any).quotaPools : []);
   const fivePool = pools.find((pool: any) => pool?.id === `${prefix}.5h` || pool?.id === `${prefix}.default` || (pool?.provider === (prefix === "opus" ? "anthropic" : prefix) && pool?.windowDurationMins === 300));
   const weeklyPool = pools.find((pool: any) => pool?.id === `${prefix}.weekly` || (pool?.provider === (prefix === "opus" ? "anthropic" : prefix) && pool?.windowDurationMins === 10080));
-  const fiveHour = quotaPercentageOrUndefined((liveStatus as any)[`${prefix}Percentage`])
-    ?? (fivePool ? quotaPercentageOrUndefined(fivePool.remainingPercentage) : undefined);
-  const weekly = quotaPercentageOrUndefined((liveStatus as any)[`${weeklyPrefix}Percentage`])
-    ?? (weeklyPool ? quotaPercentageOrUndefined(weeklyPool.remainingPercentage) : undefined);
-  const fallbackTimestamp = Date.parse(String((liveStatus as any).lastSync ?? (liveStatus as any).updatedAt ?? (liveStatus as any).directUsage?.lastMeasuredAt ?? ""));
-  const fiveMeasuredAt = Date.parse(String(fivePool?.measuredAt ?? "")) || fallbackTimestamp;
-  const weeklyMeasuredAt = Date.parse(String(weeklyPool?.measuredAt ?? "")) || fallbackTimestamp;
+
+  const fiveHour = accountData
+    ? quotaPercentageOrUndefined(accountData[`${prefix}Percentage`]) ?? (fivePool ? quotaPercentageOrUndefined(fivePool.remainingPercentage) : undefined)
+    : quotaPercentageOrUndefined((liveStatus as any)[`${prefix}Percentage`]) ?? (fivePool ? quotaPercentageOrUndefined(fivePool.remainingPercentage) : undefined);
+
+  const weekly = accountData
+    ? quotaPercentageOrUndefined(accountData[`${weeklyPrefix}Percentage`]) ?? (weeklyPool ? quotaPercentageOrUndefined(weeklyPool.remainingPercentage) : undefined)
+    : quotaPercentageOrUndefined((liveStatus as any)[`${weeklyPrefix}Percentage`]) ?? (weeklyPool ? quotaPercentageOrUndefined(weeklyPool.remainingPercentage) : undefined);
+
+  const accountFallbackTimestamp = accountData
+    ? (parseTimestampMs(accountData.fetchedAt) ?? parseTimestampMs(accountData.measuredAt) ?? parseTimestampMs(accountData.lastSync))
+    : undefined;
+  const fallbackTimestamp = accountFallbackTimestamp
+    ?? parseTimestampMs((liveStatus as any).lastSync)
+    ?? parseTimestampMs((liveStatus as any).updatedAt)
+    ?? parseTimestampMs((liveStatus as any).directUsage?.lastMeasuredAt);
+
+  const fiveMeasuredAt = parseTimestampMs(fivePool?.measuredAt) ?? fallbackTimestamp;
+  const weeklyMeasuredAt = parseTimestampMs(weeklyPool?.measuredAt) ?? fallbackTimestamp;
   const targetMeasuredAt = windowType === "weekly" ? weeklyMeasuredAt : fiveMeasuredAt;
-  if (!manual && previous && previous.status === "dispatched" && Number.isFinite(targetMeasuredAt) && targetMeasuredAt < previous.attemptedAt + 5_000) {
-    return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "duplicate", timerConfirmed: false, claimId: previous.claimId, model: prefix, targetModel: resolved.model, error: "Waiting for post-dispatch quota measurement before re-evaluating window." } });
+
+  if (!manual && previous && previous.status === "dispatched" && typeof targetMeasuredAt === "number" && Number.isFinite(targetMeasuredAt) && targetMeasuredAt < previous.attemptedAt + 5_000) {
+    if (manual) appendBrokerLog(stateRoot, `[PREWARM] Waiting for post-dispatch quota measurement before re-evaluating window.`);
+    return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "duplicate", timerConfirmed: false, claimId: previous.claimId, model: prefix, targetModel: resolved.model, account: input.account, error: "Waiting for post-dispatch quota measurement before re-evaluating window." } });
   }
 
   if (windowType === "5h") {
     if (fiveHour === undefined) {
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires reported 5-hour quota data before pre-warm.` } });
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} requires reported 5-hour quota data before pre-warm.`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} requires reported 5-hour quota data before pre-warm.` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} requires reported 5-hour quota data before pre-warm.` } });
     }
-    if (Number.isFinite(fiveMeasuredAt) && (fiveMeasuredAt > Date.now() + 60_000 || Date.now() - fiveMeasuredAt > 5 * 60_000)) {
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires fresh, reported 5-hour quota data before pre-warm.` } });
+    if (typeof fiveMeasuredAt === "number" && Number.isFinite(fiveMeasuredAt) && (fiveMeasuredAt > Date.now() + 60_000 || Date.now() - fiveMeasuredAt > 5 * 60_000)) {
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} requires fresh, reported 5-hour quota data before pre-warm.`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} requires fresh, reported 5-hour quota data before pre-warm.` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} requires fresh, reported 5-hour quota data before pre-warm.` } });
     }
-    if (fiveHour < 99.95) {
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} quota is not 100% full (${fiveHour.toFixed(1)}%).` } });
+    if (fiveHour < 99.995) {
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} quota is not 100% full (${fiveHour.toFixed(2)}%).`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} quota is not 100% full (${fiveHour.toFixed(2)}%).` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} quota is not 100% full (${fiveHour.toFixed(2)}%).` } });
     }
-    const resetTimeStr = (liveStatus as any)[`${prefix}ResetTime`] || fivePool?.resetTime;
+    const resetTimeStr = accountData ? (accountData[`${prefix}ResetTime`] || fivePool?.resetTime) : ((liveStatus as any)[`${prefix}ResetTime`] || fivePool?.resetTime);
     const resetDate = resetTimeStr ? new Date(resetTimeStr) : undefined;
     const diffMs = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() - Date.now() : undefined;
     if (diffMs !== undefined && diffMs > 0 && diffMs < 5 * 3600 * 1000 - 15 * 60 * 1000) {
       const waitMin = Math.ceil(diffMs / 60000);
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} 5-hour quota timer is already active (${waitMin}m remaining). Pre-warm requires a full 5-hour window.` } });
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} 5-hour quota timer is already active (${waitMin}m remaining).`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} 5-hour quota timer is already active (${waitMin}m remaining). Pre-warm requires a full 5-hour window.` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} 5-hour quota timer is already active (${waitMin}m remaining). Pre-warm requires a full 5-hour window.` } });
     }
     if (weekly !== undefined && weekly <= 0.05) {
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota is exhausted.` } });
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} weekly quota is exhausted.`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} weekly quota is exhausted.` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} weekly quota is exhausted.` } });
     }
   } else {
     if (weekly === undefined) {
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires reported weekly quota data before pre-warm.` } });
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} requires reported weekly quota data before pre-warm.`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} requires reported weekly quota data before pre-warm.` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} requires reported weekly quota data before pre-warm.` } });
     }
-    if (Number.isFinite(weeklyMeasuredAt) && (weeklyMeasuredAt > Date.now() + 60_000 || Date.now() - weeklyMeasuredAt > 5 * 60_000)) {
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} requires fresh, reported weekly quota data before pre-warm.` } });
+    if (typeof weeklyMeasuredAt === "number" && Number.isFinite(weeklyMeasuredAt) && (weeklyMeasuredAt > Date.now() + 60_000 || Date.now() - weeklyMeasuredAt > 5 * 60_000)) {
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} requires fresh, reported weekly quota data before pre-warm.`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} requires fresh, reported weekly quota data before pre-warm.` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} requires fresh, reported weekly quota data before pre-warm.` } });
     }
-    if (weekly < 99.95) {
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota is not 100% full (${weekly.toFixed(1)}%).` } });
+    if (weekly < 99.995) {
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} weekly quota is not 100% full (${weekly.toFixed(2)}%).`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} weekly quota is not 100% full (${weekly.toFixed(2)}%).` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} weekly quota is not 100% full (${weekly.toFixed(2)}%).` } });
     }
-    const weeklyResetTimeStr = (liveStatus as any)[`${weeklyPrefix}ResetTime`] || weeklyPool?.resetTime;
+    const weeklyResetTimeStr = accountData ? (accountData[`${weeklyPrefix}ResetTime`] || weeklyPool?.resetTime) : ((liveStatus as any)[`${weeklyPrefix}ResetTime`] || weeklyPool?.resetTime);
     const weeklyResetDate = weeklyResetTimeStr ? new Date(weeklyResetTimeStr) : undefined;
     const weeklyDiffMs = weeklyResetDate && !Number.isNaN(weeklyResetDate.getTime()) ? weeklyResetDate.getTime() - Date.now() : undefined;
     if (weeklyDiffMs !== undefined && weeklyDiffMs > 0 && weeklyDiffMs < 168 * 3600 * 1000 - 4 * 3600 * 1000) {
       const waitHours = Math.ceil(weeklyDiffMs / 3600000);
-      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, error: `${prefix} weekly quota timer is already active (${waitHours}h remaining). Pre-warm requires a full 168-hour window.` } });
+      if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} weekly quota timer is already active (${waitHours}h remaining).`);
+      if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: input.account, status: "skipped", message: `${prefix} weekly quota timer is already active (${waitHours}h remaining). Pre-warm requires a full 168-hour window.` });
+      return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: input.account, error: `${prefix} weekly quota timer is already active (${waitHours}h remaining). Pre-warm requires a full 168-hour window.` } });
     }
   }
+
+  const baseline = extractQuotaSnapshot(liveStatus, prefix, windowType, input.account);
+  const baselinePct = baseline.pct;
+  const baselineResetMs = baseline.resetMs;
+  const baselineMeasuredMs = baseline.measuredMs;
+  const fullWindowMs = windowType === "weekly" ? 168 * 3600 * 1000 : 5 * 3600 * 1000;
+  const activeThresholdMs = windowType === "weekly" ? 168 * 3600 * 1000 - 4 * 3600 * 1000 : 5 * 3600 * 1000 - 15 * 60 * 1000;
+  const dispatchedAt = Date.now();
+
   const claimId = crypto.createHash("sha256").update(windowKey).digest("hex").slice(0, 24);
   state.windows[windowKey] = { windowId, status: "dispatching", attemptedAt: Date.now(), claimId };
   writePrewarmState(statePath, state);
-  let dispatched: { spawned: boolean; error?: string };
-  try { dispatched = await (dispatcher ?? spawnPrewarm)(prefix, resolved.model); }
+  appendBrokerLog(stateRoot, `[PREWARM] Dispatching prewarm for target=${prefix}, model=${resolved.model}, claimId=${claimId}`);
+  let dispatched: { spawned: boolean; cancelledEarly?: boolean; durationMs?: number; error?: string };
+  try { dispatched = await (dispatcher ?? spawnPrewarm)(prefix, resolved.model, stateRoot, input.account); }
   catch (error) { dispatched = { spawned: false, error: error instanceof Error ? error.message : String(error) }; }
   const result: PrewarmResult = dispatched.spawned
-    ? { ok: true, status: "dispatched", timerConfirmed: false, claimId, model: prefix, targetModel: resolved.model }
-    : { ok: false, status: "failed", timerConfirmed: false, claimId, model: prefix, targetModel: resolved.model, error: dispatched.error ?? "Prewarm process did not start." };
+    ? { ok: true, status: "dispatched", timerConfirmed: false, claimId, model: prefix, targetModel: resolved.model, account: input.account, cancelledEarly: dispatched.cancelledEarly, durationMs: dispatched.durationMs }
+    : { ok: false, status: "failed", timerConfirmed: false, claimId, model: prefix, targetModel: resolved.model, account: input.account, cancelledEarly: dispatched.cancelledEarly, durationMs: dispatched.durationMs, error: dispatched.error ?? "Prewarm process did not start." };
   state.windows[windowKey] = { windowId, status: dispatched.spawned ? "dispatched" : "failed", attemptedAt: Date.now(), claimId, error: result.error };
+  appendBrokerLog(stateRoot, `[PREWARM] Dispatch outcome: ok=${result.ok}, status=${result.status}${result.error ? `, error=${result.error}` : ""}`);
+
+  if (dispatched.spawned) {
+    emitNotification?.({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      level: "info",
+      target: prefix,
+      targetModel: resolved.model,
+      account: input.account,
+      status: "dispatched",
+      message: `Prewarm dispatched for ${prefix}${input.account ? ` (${input.account})` : ""}`,
+      cancelledEarly: dispatched.cancelledEarly,
+      durationMs: dispatched.durationMs,
+    });
+
+    const acctSuffix = input.account ? ` (${input.account})` : "";
+    const verifyDelayMs = Math.max(0, options?.prewarmVerifyDelayMs ?? 5000);
+    const retryDelayMs = Math.max(0, options?.prewarmVerifyRetryDelayMs ?? 12000);
+
+    const verifyPostPrewarm = async (attempt: number): Promise<void> => {
+      if (serverClosedRef?.closed) return;
+      try {
+        appendBrokerLog(stateRoot, `[PREWARM] Running post-prewarm quota verification check ${attempt} for target=${prefix}${acctSuffix}`);
+        let postStatus: LiveTokenStatus;
+        if (options?.tokenStatusReader) {
+          postStatus = await readTokenStatus();
+        } else {
+          const ideRefreshed = await requestForceRefresh().catch(() => false);
+          postStatus = await scanLiveTokenStatus({ force: true, maxAgeMs: ideRefreshed ? 5 * 60_000 : 1_000 });
+        }
+
+        const post = extractQuotaSnapshot(postStatus, prefix, windowType, input.account);
+        const postPct = post.pct;
+        const postResetMs = post.resetMs;
+        const postMeasuredMs = post.measuredMs;
+        const postResetIso = postResetMs !== undefined ? new Date(postResetMs).toISOString() : post.resetStr;
+        const postDiffMs = postResetMs !== undefined ? postResetMs - Date.now() : undefined;
+        const baselineDiffMs = baselineResetMs !== undefined ? baselineResetMs - dispatchedAt : undefined;
+
+        const baselineWasActive = baselineDiffMs !== undefined && baselineDiffMs > 0 && baselineDiffMs < activeThresholdMs;
+        const postIsActive = postDiffMs !== undefined && postDiffMs > 0 && postDiffMs < activeThresholdMs;
+
+        const timeElapsedBetweenMeasurements = (typeof postMeasuredMs === "number" && typeof baselineMeasuredMs === "number" && Number.isFinite(postMeasuredMs) && Number.isFinite(baselineMeasuredMs))
+          ? (postMeasuredMs - baselineMeasuredMs)
+          : (Date.now() - dispatchedAt);
+        const wallElapsedSinceDispatch = Date.now() - dispatchedAt;
+        const postIsPostDispatch = postMeasuredMs === undefined || postMeasuredMs > dispatchedAt;
+        const sufficientTelemetryElapsed = wallElapsedSinceDispatch >= 12_000 && timeElapsedBetweenMeasurements >= 12_000 && postIsPostDispatch;
+
+        const cond1 = postPct !== undefined && (postPct < 99.995 || (baselinePct !== undefined && postPct < baselinePct - 0.001));
+        const cond2 = (baselineResetMs === undefined || baselineResetMs <= dispatchedAt) && postResetMs !== undefined && postResetMs > Date.now();
+        const cond3 = postIsActive && !baselineWasActive;
+        const cond4 = sufficientTelemetryElapsed && postResetMs !== undefined && baselineResetMs !== undefined && postResetMs > Date.now() && Math.abs(postResetMs - baselineResetMs) <= 3_000;
+
+        const timerConfirmed = Boolean(cond1 || cond2 || cond3 || cond4);
+
+        if (timerConfirmed) {
+          appendBrokerLog(stateRoot, `[PREWARM] Post-prewarm verification CONFIRMED for target=${prefix}${acctSuffix}: postPct=${postPct ?? "n/a"}, postReset=${postResetIso ?? "n/a"}`);
+          emitNotification?.({
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            level: "info",
+            target: prefix,
+            targetModel: resolved.model,
+            account: input.account,
+            status: "verified",
+            timerConfirmed: true,
+            message: `Post-prewarm timer confirmed for ${prefix}${acctSuffix} (quota: ${postPct !== undefined ? postPct.toFixed(2) : "updated"}%).`,
+          });
+        } else if (attempt === 1 && (options?.prewarmVerifyRetryDelayMs ?? 12000) > 0) {
+          appendBrokerLog(stateRoot, `[PREWARM] Post-prewarm check 1 unconfirmed for target=${prefix}${acctSuffix}; scheduling follow-up check in ${retryDelayMs}ms.`);
+          const retryTimer = setTimeout(() => {
+            if (serverClosedRef?.closed) return;
+            void verifyPostPrewarm(2);
+          }, retryDelayMs);
+          retryTimer.unref?.();
+        } else {
+          appendBrokerLog(stateRoot, `[PREWARM] Post-prewarm verification UNCONFIRMED for target=${prefix}${acctSuffix}: postPct=${postPct ?? "n/a"}, postReset=${postResetIso ?? "n/a"}`);
+          emitNotification?.({
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            level: "warn",
+            target: prefix,
+            targetModel: resolved.model,
+            account: input.account,
+            status: "unconfirmed",
+            timerConfirmed: false,
+            message: `Prewarm dispatched for ${prefix}${acctSuffix}, but remote timer start could not be confirmed yet.`,
+          });
+        }
+      } catch (err) {
+        appendBrokerLog(stateRoot, `[PREWARM] Post-prewarm verification error for ${prefix}${acctSuffix}: ${errorMessage(err)}`);
+        emitNotification?.({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          target: prefix,
+          targetModel: resolved.model,
+          account: input.account,
+          status: "unconfirmed",
+          timerConfirmed: false,
+          message: `Prewarm dispatched for ${prefix}${acctSuffix}, but remote timer start could not be confirmed yet.`,
+        });
+      }
+    };
+
+    const verifyTimer = setTimeout(() => {
+      if (serverClosedRef?.closed) return;
+      void verifyPostPrewarm(1);
+    }, verifyDelayMs);
+    verifyTimer.unref?.();
+  } else {
+    emitNotification?.({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      level: "error",
+      target: prefix,
+      targetModel: resolved.model,
+      account: input.account,
+      status: "failed",
+      message: result.error ?? "Prewarm process did not start.",
+      durationMs: dispatched.durationMs,
+    });
+  }
+
   const final = rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result });
   if (dispatched.spawned && !manual && mode === "once") {
     const nextModes = { ...settings.settings.prewarmModes, [prefix]: "click" as const };
@@ -763,6 +1302,18 @@ function writePrewarmState(filePath: string, state: PersistedPrewarmArbitration)
   fs.renameSync(temporary, filePath);
 }
 
+export function appendBrokerLog(stateRoot: string | undefined, message: string): void {
+  const root = stateRoot || process.env.INTEGRATED_POWER_STATE_ROOT || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), ".local", "share"), "IntegratedPower", "state");
+  const logPath = path.join(root, "broker.log");
+  const timestamp = new Date().toISOString();
+  const line = `[${timestamp}] ${message}\n`;
+  try {
+    fs.mkdirSync(root, { recursive: true });
+    fs.appendFileSync(logPath, line, "utf8");
+  } catch {}
+  console.log(message);
+}
+
 function rememberPrewarmResult(
   state: PersistedPrewarmArbitration,
   statePath: string,
@@ -775,54 +1326,303 @@ function rememberPrewarmResult(
   return outcome;
 }
 
-async function spawnPrewarm(target: "antigravity" | "argon" | "opus" | "codex", model: string): Promise<{ spawned: boolean; error?: string }> {
+const PREWARM_ENGLISH_PROMPT = "say hi";
+
+async function switchAgyAccountIfNeeded(
+  targetAccount: string,
+  stateRoot?: string,
+  force = false,
+): Promise<void> {
+  if (targetAccount.includes("project-")) {
+    return;
+  }
+  const userHome = process.env.USERPROFILE || os.homedir();
+  const stateFile = path.join(userHome, ".gemini", "current_agy_account.txt");
+  if (!force) {
+    try {
+      if (fs.existsSync(stateFile)) {
+        const current = fs.readFileSync(stateFile, "utf8").trim();
+        if (current === targetAccount) {
+          return;
+        }
+      }
+    } catch {}
+  }
+  const switchScript = [
+    path.join(userHome, ".gemini", "bin", "switch-agy-account.ps1"),
+    path.join(userHome, ".gemini", "antigravity", "bin", "switch-agy-account.ps1"),
+    path.join(userHome, ".gemini", "antigravity-ide", "bin", "switch-agy-account.ps1"),
+    path.join(__dirname, "scripts", "switch-agy-account.ps1"),
+    path.join(__dirname, "..", "scripts", "switch-agy-account.ps1"),
+    path.join(__dirname, "..", "..", "scripts", "switch-agy-account.ps1"),
+  ].find((p) => fs.existsSync(p));
+  if (!switchScript) {
+    appendBrokerLog(stateRoot, `[PREWARM] switch-agy-account.ps1 not found in candidate paths.`);
+    return;
+  }
+  appendBrokerLog(stateRoot, `[PREWARM] Switching agy credential target to ${targetAccount}`);
+  await new Promise<void>((resolve) => {
+    const ps = cp.spawn("powershell.exe", [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+      "-ExecutionPolicy", "Bypass", "-File", switchScript, "-Email", targetAccount,
+    ], {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    ps.once("close", () => {
+      try {
+        fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+        fs.writeFileSync(stateFile, `${targetAccount}\n`, "utf8");
+      } catch {}
+      resolve();
+    });
+    ps.once("error", () => resolve());
+  });
+}
+
+function getBaselineAgyAccount(): string {
+  const userHome = process.env.USERPROFILE || os.homedir();
+  const stateFile = path.join(userHome, ".gemini", "current_agy_account.txt");
+  try {
+    if (fs.existsSync(stateFile)) {
+      const current = fs.readFileSync(stateFile, "utf8").trim();
+      if (current && current.includes("@") && current !== "yip1004@gmail.com") {
+        return current;
+      }
+    }
+  } catch {}
+  return "egg.r0000@gmail.com";
+}
+
+function killProcessTreeWindows(pid: number | undefined): void {
+  if (!pid) return;
+  try {
+    if (process.platform === "win32") {
+      cp.execFile("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, () => {});
+    } else {
+      process.kill(pid, "SIGKILL");
+    }
+  } catch {}
+}
+
+async function spawnPrewarm(
+  target: "antigravity" | "argon" | "opus" | "codex",
+  model: string,
+  stateRoot?: string,
+  account?: string,
+): Promise<{ spawned: boolean; cancelledEarly?: boolean; durationMs?: number; error?: string }> {
+  const prewarmCwd = path.join(stateRoot || os.tmpdir(), "prewarm-cwd");
+  try { fs.mkdirSync(prewarmCwd, { recursive: true }); } catch {}
+  const startedAt = Date.now();
   return new Promise((resolve) => {
     let finished = false;
-    const finish = (result: { spawned: boolean; error?: string }) => { if (finished) return; finished = true; resolve(result); };
+    let baselineAccount = "egg.r0000@gmail.com";
+    let needsContextSwitch = false;
+
+    const restoreBaseline = async () => {
+      if (!needsContextSwitch) return;
+      try {
+        appendBrokerLog(stateRoot, `[PREWARM] [ScopedContextLock] Restoring baseline agy credential target to ${baselineAccount}`);
+        await switchAgyAccountIfNeeded(baselineAccount, stateRoot, true);
+        const userHome = process.env.USERPROFILE || os.homedir();
+        const stateFile = path.join(userHome, ".gemini", "current_agy_account.txt");
+        try {
+          fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+          fs.writeFileSync(stateFile, `${baselineAccount}\n`, "utf8");
+        } catch {}
+        appendBrokerLog(stateRoot, `[PREWARM] [ScopedContextLock] Baseline agy credential successfully restored to ${baselineAccount}`);
+      } catch (restoreErr) {
+        appendBrokerLog(stateRoot, `[PREWARM] [ScopedContextLock] Failed to restore baseline agy credential to ${baselineAccount}: ${restoreErr}`);
+      }
+    };
+
+    const finish = async (result: { spawned: boolean; cancelledEarly?: boolean; durationMs?: number; error?: string }) => {
+      if (finished) return;
+      finished = true;
+      try {
+        await restoreBaseline();
+      } finally {
+        resolve({ ...result, durationMs: Date.now() - startedAt });
+      }
+    };
     try {
       if (target === "codex") {
         const codexCli = findCodexCliSync();
-        if (!codexCli) return finish({ spawned: false, error: "Codex CLI is unavailable." });
+        if (!codexCli) {
+          appendBrokerLog(stateRoot, `[PREWARM] Codex CLI is unavailable.`);
+          return void finish({ spawned: false, error: "Codex CLI is unavailable." });
+        }
         const lowest = getLowestCodexModel();
-        const proc = cp.spawn(codexCli, ["exec", "-m", lowest.model, "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--disable", "skills", "-c", `model="${lowest.model}"`, "-c", `model_reasoning_effort="${lowest.reasoningEffort}"`, "1"], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true, shell: codexCli === "codex" || codexCli.endsWith(".cmd") });
+        appendBrokerLog(stateRoot, `[PREWARM] Spawning Codex CLI: "${codexCli}" exec -m "${lowest.model}" prompt="${PREWARM_ENGLISH_PROMPT}" for target=codex`);
+        const proc = cp.spawn(codexCli, ["exec", "-m", lowest.model, "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--disable", "skills", "-c", `model="${lowest.model}"`, "-c", `model_reasoning_effort="${lowest.reasoningEffort}"`, PREWARM_ENGLISH_PROMPT], {
+          cwd: prewarmCwd,
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          shell: codexCli === "codex" || codexCli.endsWith(".cmd"),
+        });
+        const chunks: Buffer[] = [];
+        let cancelled = false;
+        const cancelAfterFirstDelta = (text: string) => {
+          if (cancelled) return;
+          if (text.trim().length > 0) {
+            cancelled = true;
+            appendBrokerLog(stateRoot, `[PREWARM] Codex response stream started (+${Date.now() - startedAt}ms) -> cancelling immediately to minimize tokens.`);
+            killProcessTreeWindows(proc.pid);
+            void finish({ spawned: true, cancelledEarly: true });
+          }
+        };
+        proc.stdout?.on("data", (chunk) => {
+          chunks.push(chunk);
+          cancelAfterFirstDelta(chunk.toString("utf8"));
+        });
+        proc.stderr?.on("data", (chunk) => chunks.push(chunk));
         const spawnTimer = setTimeout(() => {
-          if (proc.pid) finish({ spawned: true });
-        }, 300);
+          if (proc.pid && !cancelled) {
+            appendBrokerLog(stateRoot, `[PREWARM] Codex CLI started (PID: ${proc.pid})`);
+            void finish({ spawned: true });
+          }
+        }, 500);
         const timer = setTimeout(() => {
-          try { if (!proc.killed) proc.kill(); } catch {}
-          finish({ spawned: true });
-        }, 4000);
-        proc.once("error", (error) => { clearTimeout(spawnTimer); clearTimeout(timer); finish({ spawned: false, error: error.message }); });
+          if (!cancelled) {
+            killProcessTreeWindows(proc.pid);
+            appendBrokerLog(stateRoot, `[PREWARM] Codex CLI timed out after 8s (force killed).`);
+            void finish({ spawned: true, cancelledEarly: true });
+          }
+        }, 8000);
+        proc.once("error", (error) => {
+          clearTimeout(spawnTimer);
+          clearTimeout(timer);
+          appendBrokerLog(stateRoot, `[PREWARM] Codex CLI process error: ${error.message}`);
+          void finish({ spawned: false, error: error.message });
+        });
         proc.once("close", (code) => {
           clearTimeout(spawnTimer);
           clearTimeout(timer);
-          finish(code === 0 || code === null ? { spawned: true } : { spawned: false, error: `Codex exited with code ${code}` });
+          const output = Buffer.concat(chunks).toString("utf8").trim();
+          if (cancelled || code === 0 || code === null) {
+            appendBrokerLog(stateRoot, `[PREWARM] Codex CLI completed (exit=${code}, cancelledEarly=${cancelled}, +${Date.now() - startedAt}ms). Output: ${output.slice(0, 120)}`);
+            void finish({ spawned: true, cancelledEarly: cancelled });
+          } else {
+            appendBrokerLog(stateRoot, `[PREWARM] Codex CLI exited with code ${code}. Output: ${output.slice(0, 300)}`);
+            void finish({ spawned: false, error: `Codex exited with code ${code}` });
+          }
         });
       } else {
-        const agyBin = findExecutableOnPath(process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"])
-          || (process.platform === "win32" && process.env.LOCALAPPDATA && fs.existsSync(path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe")) ? path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe") : undefined)
-          || (process.platform === "win32" && process.env.USERPROFILE && fs.existsSync(path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe")) ? path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe") : undefined);
-        if (!agyBin) return finish({ spawned: false, error: "Antigravity CLI was not found on PATH." });
-        const proc = cp.spawn(agyBin, ["-p", "1", "--model", model, "--effort", "low", "--disable-slash-commands", "--print-timeout", "25s"], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true, shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(agyBin), env: { ...process.env, AGY_ADC_AUTH: "0" } });
-        const spawnTimer = setTimeout(() => {
-          if (proc.pid) finish({ spawned: true });
-        }, 300);
-        const timer = setTimeout(() => {
-          try { if (!proc.killed) proc.kill(); } catch {}
-          finish({ spawned: true });
-        }, 30000);
-        proc.once("error", (error) => { clearTimeout(spawnTimer); clearTimeout(timer); finish({ spawned: false, error: error.message }); });
-        proc.once("close", (code) => {
-          clearTimeout(spawnTimer);
-          clearTimeout(timer);
-          if (code === 0 || code === null) {
-            const refreshTimer = setTimeout(() => { void scanLiveTokenStatus({ force: true }).catch(() => {}); }, 1500);
-            refreshTimer.unref?.();
+        baselineAccount = getBaselineAgyAccount();
+        const targetAccount = account || "yip1004@gmail.com";
+        needsContextSwitch = !targetAccount.includes("project-") && targetAccount !== baselineAccount;
+
+        (async () => {
+          try {
+            if (needsContextSwitch) {
+              appendBrokerLog(stateRoot, `[PREWARM] [ScopedContextLock] Acquiring temporary credential context for ${targetAccount} (baseline: ${baselineAccount})`);
+              await switchAgyAccountIfNeeded(targetAccount, stateRoot);
+            }
+            const agyBin = (process.platform === "win32" && process.env.LOCALAPPDATA && fs.existsSync(path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe")) ? path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe") : undefined)
+              || (process.platform === "win32" && process.env.USERPROFILE && fs.existsSync(path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe")) ? path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe") : undefined)
+              || findExecutableOnPath(process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"]);
+            if (!agyBin) {
+              appendBrokerLog(stateRoot, `[PREWARM] Antigravity CLI (agy.exe) was not found on PATH or standard directories.`);
+              return void finish({ spawned: false, error: "Antigravity CLI (agy.exe) was not found." });
+            }
+            const agyArgs = [
+              "-p", PREWARM_ENGLISH_PROMPT,
+              "--model", model,
+              "--effort", "low",
+              "--disable-slash-commands",
+              "--output-format", "stream-json",
+              "--print-timeout", "25s",
+            ];
+            const envVars: NodeJS.ProcessEnv = { ...process.env, AGY_ACCOUNT: targetAccount };
+            if (targetAccount.includes("project-")) {
+              envVars.AGY_ADC_AUTH = "true";
+              envVars.GOOGLE_GENAI_USE_VERTEXAI = "true";
+              envVars.GOOGLE_CLOUD_PROJECT = targetAccount;
+            } else {
+              delete envVars.GOOGLE_GENAI_USE_VERTEXAI;
+              delete envVars.GOOGLE_CLOUD_PROJECT;
+              envVars.AGY_ADC_AUTH = "0";
+            }
+            appendBrokerLog(stateRoot, `[PREWARM] Spawning agy direct (no-console): "${agyBin}" -p "${PREWARM_ENGLISH_PROMPT}" --model "${model}" --effort low --output-format stream-json (target=${target}, account=${targetAccount})`);
+            const proc = cp.spawn(agyBin, agyArgs, {
+              cwd: prewarmCwd,
+              stdio: ["ignore", "pipe", "pipe"],
+              windowsHide: true,
+              shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(agyBin),
+              env: envVars,
+            });
+            let lineBuf = "";
+            const chunks: Buffer[] = [];
+            let cancelled = false;
+            let turnAccepted = false;
+            const tryInstantCancel = (reason: string) => {
+              if (cancelled) return;
+              cancelled = true;
+              turnAccepted = true;
+              appendBrokerLog(stateRoot, `[PREWARM] agy response started (${reason}, +${Date.now() - startedAt}ms) -> cancelling immediately to save quota.`);
+              killProcessTreeWindows(proc.pid);
+              void finish({ spawned: true, cancelledEarly: true });
+            };
+            proc.stdout?.on("data", (chunk) => {
+              chunks.push(chunk);
+              lineBuf += chunk.toString("utf8");
+              const lines = lineBuf.split(/\r?\n/);
+              lineBuf = lines.pop() ?? "";
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                try {
+                  const ev = JSON.parse(trimmed);
+                  const stepType = ev.step_update?.step_type;
+                  if (ev.event === "step_update" && (stepType === "agent_response" || stepType === "tool_call" || stepType === "action")) {
+                    tryInstantCancel(`agent step '${stepType}' received`);
+                    break;
+                  }
+                  if (ev.event === "result" && ev.result?.status === "SUCCESS") {
+                    if (!cancelled) {
+                      clearTimeout(maxWaitTimer);
+                      appendBrokerLog(stateRoot, `[PREWARM] agy CLI completed result SUCCESS (+${Date.now() - startedAt}ms) without needing kill`);
+                      void finish({ spawned: true, cancelledEarly: false });
+                    }
+                    break;
+                  }
+                } catch {}
+              }
+            });
+            proc.stderr?.on("data", (chunk) => chunks.push(chunk));
+            const maxWaitTimer = setTimeout(() => {
+              if (!cancelled) {
+                killProcessTreeWindows(proc.pid);
+                appendBrokerLog(stateRoot, `[PREWARM] agy CLI timed out after 25s for ${target}.`);
+                void finish({ spawned: turnAccepted, error: turnAccepted ? undefined : "agy CLI timed out before model response started." });
+              }
+            }, 25000);
+            proc.once("error", (error) => {
+              clearTimeout(maxWaitTimer);
+              appendBrokerLog(stateRoot, `[PREWARM] agy CLI process error for ${target}: ${error.message}`);
+              void finish({ spawned: false, error: error.message });
+            });
+            proc.once("close", (code) => {
+              clearTimeout(maxWaitTimer);
+              const output = Buffer.concat(chunks).toString("utf8").trim();
+              if (cancelled || code === 0) {
+                appendBrokerLog(stateRoot, `[PREWARM] agy CLI finished (exit=${code}, cancelledEarly=${cancelled}, +${Date.now() - startedAt}ms) for ${target} (${targetAccount}).`);
+                void finish({ spawned: true, cancelledEarly: cancelled });
+              } else {
+                appendBrokerLog(stateRoot, `[PREWARM] agy CLI FAILED (exit=${code}) for ${target} (${targetAccount}). Output: ${output.slice(0, 300)}`);
+                void finish({ spawned: false, error: `AGY exited with code ${code}: ${output.slice(0, 150)}` });
+              }
+            });
+          } catch (err) {
+            void finish({ spawned: false, error: err instanceof Error ? err.message : String(err) });
           }
-          finish(code === 0 || code === null ? { spawned: true } : { spawned: false, error: `AGY exited with code ${code}` });
-        });
+        })();
       }
-    } catch (error) { finish({ spawned: false, error: error instanceof Error ? error.message : String(error) }); }
+    } catch (error) {
+      const errStr = error instanceof Error ? error.message : String(error);
+      appendBrokerLog(stateRoot, `[PREWARM] Unexpected spawn error: ${errStr}`);
+      void finish({ spawned: false, error: errStr });
+    }
   });
 }
 

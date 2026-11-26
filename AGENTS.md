@@ -6,6 +6,12 @@
 - 예: UI 수정 시 `docs/reference/compact-ui-overflow-prevention.ko.md` 필수 확인
 - 기존 문서에 명시된 워크플로, 파이프라인, 설계 규칙을 임의로 생략하거나 다른 방식으로 우회하지 않는다.
 
+## Version Bump Policy (버전 관리 원칙)
+코드 변경 후 릴리스/패키징 버전을 올릴 때는 Semantic Versioning(`MAJOR.MINOR.PATCH`) 기준을 반드시 준수한다.
+- **기능 개선 / 신규 기능 추가**: **중간 숫자(Minor)**를 1 올리고 마지막 숫자(Patch)를 `0`으로 초기화한다. (예: `0.12.0` → `0.13.0`)
+- **버그 수정 / 핫픽스**: **마지막 숫자(Patch)**를 1 올린다. (예: `0.13.0` → `0.13.1`)
+- 버전을 변경할 때는 반드시 `docs/distribution/release-and-deployment-guide.ko.md`의 버전 동기화 프로토콜에 따라 모노레포 루트 `package.json`, `packages/vscode-extension/package.json`, `packages/control-center` (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `index.html`, `src/main.js`), `CHANGELOG.md`, `README.md` 전체를 누락 없이 동기화한다.
+
 This repository follows `docs/reference/multi-ai-broker.ko.md`,
 `docs/reference/compact-ui-overflow-prevention.ko.md`, and the
 Integrated Power plan. Before changing code, the implementation agent must

@@ -27,6 +27,8 @@ const QUOTA_NOTIFICATION_KEYS = [
   "claudeWeekly",
 ] as const;
 
+const PREWARM_PING_PROMPT = "say hi";
+
 /**
  * DashboardController
  *
@@ -70,6 +72,8 @@ export class DashboardController implements vscode.Disposable {
     codex: "click",
   };
   private lastAutoPrewarmByTarget: Record<string, number> = {};
+  private readonly seenPrewarmNotificationIds = new Set<string>();
+  private lastManualPrewarmAt = 0;
   private quotaSettingsRevision?: number;
   private sharedQuotaSettingsReady = false;
   private sharedQuotaSettingsCapabilityKnown = false;
@@ -1030,6 +1034,7 @@ export class DashboardController implements vscode.Disposable {
         void this.checkFullTokenNotification(previousTokenStatus, safeTokenStatus);
         this.persistTokenStatusCache(safeTokenStatus);
       }
+      void this.pollPrewarmNotifications();
 
       this.state = {
         ...this.state,
@@ -1127,6 +1132,60 @@ export class DashboardController implements vscode.Disposable {
           `⚡ [Integrated Power] ${item.target.message}`,
         );
       }
+    }
+  }
+
+  private async pollPrewarmNotifications(): Promise<void> {
+    if (this.disposed || this.brokerStartupFailed) {
+      return;
+    }
+    const client = this.brokerController?.getClient();
+    if (!client) {
+      return;
+    }
+
+    try {
+      const health = this.brokerController?.getAttachedHealth?.() ?? await client.health().catch(() => undefined);
+      if (!health?.capabilities?.includes("quota.prewarm.notifications")) {
+        return;
+      }
+
+      const result = await (client as any).claimPrewarmNotifications("vsix");
+      if (!result || !result.ok || !Array.isArray(result.notifications) || result.notifications.length === 0) {
+        return;
+      }
+
+      for (const item of result.notifications) {
+        if (!item || !item.id) {
+          continue;
+        }
+        if (this.seenPrewarmNotificationIds.has(item.id)) {
+          continue;
+        }
+
+        this.seenPrewarmNotificationIds.add(item.id);
+        if (this.seenPrewarmNotificationIds.size > 200) {
+          const oldest = this.seenPrewarmNotificationIds.values().next().value;
+          if (oldest) {
+            this.seenPrewarmNotificationIds.delete(oldest);
+          }
+        }
+
+        const msg = item.message || `[${item.status}] ${item.target || "prewarm"}`;
+        this.output.appendLine(`[prewarm] [${item.status}] ${msg}`);
+
+        if (item.status === "verified") {
+          void vscode.window.showInformationMessage(`✅ [Integrated Power] ${msg}`);
+        } else if (item.status === "unconfirmed") {
+          void vscode.window.showWarningMessage(`⚠️ [Integrated Power] ${msg}`);
+        } else if (item.status === "failed" && item.level === "error") {
+          if (Date.now() - this.lastManualPrewarmAt > 3000) {
+            void vscode.window.showWarningMessage(`⚠️ [Integrated Power] ${msg}`);
+          }
+        }
+      }
+    } catch (error) {
+      this.output.appendLine(`[prewarm notifications] Polling failed: ${this.errorMessage(error)}`);
     }
   }
 
@@ -1606,7 +1665,7 @@ export class DashboardController implements vscode.Disposable {
       const fiveHPct = typeof (status as any)[`${prefix}Percentage`] === "number"
         ? Number((status as any)[`${prefix}Percentage`])
         : 0;
-      if (fiveHPct < 99.95) {
+      if (fiveHPct < 99.995) {
         return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
       }
 
@@ -1641,7 +1700,7 @@ export class DashboardController implements vscode.Disposable {
       if (weeklyPct === undefined) {
         return { eligible: false, reason: `${label} weekly quota data unavailable.`, prefix, targetModel, cliModel, label };
       }
-      if (weeklyPct < 99.95) {
+      if (weeklyPct < 99.995) {
         return { eligible: false, reason: `${label} quota is not 100% full (${weeklyPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
       }
 
@@ -1684,21 +1743,29 @@ export class DashboardController implements vscode.Disposable {
   }
 
   private async handlePrewarm(modelKey?: string, windowType: "5h" | "weekly" = "5h", isManual = false): Promise<void> {
+    if (isManual) {
+      this.lastManualPrewarmAt = Date.now();
+    }
     if (this.sharedQuotaSettingsReady && this.brokerController) {
       if (!isManual) return; // Once/Always scheduling belongs to the shared broker.
       try {
+        const targetAccount = this.state.tokenStatus?.activeAccountEmail || "yip1004@gmail.com";
         const result = await this.brokerController.getClient().prewarm({
           model: modelKey,
           window: windowType,
           manual: true,
+          account: targetAccount,
           idempotencyKey: randomUUID(),
           expectedSettingsRevision: this.quotaSettingsRevision,
         });
-        this.output.appendLine(`[prewarm] Shared broker result: ${result.status}; window: ${windowType}; timer confirmed: ${result.timerConfirmed}.`);
+        const accountStr = result.account ?? targetAccount;
+        const cancelledStr = result.cancelledEarly ? ", early-cancel" : "";
+        const durationStr = typeof result.durationMs === "number" ? `${result.durationMs}ms` : "0ms";
+        this.output.appendLine(`[prewarm] Shared broker result: ${result.status}; window: ${windowType}; account: ${accountStr}; duration: ${durationStr}${cancelledStr}; timer confirmed: ${result.timerConfirmed}.`);
         if (result.status === "failed" || result.status === "skipped") {
-          void vscode.window.showWarningMessage(`[Integrated Power] Pre-warm ${result.status}: ${result.error || "The broker did not dispatch the request."}`);
+          void vscode.window.showWarningMessage(`[Integrated Power] Pre-warm ${result.status} (${accountStr}): ${result.error || "The broker did not dispatch the request."}`);
         } else if (result.status === "dispatched" && !result.timerConfirmed) {
-          void vscode.window.showInformationMessage(`[Integrated Power] ${windowType === "weekly" ? "Weekly (168h)" : "5-hour"} pre-warm dispatch accepted; the remote timer is not confirmed yet.`);
+          void vscode.window.showInformationMessage(`[Integrated Power] ${windowType === "weekly" ? "Weekly (168h)" : "5-hour"} pre-warm dispatch accepted (${accountStr}, ${durationStr}${cancelledStr}); the remote timer is not confirmed yet.`);
         }
       } catch (error) {
         this.output.appendLine(`[prewarm] Shared broker request failed: ${this.errorMessage(error)}`);
@@ -1720,14 +1787,19 @@ export class DashboardController implements vscode.Disposable {
     const now = Date.now();
     this.lastAutoPrewarmByTarget[`${check.prefix}-${windowType}`] = now;
 
+    const stateRoot = resolveIntegratedPowerStateRoot();
+    const prewarmCwd = path.join(stateRoot, "prewarm-cwd");
+    try { fs.mkdirSync(prewarmCwd, { recursive: true }); } catch {}
+
     if (check.prefix === "codex") {
-      // Codex / ChatGPT: Use codex CLI with lowest verified model (e.g. gpt-6-luna), ephemeral flag, and instant abort
+      // Codex / ChatGPT: Use codex CLI with lowest verified model, ephemeral flag, prewarm-cwd, and instant abort
       const codexCli = this.tokenManager.findCodexCli();
       if (codexCli) {
         const codexLowest = getLowestCodexModel();
         try {
           await new Promise<void>((resolve) => {
             let settled = false;
+            let cancelled = false;
             const finish = () => {
               if (!settled) {
                 settled = true;
@@ -1740,7 +1812,7 @@ export class DashboardController implements vscode.Disposable {
                 child.kill();
               } catch {}
               finish();
-            }, 3000);
+            }, 8000);
 
             const child = cp.spawn(
               codexCli,
@@ -1757,14 +1829,24 @@ export class DashboardController implements vscode.Disposable {
                 `model="${codexLowest.model}"`,
                 "-c",
                 `model_reasoning_effort="${codexLowest.reasoningEffort}"`,
-                "1",
+                PREWARM_PING_PROMPT,
               ],
               {
-                stdio: ["ignore", "ignore", "ignore"],
+                cwd: prewarmCwd,
+                stdio: ["ignore", "pipe", "pipe"],
                 windowsHide: true,
                 shell: codexCli === "codex" || codexCli.endsWith(".cmd"),
               }
             );
+
+            child.stdout?.on("data", (chunk: Buffer) => {
+              if (!cancelled && chunk.toString("utf8").trim().length > 0) {
+                cancelled = true;
+                try { child.kill(); } catch {}
+                clearTimeout(timer);
+                finish();
+              }
+            });
 
             child.on("error", (err) => {
               clearTimeout(timer);
@@ -1784,7 +1866,8 @@ export class DashboardController implements vscode.Disposable {
         }
       }
     } else {
-      // Gemini, Argon & Claude: Use agy CLI with verified lowest-tier model and print-timeout
+      // Gemini, Argon & Claude: Use agy CLI with verified lowest-tier model, prewarm-cwd, AGY_ACCOUNT, --output-format stream-json, and instant cancel
+      const targetAccount = this.state.tokenStatus?.activeAccountEmail || "yip1004@gmail.com";
       const agyCandidates = [
         process.env.AGY_PATH,
         path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe"),
@@ -1795,6 +1878,7 @@ export class DashboardController implements vscode.Disposable {
         try {
           await new Promise<void>((resolve) => {
             let settled = false;
+            let cancelled = false;
             const finish = () => {
               if (!settled) {
                 settled = true;
@@ -1802,31 +1886,64 @@ export class DashboardController implements vscode.Disposable {
               }
             };
 
-            // Watchdog timer: 30 seconds to ensure agy finishes 1 turn cleanly without freezing UI
             const watchdog = setTimeout(() => {
               try {
                 proc.kill();
               } catch {}
               finish();
-            }, 30000);
+            }, 25000);
 
+            const envVars: NodeJS.ProcessEnv = { ...process.env, AGY_ACCOUNT: targetAccount, AGY_ADC_AUTH: "0" };
             const proc = cp.spawn(
               agyBin,
               [
                 "-p",
-                "1",
+                PREWARM_PING_PROMPT,
                 "--model",
                 check.cliModel,
+                "--effort",
+                "low",
                 "--disable-slash-commands",
+                "--output-format",
+                "stream-json",
                 "--print-timeout",
                 "25s",
               ],
               {
+                cwd: prewarmCwd,
                 windowsHide: true,
-                stdio: ["ignore", "ignore", "ignore"],
-                env: { ...process.env, AGY_ADC_AUTH: "0" },
+                stdio: ["ignore", "pipe", "pipe"],
+                env: envVars,
               }
             );
+
+            let lineBuf = "";
+            proc.stdout?.on("data", (chunk: Buffer) => {
+              lineBuf += chunk.toString("utf8");
+              const lines = lineBuf.split(/\r?\n/);
+              lineBuf = lines.pop() ?? "";
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                try {
+                  const ev = JSON.parse(trimmed);
+                  if (ev.event === "step_update" && ev.step_update?.step_type === "agent_response") {
+                    cancelled = true;
+                    try { proc.kill(); } catch {}
+                    clearTimeout(watchdog);
+                    finish();
+                    return;
+                  }
+                  if (ev.event === "result" && ev.result?.status === "SUCCESS") {
+                    cancelled = true;
+                    try { proc.kill(); } catch {}
+                    clearTimeout(watchdog);
+                    finish();
+                    return;
+                  }
+                } catch {}
+              }
+            });
 
             proc.on("error", (err) => {
               clearTimeout(watchdog);
@@ -1840,7 +1957,7 @@ export class DashboardController implements vscode.Disposable {
             });
           });
 
-          this.output.appendLine(`[prewarm] agy minimal ping dispatched successfully (target: ${check.label}, model: ${check.cliModel})`);
+          this.output.appendLine(`[prewarm] agy minimal ping dispatched successfully (target: ${check.label}, model: ${check.cliModel}, account: ${targetAccount})`);
         } catch (err) {
           this.output.appendLine(`[prewarm] agy execution error: ${this.errorMessage(err)}`);
         }

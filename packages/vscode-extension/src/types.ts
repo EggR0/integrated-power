@@ -1,0 +1,302 @@
+import type { ApprovalRequest, ProviderId, TaskEnvelope } from "./broker/protocol";
+
+export type JsonObject = Record<string, unknown>;
+
+export interface BrokerDashboardState {
+  workspaceName: string;
+  tasks: TaskEnvelope[];
+  approvals: ApprovalRequest[];
+  platforms?: {
+    localOnline: boolean;
+    codexOnline: boolean;
+    antigravityOnline: boolean;
+    localReason?: string;
+    codexReason?: string;
+    antigravityReason?: string;
+  };
+  error?: string;
+  loading?: boolean;
+  busy?: boolean;
+}
+
+export interface ArtifactRef {
+  id: string;
+  label: string;
+  runId: string;
+  runTitle: string;
+  type?: string;
+  workspacePath?: string;
+  canOpen: boolean;
+}
+
+export type QuotaSource = "official-api" | "provider-api" | "cli-json" | "cli-text" | "local-service" | "third-party-tool" | "transcript-estimate" | "manual";
+export type UsageConfidence = "exact" | "reported-quota" | "estimated" | "unknown";
+
+export interface QuotaPoolStatus {
+  id: string; // antigravity.default, codex.5h, codex.weekly, local.ollama
+  provider: "antigravity" | "codex" | "openai" | "gemini" | "anthropic" | "local";
+  surface?: "ide" | "cli" | "api" | "orchestrator";
+  modelGroup?: string;
+  remainingPercentage?: number;
+  remainingTokens?: number;
+  maxTokens?: number;
+  resetTime?: string;
+  measuredAt?: string;
+  windowDurationMins?: number;
+  source: QuotaSource;
+  confidence: UsageConfidence;
+}
+
+export interface RunUsage {
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  reasoningOutputTokens?: number;
+  totalTokens?: number;
+  quotaPoolId?: string;
+  quotaDeltaPercentage?: number;
+  source: QuotaSource;
+  confidence: UsageConfidence;
+}
+
+export interface GpuStatus {
+  id: number;
+  name: string;
+  vramUsedMb: number;
+  vramTotalMb: number;
+  utilizationPercentage: number;
+  powerDrawW: number;
+  powerLimitW: number;
+}
+
+export interface LocalComputeStatus {
+  endpointHealth: string;
+  programName?: string;
+  loadedModels: string[];
+  gpus?: GpuStatus[];
+}
+
+export interface LocalLlmMetric {
+  timestamp: string;
+  taskTitle: string;
+  model: string;
+  taskScale: string;
+  actualElapsedSeconds: number;
+  totalTokens: number;
+  taskType?: string;
+  provider?: string;
+  success?: boolean;
+  outputChars?: number;
+  tokensPerSecond?: number;
+  selectedBy?: string;
+  selectionReason?: string;
+  errorMessage?: string;
+}
+
+export interface UsageWindowSummary {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  billableTokens?: number;
+  eventCount: number;
+}
+
+export interface ClaudeDirectUsageStatus {
+  status: "measured" | "partial" | "no-data";
+  today: UsageWindowSummary;
+  sevenDays: UsageWindowSummary;
+  sources: string[];
+  lastUsedAt?: string;
+  lastMeasuredAt?: string;
+  errors?: string[];
+}
+
+export interface RunSummary {
+  id: string;
+  title: string;
+  status: string;
+  active: boolean;
+  startedAt?: string;
+  updatedAt?: string;
+  model?: string;
+  branch?: string;
+  cwd?: string;
+  summary?: string;
+  agentSurface?: string;
+  surface?: string;
+  provider?: string;
+  quotaPoolId?: string;
+  usage?: RunUsage;
+  pid?: number;
+  exitCode?: number;
+  kind?: string;
+  contextFiles: string[];
+  artifacts: ArtifactRef[];
+}
+
+export type ParsedRun = RunSummary;
+export type ParsedArtifact = ArtifactRef;
+
+export interface AccountQuotaInfo {
+  email: string;
+  isIdeActive?: boolean;
+  isAgy2Active?: boolean;
+  tierName?: string;
+  source?: string;
+  antigravityPercentage?: number;
+  antigravityResetTime?: string;
+  antigravityWeeklyPercentage?: number;
+  antigravityWeeklyResetTime?: string;
+  argonPercentage?: number;
+  argonResetTime?: string;
+  argonWeeklyPercentage?: number;
+  argonWeeklyResetTime?: string;
+  opusPercentage?: number;
+  opusResetTime?: string;
+  opusWeeklyPercentage?: number;
+  opusWeeklyResetTime?: string;
+  quotaPools?: QuotaPoolStatus[];
+  fetchedAt?: number;
+  error?: string;
+}
+
+export interface GcpProjectQuotaInfo {
+  projectId: string;
+  label?: string;
+  vertexAiStatus?: "enabled" | "disabled" | "unknown";
+  models?: string[];
+  authType?: "adc" | "service_account" | "api_key";
+  accountEmail?: string;
+  rpmQuota?: string;
+  tpmQuota?: string;
+  dailyRequestsLeft?: number;
+  fetchedAt?: number;
+  error?: string;
+}
+
+export interface TokenStatus {
+  quotaPools?: QuotaPoolStatus[];
+  localComputeStatus?: LocalComputeStatus;
+  claudeDirectUsage?: ClaudeDirectUsageStatus;
+
+  // Multi-account and GCP project fields
+  activeAccountEmail?: string;
+  activeIdeAccountEmail?: string;
+  activeAgy2AccountEmail?: string;
+  accounts?: Record<string, AccountQuotaInfo>;
+  gcpProjects?: Record<string, GcpProjectQuotaInfo>;
+
+  // Legacy fields
+  antigravityTokensLeft?: number;
+  antigravityMax?: number;
+  antigravityPercentage?: number;
+  antigravityEstimatedAbsolute?: number;
+  antigravityResetTime?: string;
+  antigravityWeeklyTokensLeft?: number;
+  antigravityWeeklyMax?: number;
+  antigravityWeeklyPercentage?: number;
+  antigravityWeeklyResetTime?: string;
+  argonTokensLeft?: number;
+  argonMax?: number;
+  argonPercentage?: number;
+  argonEstimatedAbsolute?: number;
+  argonResetTime?: string;
+  argonWeeklyTokensLeft?: number;
+  argonWeeklyMax?: number;
+  argonWeeklyPercentage?: number;
+  argonWeeklyEstimatedAbsolute?: number;
+  argonWeeklyResetTime?: string;
+  opusTokensLeft?: number;
+  opusMax?: number;
+  opusPercentage?: number;
+  opusEstimatedAbsolute?: number;
+  opusResetTime?: string;
+  opusWeeklyTokensLeft?: number;
+  opusWeeklyMax?: number;
+  opusWeeklyPercentage?: number;
+  opusWeeklyEstimatedAbsolute?: number;
+  opusWeeklyResetTime?: string;
+  codexTokensLeft?: number;
+  codexMax?: number;
+  codexPercentage?: number;
+  codexEstimatedAbsolute?: number;
+  codexResetTime?: string;
+  codexWeeklyTokensLeft?: number;
+  codexWeeklyMax?: number;
+  codexWeeklyPercentage?: number;
+  codexWeeklyEstimatedAbsolute?: number;
+  codexWeeklyResetTime?: string;
+  codexStatus: string;
+  llmStatus: string;
+  
+  recommendedTaskWeight: "unknown" | "normal" | "degraded" | "restricted";
+  activity: string[];
+  errors?: string[];
+  localLlmMetrics?: LocalLlmMetric[];
+}
+
+export interface DashboardState {
+  workspaceName: string;
+  runsFile?: string;
+  runs: RunSummary[];
+  activeRuns: RunSummary[];
+  artifacts: ArtifactRef[];
+  queueContent?: string;
+  metricsCsv?: string;
+  parseErrors: string[];
+  systemErrors: string[];
+  isLoading: boolean;
+  isTokenLoading: boolean;
+  isStale: boolean;
+  updatedAt: string;
+  refreshStartedAt?: string;
+  tokenStatus?: TokenStatus;
+  localLlmMetrics?: LocalLlmMetric[];
+  viewConfig?: {
+    showAntigravity: boolean;
+    showCodex: boolean;
+    showClaude?: boolean;
+    showLocalLlm: boolean;
+    showQueue?: boolean;
+    showMetrics?: boolean;
+    showErrors?: boolean;
+  };
+  prewarmMode?: PrewarmMode;
+  prewarmModes?: Record<string, PrewarmMode>;
+}
+
+export type PrewarmMode = "click" | "always" | "once";
+
+export type WebviewToExtensionMessage =
+  | { type: "ready"; state?: Partial<DashboardState> }
+  | { type: "refresh" }
+  | { type: "configureViews" }
+  | { type: "openConfigurationCenter" }
+  | { type: "openRunsFile" }
+  | { type: "openArtifact"; artifactId: string }
+  | { type: "openTerminals" }
+  | { type: "showBroker" }
+  | { type: "showOllama" }
+  | { type: "showWebUI" }
+  | { type: "prewarm"; model?: string; window?: "5h" | "weekly" }
+  | { type: "setPrewarmMode"; mode: PrewarmMode; target?: string }
+  | { type: "refreshBroker" }
+  | { type: "createBrokerTask"; title: string; goal: string; originProvider: ProviderId; tags?: string[]; recommendedProvider?: ProviderId; rawInput?: string }
+  | { type: "requestClassifyMenu"; taskId: string; expectedRevision: number }
+  | { type: "classifyBrokerTask"; taskId: string; expectedRevision: number; provider?: ProviderId; mode?: "offline" | "agent" }
+  | { type: "delegateBrokerTask"; taskId: string; expectedRevision: number; provider: ProviderId; prompt: string }
+  | { type: "cancelBrokerTask"; taskId: string; expectedRevision: number }
+  | { type: "resolveBrokerApproval"; approvalId: string; expectedRevision: number; action: "approve" | "reject" };
+
+export type ExtensionToWebviewMessage =
+  | { type: "state"; state: DashboardState }
+  | { type: "loading"; isLoading?: boolean; isTokenLoading?: boolean }
+  | { type: "brokerState"; state: BrokerDashboardState }
+  | { type: "brokerLoading"; busy?: boolean }
+  | { type: "error"; message: string };
+
+export type DashboardInboundMessage = WebviewToExtensionMessage;
+export type DashboardOutboundMessage = ExtensionToWebviewMessage;
+

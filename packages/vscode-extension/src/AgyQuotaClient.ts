@@ -1,0 +1,870 @@
+import * as fs from 'fs';
+import * as https from 'https';
+import * as path from 'path';
+import * as cp from 'child_process';
+import { createHash } from 'crypto';
+import type { AccountQuotaInfo, GcpProjectQuotaInfo, QuotaPoolStatus } from './types';
+import { resolveIntegratedPowerStateRoot } from './storagePath';
+
+const API_BASE = 'https://daily-cloudcode-pa.googleapis.com/v1internal';
+const OAUTH_URL = 'https://oauth2.googleapis.com/token';
+const CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
+
+export interface QuotaToken {
+  access_token: string;
+  expiry: number;
+}
+
+export interface QuotaResult {
+  quota: any;
+  token: QuotaToken;
+  account: string;
+  fetchedAt: number;
+  multiAccountResult?: MultiAccountQuotaResult;
+}
+
+export interface MultiAccountQuotaResult {
+  primaryAccount: string;
+  activeIdeAccount?: string;
+  activeAgy2Account?: string;
+  accounts: Record<string, AccountQuotaInfo>;
+  gcpProjects: Record<string, GcpProjectQuotaInfo>;
+  quota: any;
+  token: QuotaToken;
+  account: string;
+  fetchedAt: number;
+}
+
+export class AgyNotInstalledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgyNotInstalledError';
+  }
+}
+
+export class AgyNotAuthenticatedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgyNotAuthenticatedError';
+  }
+}
+
+export class AgyQuotaClient {
+  private static inMemoryCachedTokens: Map<string, { token: QuotaToken; credentialKey: string }> = new Map();
+  private static cachedCredentials?: {
+    data: {
+      accounts: Record<string, any>;
+      gcpProjects: Record<string, any>;
+      activeIdeAccount?: string;
+      activeAgy2Account?: string;
+      appStorageAgy2Account?: string;
+      defaultTargetEmail?: string;
+    };
+    cachedAt: number;
+    authFingerprint?: string;
+  };
+  private static appStorageEmailCache?: { filePath: string; mtimeMs: number; email: string };
+  private static prewarmBaselineOverride?: string;
+  private static clientSecretsCache = new Map<string, { mtimeMs: number; secrets: string[] }>();
+  private static agyVersionCache = new Map<string, { mtimeMs: number; version: string }>();
+  private extensionPath: string;
+
+  constructor(extensionPath: string = __dirname) {
+    this.extensionPath = extensionPath;
+  }
+
+  public static clearCredentialCache(): void {
+    AgyQuotaClient.cachedCredentials = undefined;
+  }
+
+  public static setPrewarmBaselineOverride(email?: string): void {
+    AgyQuotaClient.prewarmBaselineOverride = email ? email.trim() : undefined;
+  }
+
+  private static getStateVscdbPath(): string | undefined {
+    const appData = process.env.APPDATA;
+    if (!appData) return undefined;
+    const candidates = [
+      path.join(appData, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb'),
+      path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb'),
+      path.join(appData, 'Code', 'User', 'globalStorage', 'state.vscdb'),
+    ];
+    return candidates.find((c) => fs.existsSync(c));
+  }
+
+  private static getPathMtimeMs(filePath: string | undefined): number | undefined {
+    if (!filePath || !fs.existsSync(filePath)) return undefined;
+    try {
+      return fs.statSync(filePath).mtimeMs;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private static readAppStorageLoginEmail(): { mtimeMs?: number; email: string } {
+    const appData = process.env.APPDATA;
+    if (!appData) return { email: '' };
+    const appStoragePath = path.join(appData, 'Antigravity', 'app_storage.json');
+    const mtimeMs = AgyQuotaClient.getPathMtimeMs(appStoragePath);
+    if (mtimeMs === undefined) {
+      return { email: '' };
+    }
+    if (
+      AgyQuotaClient.appStorageEmailCache &&
+      AgyQuotaClient.appStorageEmailCache.filePath === appStoragePath &&
+      AgyQuotaClient.appStorageEmailCache.mtimeMs === mtimeMs
+    ) {
+      return { mtimeMs, email: AgyQuotaClient.appStorageEmailCache.email };
+    }
+    let email = '';
+    try {
+      const parsed = JSON.parse(fs.readFileSync(appStoragePath, 'utf8'));
+      const raw = parsed?.['agy.onboarding.lastLoginUsername'] ?? parsed?.['jetski.onboarding.lastLoginUsername'];
+      if (typeof raw === 'string') {
+        const match = raw.match(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/);
+        if (match) email = match[0];
+      }
+    } catch {
+      email = '';
+    }
+    AgyQuotaClient.appStorageEmailCache = { filePath: appStoragePath, mtimeMs, email };
+    return { mtimeMs, email };
+  }
+
+  public static getAuthStateFingerprint(): string {
+    const appData = process.env.APPDATA;
+    const ideVscdbMtime = AgyQuotaClient.getPathMtimeMs(AgyQuotaClient.getStateVscdbPath());
+    const scopeMtime = appData
+      ? AgyQuotaClient.getPathMtimeMs(path.join(appData, 'Antigravity', 'credential-user-scope'))
+      : undefined;
+    const appStorage = AgyQuotaClient.readAppStorageLoginEmail();
+    return `${ideVscdbMtime ?? ''}|${scopeMtime ?? ''}|${appStorage.mtimeMs ?? ''}|${appStorage.email}|${AgyQuotaClient.prewarmBaselineOverride ?? ''}`;
+  }
+
+  public getAuthStateFingerprint(): string {
+    return AgyQuotaClient.getAuthStateFingerprint();
+  }
+
+  private getFileMtimeMs(filePath: string): number {
+    try {
+      return fs.statSync(filePath).mtimeMs;
+    } catch {
+      return 0;
+    }
+  }
+
+  private execFileAsync(file: string, args: string[], options: cp.ExecFileOptions = {}): Promise<string> {
+    return new Promise((resolve, reject) => {
+      cp.execFile(file, args, { windowsHide: true, ...options }, (error, stdout, stderr) => {
+        if (error) {
+          (error as any).stderr = stderr;
+          reject(error);
+          return;
+        }
+        resolve(stdout.toString());
+      });
+    });
+  }
+
+  private findAgy(): string {
+    const candidates = [
+      process.env.AGY_PATH,
+      process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'agy', 'bin', 'agy.exe'),
+      process.env.USERPROFILE && path.join(process.env.USERPROFILE, '.gemini', 'bin', 'agy.exe'),
+    ].filter(Boolean) as string[];
+    const found = candidates.find((candidate) => fs.existsSync(candidate));
+    if (!found) {
+      throw new AgyNotInstalledError('agy.exe was not found. Install Antigravity CLI first.');
+    }
+    return found;
+  }
+
+  public async readCredential(target: string = 'gemini:antigravity'): Promise<any> {
+    const script = path.join(this.extensionPath, 'scripts', 'read-agy-credential.ps1');
+    const stdout = await this.execFileAsync(
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', script, '-Target', target],
+      { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 15000 }
+    );
+    const credential = JSON.parse(stdout.replace(/^\uFEFF/, ''));
+    if (!credential.token) {
+      throw new AgyNotAuthenticatedError('The agy credential does not contain a token. Sign in to agy again.');
+    }
+    return credential;
+  }
+
+  public async readAllCredentials(): Promise<{
+    accounts: Record<string, any>;
+    gcpProjects: Record<string, any>;
+    activeIdeAccount?: string;
+    activeAgy2Account?: string;
+    appStorageAgy2Account?: string;
+    defaultTargetEmail?: string;
+  }> {
+    const now = Date.now();
+    const currentFingerprint = AgyQuotaClient.getAuthStateFingerprint();
+    if (
+      AgyQuotaClient.cachedCredentials &&
+      now - AgyQuotaClient.cachedCredentials.cachedAt < 10_000 &&
+      AgyQuotaClient.cachedCredentials.authFingerprint === currentFingerprint
+    ) {
+      return AgyQuotaClient.cachedCredentials.data;
+    }
+
+    const script = path.join(this.extensionPath, 'scripts', 'read-all-credentials.ps1');
+    let creds: {
+      accounts: Record<string, any>;
+      gcpProjects: Record<string, any>;
+      activeIdeAccount?: string;
+      activeAgy2Account?: string;
+      appStorageAgy2Account?: string;
+      defaultTargetEmail?: string;
+    };
+    try {
+      const stdout = await this.execFileAsync(
+        'powershell.exe',
+        ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', script],
+        { windowsHide: true, maxBuffer: 2 * 1024 * 1024, timeout: 15000 }
+      );
+      creds = JSON.parse(stdout.replace(/^\uFEFF/, ''));
+    } catch {
+      try {
+        const cred = await this.readCredential('gemini:antigravity');
+        const email = cred.id_token_email || 'default';
+        creds = {
+          accounts: { [email]: cred },
+          gcpProjects: {},
+          activeAgy2Account: email,
+          defaultTargetEmail: email,
+        };
+      } catch {
+        creds = { accounts: {}, gcpProjects: {} };
+      }
+    }
+
+    AgyQuotaClient.cachedCredentials = {
+      data: creds,
+      cachedAt: now,
+      authFingerprint: currentFingerprint,
+    };
+    return creds;
+  }
+
+  private expiryEpoch(value: any): number {
+    if (typeof value === 'number') {
+      return value > 1e12 ? Math.floor(value / 1000) : Math.floor(value);
+    }
+    if (typeof value === 'string') {
+      if (/^\d+$/.test(value)) return this.expiryEpoch(Number(value));
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) {
+        const epochSec = Math.floor(parsed / 1000);
+        const nowSec = Math.floor(Date.now() / 1000);
+        // OAuth access tokens expire in 1 hour (3600s).
+        // If an expiry claim is more than 3660s into the future, it is timezone-corrupted or invalid.
+        if (epochSec > nowSec + 3660) {
+          return 0; // Force refresh
+        }
+        return epochSec;
+      }
+    }
+    return 0;
+  }
+
+  public async writeCredential(
+    target: string,
+    email: string,
+    accessToken: string,
+    refreshToken: string,
+    expiresIn: number = 3599
+  ): Promise<void> {
+    AgyQuotaClient.clearCredentialCache();
+    const script = path.join(this.extensionPath, 'scripts', 'write-agy-credential.ps1');
+    try {
+      await this.execFileAsync(
+        'powershell.exe',
+        [
+          '-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
+          '-File', script,
+          '-Target', target,
+          '-Email', email,
+          '-AccessToken', accessToken,
+          '-RefreshToken', refreshToken,
+          '-ExpiresIn', String(expiresIn),
+        ],
+        { windowsHide: true, maxBuffer: 1024 * 1024, timeout: 15000 }
+      );
+    } catch {
+      // Non-fatal if credential writing fails
+    }
+  }
+
+  public tokenIsValid(token: any): boolean {
+    return Boolean(token && token.access_token && this.expiryEpoch(token.expiry) > Math.floor(Date.now() / 1000) + 60);
+  }
+
+  private requestJson(url: string, options: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<any> {
+    const { method = 'GET', headers = {}, body } = options;
+    return new Promise((resolve, reject) => {
+      const request = https.request(url, { method, headers }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          let data;
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch {
+            reject(new Error(`The server returned invalid JSON (HTTP ${response.statusCode}).`));
+            return;
+          }
+          if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300) {
+            const message = data.error && data.error.message ? data.error.message : text;
+            reject(new Error(`Request failed (HTTP ${response.statusCode}): ${message}`));
+            return;
+          }
+          resolve(data);
+        });
+      });
+      request.setTimeout(15000, () => request.destroy(new Error('The quota request timed out.')));
+      request.on('error', reject);
+      if (body) request.write(body);
+      request.end();
+    });
+  }
+
+  private clientSecretsFromBinary(agyPath: string): string[] {
+    const mtimeMs = this.getFileMtimeMs(agyPath);
+    const cached = AgyQuotaClient.clientSecretsCache.get(agyPath);
+    if (cached && cached.mtimeMs === mtimeMs) {
+      return cached.secrets;
+    }
+    const binary = fs.readFileSync(agyPath).toString('latin1');
+    const secrets = [...new Set(binary.match(/GOCSPX-[A-Za-z0-9_-]{28}/g) || [])];
+    AgyQuotaClient.clientSecretsCache.set(agyPath, { mtimeMs, secrets });
+    return secrets;
+  }
+
+  private async refreshAccessToken(refreshToken: string, agyPath: string): Promise<QuotaToken> {
+    if (!refreshToken) throw new AgyNotAuthenticatedError('The agy credential has no refresh token. Sign in to agy again.');
+    const secrets = this.clientSecretsFromBinary(agyPath);
+    if (!secrets.length) throw new AgyNotAuthenticatedError('OAuth client information could not be read from the installed agy binary. Sign in to agy again.');
+
+    let lastError: any;
+    for (const secret of secrets) {
+      const form = new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: secret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }).toString();
+      try {
+        const response = await this.requestJson(OAUTH_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': String(Buffer.byteLength(form)),
+          },
+          body: form,
+        });
+        if (response.access_token) {
+          return {
+            access_token: response.access_token,
+            expiry: Math.floor(Date.now() / 1000) + (response.expires_in || 3600),
+          };
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw new AgyNotAuthenticatedError(lastError ? (lastError instanceof Error ? lastError.message : String(lastError.message || lastError)) : 'Failed to refresh the agy OAuth token. Sign in to agy again.');
+  }
+
+  private static readonly lowestSeen = new Map<string, { pct: number; reset: string; at: number }>();
+  private static readonly STALE_SNAPSHOT_WINDOW_MS = 15 * 60 * 1000;
+
+  /**
+   * retrieveUserQuotaSummary is served by replicas that are sometimes behind: a
+   * stale answer reports an OLDER (higher) remaining % for the same window
+   * (verified live: same token, same resetTime, 86.4834/weekly 0 in 7 of 8 calls,
+   * 86.4987/weekly 0.3098 in 1). Usage inside a window only grows, so within the
+   * same resetTime a higher value than one seen moments ago is a stale snapshot,
+   * not a refill. It is rejected for a bounded time; a genuinely higher value that
+   * persists past the window is accepted, and a changed resetTime always wins.
+   */
+  public static rejectStaleSnapshot(key: string, pct: number | undefined, reset: string | undefined): number | undefined {
+    if (pct === undefined || !reset) return pct;
+    const now = Date.now();
+    const prev = AgyQuotaClient.lowestSeen.get(key);
+    if (prev && prev.reset === reset && pct > prev.pct && now - prev.at < AgyQuotaClient.STALE_SNAPSHOT_WINDOW_MS) {
+      return prev.pct;
+    }
+    AgyQuotaClient.lowestSeen.set(key, { pct, reset, at: now });
+    return pct;
+  }
+
+  private static readonly lastSeen = new Map<string, { pct: number; reset: string; at: number }>();
+
+  /**
+   * Diagnostic only: never alters a value. When the same account/window/resetTime
+   * reports a different remaining % than the previous call, append the raw
+   * (credential-free) response groups to quota_discrepancy.log so the real cause
+   * of the flip can be read from evidence instead of guessed.
+   */
+  public static recordDiscrepancy(key: string, pct: number | undefined, reset: string | undefined, rawGroups: unknown): void {
+    if (pct === undefined || !reset) return;
+    const prev = AgyQuotaClient.lastSeen.get(key);
+    AgyQuotaClient.lastSeen.set(key, { pct, reset, at: Date.now() });
+    if (!prev || prev.reset !== reset || prev.pct === pct) return;
+    try {
+      const dir = resolveIntegratedPowerStateRoot();
+      fs.mkdirSync(dir, { recursive: true });
+      const slot = key.slice(key.indexOf('|') + 1);
+      fs.appendFileSync(
+        path.join(dir, 'quota_discrepancy.log'),
+        JSON.stringify({ at: new Date().toISOString(), slot, previous: prev.pct, current: pct, ageMs: Date.now() - prev.at, reset, groups: rawGroups }) + '\n',
+        'utf8',
+      );
+    } catch {
+      // diagnostics must never affect quota collection
+    }
+  }
+
+  private async agyVersion(agyPath: string): Promise<string> {
+    const mtimeMs = this.getFileMtimeMs(agyPath);
+    const cached = AgyQuotaClient.agyVersionCache.get(agyPath);
+    if (cached && cached.mtimeMs === mtimeMs) {
+      return cached.version;
+    }
+    let version = '1.4.12';
+    try {
+      const output = await this.execFileAsync(agyPath, ['--version'], {
+        windowsHide: true,
+        timeout: 10000,
+      });
+      const match = output.match(/\d+\.\d+\.\d+/);
+      if (match) version = match[0];
+    } catch {
+      version = '1.4.12';
+    }
+    AgyQuotaClient.agyVersionCache.set(agyPath, { mtimeMs, version });
+    return version;
+  }
+
+  public async fetchMultiAccountQuota(): Promise<MultiAccountQuotaResult> {
+    const agyPath = this.findAgy();
+    const version = await this.agyVersion(agyPath);
+    const userAgent = `antigravity/cli/${version} windows/amd64`;
+
+    const allCreds = await this.readAllCredentials();
+    const accountsMap: Record<string, AccountQuotaInfo> = {};
+    const gcpProjectsMap: Record<string, GcpProjectQuotaInfo> = {};
+
+    const activeIdeAccount = allCreds.activeIdeAccount || undefined;
+    const activeAgy2Account =
+      AgyQuotaClient.prewarmBaselineOverride ||
+      allCreds.activeAgy2Account ||
+      allCreds.defaultTargetEmail ||
+      allCreds.appStorageAgy2Account ||
+      undefined;
+
+    let primaryAccount = activeIdeAccount || activeAgy2Account || '';
+    let primaryQuotaResult: { quota: any; token: QuotaToken; account: string } | undefined;
+    const successfulQuotaResults = new Map<string, { quota: any; token: QuotaToken; account: string }>();
+
+    // 1. Process each discovered user account in parallel
+    await Promise.all(
+      Object.entries(allCreds.accounts).map(async ([email, credData]) => {
+        const isIdeActive = Boolean(activeIdeAccount && email.toLowerCase() === activeIdeAccount.toLowerCase());
+        const isAgy2Active = Boolean(activeAgy2Account && email.toLowerCase() === activeAgy2Account.toLowerCase());
+        const isDefaultTargetOwner = Boolean(allCreds.defaultTargetEmail && email.toLowerCase() === allCreds.defaultTargetEmail.toLowerCase());
+        let token: QuotaToken | undefined;
+
+        try {
+          if (credData.token) {
+            const rawToken = credData.token;
+            const identity = String(rawToken.refresh_token || rawToken.access_token || '');
+            const credKey = createHash('sha256').update(identity).digest('hex');
+            const cached = AgyQuotaClient.inMemoryCachedTokens.get(email);
+            if (cached && cached.credentialKey === credKey && this.tokenIsValid(cached.token)) {
+              token = cached.token;
+            }
+            if (!token) {
+              if (this.tokenIsValid(rawToken)) {
+                token = {
+                  access_token: rawToken.access_token,
+                  expiry: this.expiryEpoch(rawToken.expiry),
+                };
+              } else if (rawToken.refresh_token) {
+                token = await this.refreshAccessToken(rawToken.refresh_token, agyPath);
+                await this.writeCredential(`gemini:antigravity:${email}`, email, token.access_token, rawToken.refresh_token);
+                if (isDefaultTargetOwner) {
+                  await this.writeCredential('gemini:antigravity', email, token.access_token, rawToken.refresh_token);
+                }
+              }
+            }
+            if (token) {
+              AgyQuotaClient.inMemoryCachedTokens.set(email, { token, credentialKey: credKey });
+            }
+          }
+
+          if (!token) {
+            accountsMap[email] = {
+              email,
+              isIdeActive,
+              isAgy2Active,
+              source: credData.source,
+              error: (isIdeActive || isAgy2Active) ? '활성 계정의 토큰이 덮어써졌습니다. 재로그인 필요.' : '유효한 인증 토큰 없음',
+              fetchedAt: Date.now(),
+            };
+            return;
+          }
+
+          let currentToken = token;
+          const headers = {
+            Authorization: `Bearer ${currentToken.access_token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'User-Agent': userAgent,
+          };
+
+          const rawTokenRef = credData.token;
+          const executeWith401Recovery = async (url: string, bodyJson: any) => {
+            try {
+              return await this.requestJson(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(bodyJson),
+              });
+            } catch (err: any) {
+              const msg = String(err?.message || err);
+              if ((msg.includes('HTTP 401') || msg.includes('authentication credentials')) && rawTokenRef?.refresh_token) {
+                AgyQuotaClient.clearCredentialCache();
+                AgyQuotaClient.inMemoryCachedTokens.delete(email);
+                const fresh = await this.refreshAccessToken(rawTokenRef.refresh_token, agyPath);
+                currentToken = fresh;
+                token = fresh;
+                headers.Authorization = `Bearer ${fresh.access_token}`;
+                const newKey = createHash('sha256').update(String(rawTokenRef.refresh_token)).digest('hex');
+                AgyQuotaClient.inMemoryCachedTokens.set(email, { token: fresh, credentialKey: newKey });
+
+                await this.writeCredential(`gemini:antigravity:${email}`, email, fresh.access_token, rawTokenRef.refresh_token);
+                if (isDefaultTargetOwner) {
+                  await this.writeCredential('gemini:antigravity', email, fresh.access_token, rawTokenRef.refresh_token);
+                }
+
+                return await this.requestJson(url, {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify(bodyJson),
+                });
+              }
+              throw err;
+            }
+          };
+
+          const accountRes = await executeWith401Recovery(`${API_BASE}:loadCodeAssist`, {
+            metadata: { ideType: 'ANTIGRAVITY' },
+          });
+
+          if (!accountRes.cloudaicompanionProject) {
+            throw new Error('Cloud Code did not return a quota project.');
+          }
+
+          const quotaRes = await executeWith401Recovery(`${API_BASE}:retrieveUserQuotaSummary`, {
+            project: accountRes.cloudaicompanionProject,
+          });
+
+          if (!Array.isArray(quotaRes.groups)) {
+            throw new Error('The quota response does not contain groups.');
+          }
+
+          // Extract bucket percentages
+          let gemini5h: number | undefined;
+          let gemini5hReset: string | undefined;
+          let geminiWeekly: number | undefined;
+          let geminiWeeklyReset: string | undefined;
+          let argon5h: number | undefined;
+          let argon5hReset: string | undefined;
+          let argonWeekly: number | undefined;
+          let argonWeeklyReset: string | undefined;
+          let opus5h: number | undefined;
+          let opus5hReset: string | undefined;
+          let opusWeekly: number | undefined;
+          let opusWeeklyReset: string | undefined;
+
+          for (const group of quotaRes.groups) {
+            const label = group.displayName || '';
+            const isArgon = label.includes('Argon');
+            const isGemini = !isArgon && label.includes('Gemini');
+            const isClaude = label.includes('Claude') || label.includes('Opus');
+
+            for (const bucket of group.buckets || []) {
+              const pct = typeof bucket.remainingFraction === 'number' && bucket.remainingFraction >= 0 && bucket.remainingFraction <= 1
+                ? bucket.remainingFraction * 100
+                : undefined;
+              if (bucket.window === '5h') {
+                if (isArgon && argon5h === undefined) { argon5h = pct; argon5hReset = bucket.resetTime; }
+                else if (isGemini && gemini5h === undefined) { gemini5h = pct; gemini5hReset = bucket.resetTime; }
+                else if (isClaude && opus5h === undefined) { opus5h = pct; opus5hReset = bucket.resetTime; }
+              } else if (bucket.window === 'weekly' || bucket.window === '7d') {
+                if (isArgon && argonWeekly === undefined) { argonWeekly = pct; argonWeeklyReset = bucket.resetTime; }
+                else if (isGemini && geminiWeekly === undefined) { geminiWeekly = pct; geminiWeeklyReset = bucket.resetTime; }
+                else if (isClaude && opusWeekly === undefined) { opusWeekly = pct; opusWeeklyReset = bucket.resetTime; }
+              }
+            }
+          }
+
+          const tierName = accountRes.paidTier?.name || accountRes.currentTier?.name || 'Standard';
+          // Diagnostic only (values are never altered): see recordDiscrepancy().
+          const trace = (slot: string, pct: number | undefined, reset: string | undefined): void =>
+            AgyQuotaClient.recordDiscrepancy(`${email}|${slot}`, pct, reset, quotaRes.groups);
+          trace('gemini5h', gemini5h, gemini5hReset);
+          trace('geminiWeekly', geminiWeekly, geminiWeeklyReset);
+          trace('argon5h', argon5h, argon5hReset);
+          trace('argonWeekly', argonWeekly, argonWeeklyReset);
+          trace('opus5h', opus5h, opus5hReset);
+          trace('opusWeekly', opusWeekly, opusWeeklyReset);
+
+          // Stale replica answers are dropped (see rejectStaleSnapshot) after being logged.
+          const fresh = (slot: string, pct: number | undefined, reset: string | undefined): number | undefined =>
+            AgyQuotaClient.rejectStaleSnapshot(`${email}|${slot}`, pct, reset);
+          gemini5h = fresh('gemini5h', gemini5h, gemini5hReset);
+          geminiWeekly = fresh('geminiWeekly', geminiWeekly, geminiWeeklyReset);
+          argon5h = fresh('argon5h', argon5h, argon5hReset);
+          argonWeekly = fresh('argonWeekly', argonWeekly, argonWeeklyReset);
+          opus5h = fresh('opus5h', opus5h, opus5hReset);
+          opusWeekly = fresh('opusWeekly', opusWeekly, opusWeeklyReset);
+          accountsMap[email] = {
+            email,
+            isIdeActive,
+            isAgy2Active,
+            tierName,
+            source: credData.source,
+            antigravityPercentage: gemini5h,
+            antigravityResetTime: gemini5hReset,
+            antigravityWeeklyPercentage: geminiWeekly,
+            antigravityWeeklyResetTime: geminiWeeklyReset,
+            argonPercentage: argon5h,
+            argonResetTime: argon5hReset,
+            argonWeeklyPercentage: argonWeekly,
+            argonWeeklyResetTime: argonWeeklyReset,
+            opusPercentage: opus5h,
+            opusResetTime: opus5hReset,
+            opusWeeklyPercentage: opusWeekly,
+            opusWeeklyResetTime: opusWeeklyReset,
+            fetchedAt: Date.now(),
+          };
+
+          // Collected per account; the primary is chosen deterministically after
+          // Promise.all (completion order must never decide which account is shown).
+          successfulQuotaResults.set(email, { quota: quotaRes, token, account: tierName });
+        } catch (err: any) {
+          accountsMap[email] = {
+            email,
+            isIdeActive,
+            isAgy2Active,
+            source: credData.source,
+            error: err instanceof Error ? err.message : String(err),
+            fetchedAt: Date.now(),
+          };
+        }
+      })
+    );
+
+    // 2. Process agya / GCP Projects (Vertex AI via ADC) in parallel
+    await Promise.all(
+      Object.entries(allCreds.gcpProjects).map(async ([projId, projData]) => {
+        try {
+          if (projData.client_id && projData.refresh_token) {
+            const form = new URLSearchParams({
+              client_id: projData.client_id,
+              client_secret: projData.client_secret || '',
+              refresh_token: projData.refresh_token,
+              grant_type: 'refresh_token',
+            }).toString();
+
+            const tokenRes = await this.requestJson(OAUTH_URL, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Length': String(Buffer.byteLength(form)),
+              },
+              body: form,
+            });
+
+            if (tokenRes.access_token) {
+              const su = await this.requestJson(`https://serviceusage.googleapis.com/v1/projects/${projId}/services/aiplatform.googleapis.com`, {
+                headers: {
+                  Authorization: `Bearer ${tokenRes.access_token}`,
+                  'x-goog-user-project': projId,
+                  Accept: 'application/json',
+                },
+              });
+
+              gcpProjectsMap[projId] = {
+                projectId: projId,
+                label: projData.label || 'agya (Vertex AI)',
+                vertexAiStatus: su.state === 'ENABLED' ? 'enabled' : 'disabled',
+                models: projData.models || ['gemini-4-argon-high', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+                authType: 'adc',
+                accountEmail: activeIdeAccount || activeAgy2Account || 'ADC User',
+                fetchedAt: Date.now(),
+              };
+            }
+          }
+        } catch (err: any) {
+          gcpProjectsMap[projId] = {
+            projectId: projId,
+            label: projData.label || 'agya (Vertex AI)',
+            vertexAiStatus: 'unknown',
+            error: err instanceof Error ? err.message : String(err),
+            fetchedAt: Date.now(),
+          };
+        }
+      })
+    );
+
+    // Deterministic primary: IDE-active account, then Antigravity 2.0 active account,
+    // then default target owner, then the stable credential order.
+    const primaryOrder = [
+      activeIdeAccount,
+      activeAgy2Account,
+      allCreds.defaultTargetEmail,
+      ...Object.keys(allCreds.accounts),
+    ];
+    for (const candidate of primaryOrder) {
+      if (!candidate) continue;
+      const matchedKey = Array.from(successfulQuotaResults.keys()).find((k) => k.toLowerCase() === candidate.toLowerCase());
+      const found = matchedKey ? successfulQuotaResults.get(matchedKey) : undefined;
+      if (matchedKey && found) {
+        primaryAccount = matchedKey;
+        primaryQuotaResult = found;
+        break;
+      }
+    }
+
+    // Stable key order: accountsMap was filled in completion order.
+    for (const email of Object.keys(accountsMap).sort()) {
+      const info = accountsMap[email];
+      delete accountsMap[email];
+      accountsMap[email] = info;
+    }
+
+    if (!primaryQuotaResult) {
+      // If none succeeded, try single fallback
+      const fallbackResult = await this.fetchSingleFallback();
+      return {
+        primaryAccount: primaryAccount || 'default',
+        activeIdeAccount,
+        activeAgy2Account,
+        accounts: accountsMap,
+        gcpProjects: gcpProjectsMap,
+        quota: fallbackResult.quota,
+        token: fallbackResult.token,
+        account: fallbackResult.account,
+        fetchedAt: fallbackResult.fetchedAt,
+      };
+    }
+
+    return {
+      primaryAccount,
+      activeIdeAccount,
+      activeAgy2Account,
+      accounts: accountsMap,
+      gcpProjects: gcpProjectsMap,
+      quota: primaryQuotaResult.quota,
+      token: primaryQuotaResult.token,
+      account: primaryQuotaResult.account,
+      fetchedAt: Date.now(),
+    };
+  }
+
+  private async fetchSingleFallback(): Promise<QuotaResult> {
+    const agyPath = this.findAgy();
+    const credential = await this.readCredential('gemini:antigravity');
+    const identityMaterial = String(credential.token.refresh_token || credential.token.access_token || '');
+    if (!identityMaterial) throw new AgyNotAuthenticatedError('The agy credential has no account token. Sign in to agy again.');
+    let token: QuotaToken | undefined;
+    if (this.tokenIsValid(credential.token)) token = credential.token;
+    else {
+      token = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
+      if (credential.id_token_email) {
+        await this.writeCredential('gemini:antigravity', credential.id_token_email, token.access_token, credential.token.refresh_token);
+        await this.writeCredential(`gemini:antigravity:${credential.id_token_email}`, credential.id_token_email, token.access_token, credential.token.refresh_token);
+      }
+    }
+    if (!token) throw new AgyNotAuthenticatedError('The agy credential could not provide a valid account token. Sign in to agy again.');
+
+    const version = await this.agyVersion(agyPath);
+    const userAgent = `antigravity/cli/${version} windows/amd64`;
+    let headers = {
+      Authorization: `Bearer ${token.access_token}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': userAgent,
+    };
+
+    const executeFallbackRequest = async (url: string, bodyJson: any) => {
+      try {
+        return await this.requestJson(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(bodyJson),
+        });
+      } catch (err: any) {
+        const msg = String(err?.message || err);
+        if ((msg.includes('HTTP 401') || msg.includes('authentication credentials')) && credential.token?.refresh_token) {
+          AgyQuotaClient.clearCredentialCache();
+          const fresh = await this.refreshAccessToken(credential.token.refresh_token, agyPath);
+          token = fresh;
+          headers.Authorization = `Bearer ${fresh.access_token}`;
+          if (credential.id_token_email) {
+            await this.writeCredential('gemini:antigravity', credential.id_token_email, fresh.access_token, credential.token.refresh_token);
+            await this.writeCredential(`gemini:antigravity:${credential.id_token_email}`, credential.id_token_email, fresh.access_token, credential.token.refresh_token);
+          }
+          return await this.requestJson(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(bodyJson),
+          });
+        }
+        throw err;
+      }
+    };
+
+    const account = await executeFallbackRequest(`${API_BASE}:loadCodeAssist`, {
+      metadata: { ideType: 'ANTIGRAVITY' },
+    });
+    if (!account.cloudaicompanionProject) {
+      throw new Error('Cloud Code did not return a quota project.');
+    }
+
+    const quota = await executeFallbackRequest(`${API_BASE}:retrieveUserQuotaSummary`, {
+      project: account.cloudaicompanionProject,
+    });
+
+    return {
+      quota,
+      token,
+      account: account.paidTier?.name || account.currentTier?.name || '',
+      fetchedAt: Date.now(),
+    };
+  }
+
+  public async fetchQuota(cachedToken?: any): Promise<QuotaResult> {
+    void cachedToken;
+    try {
+      const multi = await this.fetchMultiAccountQuota();
+      return {
+        quota: multi.quota,
+        token: multi.token,
+        account: multi.account,
+        fetchedAt: multi.fetchedAt,
+        multiAccountResult: multi,
+      };
+    } catch {
+      return this.fetchSingleFallback();
+    }
+  }
+}

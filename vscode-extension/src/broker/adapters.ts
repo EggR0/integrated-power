@@ -203,7 +203,7 @@ export class AgyCliAdapter implements AgentAdapter {
 
   private findAgyExecutable(): string | undefined {
     const candidates = process.platform === "win32"
-      ? ["agy.cmd", "agy.exe", "agy.bat", "agy", "antigravity-ide.cmd", "antigravity-ide"]
+      ? ["agy.exe", "agy.cmd", "agy.bat", "agy", "antigravity-ide.cmd", "antigravity-ide"]
       : ["agy", "antigravity-ide"];
     let executable = findExecutableOnPath(candidates);
     if (!executable && process.platform === "win32" && process.env.LOCALAPPDATA) {

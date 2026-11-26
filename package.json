@@ -1,0 +1,17 @@
+{
+  "name": "integrated-power-monorepo",
+  "version": "0.14.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "build:extension": "npm --prefix packages/vscode-extension run vscode:prepublish",
+    "package:extension": "npm --prefix packages/vscode-extension run package",
+    "build:control-center": "npm --prefix packages/control-center run build",
+    "broker": "node packages/control-center/broker-server.js",
+    "dev:control-center": "npm --prefix packages/control-center run dev",
+    "test": "npm test --workspaces"
+  }
+}

@@ -288,7 +288,7 @@ async function invokePowerShellJson(file: string, args: string[], cwd?: string):
 }
 
 async function invokePowerShell(file: string, args: string[], cwd?: string, extraEnv?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", file, ...args], {
+  return execFileAsync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", file, ...args], {
     cwd: cwd && fs.existsSync(cwd) ? cwd : process.cwd(),
     windowsHide: true,
     timeout: 35 * 60 * 1000,

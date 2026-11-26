@@ -86,6 +86,7 @@ $results = @{
     accounts = @{}
     gcpProjects = @{}
     activeIdeAccount = ""
+    defaultTargetEmail = ""
 }
 
 # 1. Enumerate Windows Credential Manager
@@ -103,15 +104,24 @@ if ([AgyMultiCredCollector.NativeMethods]::CredEnumerate("gemini:antigravity*", 
                     $json = $data.Value | ConvertFrom-Json
                     $email = $json.id_token_email
                     if ($email) {
-                        $results.accounts[$email] = @{
-                            email = $email
-                            source = "credential-manager"
-                            target = $target
-                            token = $json.token
-                            auth_method = $json.auth_method
+                        if ($target -eq 'gemini:antigravity') {
+                            $results.defaultTargetEmail = [string]$email
+                        }
+                        # Prefer account-specific target (gemini:antigravity:<email>) over shared default target
+                        if (-not $results.accounts.ContainsKey($email) -or $target -ne 'gemini:antigravity') {
+                            $results.accounts[$email] = @{
+                                email = $email
+                                source = "credential-manager"
+                                target = $target
+                                token = $json.token
+                                auth_method = $json.auth_method
+                            }
                         }
                         if ($target -eq 'gemini:antigravity') {
-                            $null = Write-Cred "gemini:antigravity:$email" "antigravity" $data.Value
+                            $existingSpec = Read-Cred "gemini:antigravity:$email"
+                            if (-not $existingSpec -or -not $existingSpec.Value) {
+                                $null = Write-Cred "gemini:antigravity:$email" "antigravity" $data.Value
+                            }
                         }
                     }
                 } catch {}
@@ -123,18 +133,21 @@ if ([AgyMultiCredCollector.NativeMethods]::CredEnumerate("gemini:antigravity*", 
 }
 
 # 2. Check default target explicitly if not captured
-if ($results.accounts.Count -eq 0) {
+if (-not $results.defaultTargetEmail) {
     $def = Read-Cred 'gemini:antigravity'
     if ($def -and $def.Value) {
         try {
             $j = $def.Value | ConvertFrom-Json
             if ($j.id_token_email) {
-                $results.accounts[$j.id_token_email] = @{
-                    email = $j.id_token_email
-                    source = "credential-manager"
-                    target = "gemini:antigravity"
-                    token = $j.token
-                    auth_method = $j.auth_method
+                $results.defaultTargetEmail = [string]$j.id_token_email
+                if (-not $results.accounts.ContainsKey($j.id_token_email)) {
+                    $results.accounts[$j.id_token_email] = @{
+                        email = $j.id_token_email
+                        source = "credential-manager"
+                        target = "gemini:antigravity"
+                        token = $j.token
+                        auth_method = $j.auth_method
+                    }
                 }
             }
         } catch {}

@@ -15,8 +15,8 @@ export const ANTIGRAVITY_STOP_SELECTORS = Object.freeze({
   chatContainers: ['#conversation', '#chat', '#cascade'] as const,
 });
 
-/** Minimal ping prompt designed to start the 5-hour quota clock with negligible token consumption. */
-export const PREWARM_PING_PROMPT = "integrated power";
+/** Minimal English ping prompt designed to start the quota clock with negligible token consumption. */
+export const PREWARM_PING_PROMPT = "say hi";
 
 /**
  * Three selectable prewarm automation modes:
@@ -121,10 +121,10 @@ export interface PrewarmResult {
 /** Check if a given metric qualifies for pre-warming (5-hour or Weekly, independently). */
 export function canTriggerPrewarm(metric: TokenMetric): boolean {
   if (metric.label === "5Hours") {
-    return metric.percentage !== undefined && metric.percentage >= 99.95 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
+    return metric.percentage !== undefined && metric.percentage >= 99.9 && !metric.isWeeklyExhausted && Boolean(metric.canPrewarm);
   }
   if (metric.label === "Weekly") {
-    return metric.percentage !== undefined && metric.percentage >= 99.95 && Boolean(metric.canPrewarm);
+    return metric.percentage !== undefined && metric.percentage >= 99.9 && Boolean(metric.canPrewarm);
   }
   return false;
 }

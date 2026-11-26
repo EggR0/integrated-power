@@ -184,7 +184,7 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
     });
     assert.deepStrictEqual(JSON.parse(packagedEvidence), { schemaVersion: 2, runId: "cold-run", metricTask: "cold", taskId: JSON.parse(packagedEvidence).taskId, settingsInitialized: false });
   } finally {
-    fs.rmSync(isolatedPackage, { recursive: true, force: true });
+    fs.rmSync(isolatedPackage, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
   {
     const notificationRoot = fs.mkdtempSync(path.join(os.tmpdir(), "integrated-power-notifications-"));
@@ -668,11 +668,16 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
         })),
       };
     };
+    let dispatchedCalls = [];
     const httpServer = await startBrokerServer(broker, 0, {
       stateRoot: telemetryRoot,
       autoSchedule: false,
       tokenStatusReader: readFakeQuota,
-      prewarmDispatcher: async () => { dispatchCount++; return { spawned: allowDispatch }; },
+      prewarmDispatcher: async (target, model, root, account) => {
+        dispatchCount++;
+        dispatchedCalls.push({ target, model, account });
+        return { spawned: allowDispatch, cancelledEarly: true, durationMs: 42 };
+      },
     });
     try {
       const health = await fetch(`http://127.0.0.1:${httpServer.port}/health`).then((response) => response.json());
@@ -734,6 +739,52 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
       assert.strictEqual(partialSettings.settings.notifications.claudeWeekly, false, "partial save preserves an unrelated disabled notification");
       assert.strictEqual(partialSettings.settings.prewarmModes.opus, "once", "partial save preserves an armed prewarm mode");
       assert.strictEqual(partialSettings.settings.pollIntervalMs, 7000);
+
+      allowDispatch = true;
+      // 1. Manual active countdown refusal (diffMs < 5h - 15m)
+      fakeQuota.argonPercentage = 100;
+      fakeQuota.argonResetTime = new Date(Date.now() + 2 * 3600 * 1000).toISOString();
+      const activeCountdownRes = await fetch(`http://127.0.0.1:${httpServer.port}/v1/tokens/prewarm`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "argon", manual: true, idempotencyKey: "manual-active-countdown-refusal" }),
+      }).then((r) => r.json());
+      assert.strictEqual(activeCountdownRes.status, "skipped", "manual prewarm must be refused when 5h countdown is actively ticking");
+      assert.ok(activeCountdownRes.error.includes("already active"), "error message mentions active timer");
+
+      // 2. Dormant acceptance (diffMs >= 5h - 15m, top of window)
+      fakeQuota.argonResetTime = new Date(Date.now() + (5 * 3600 - 5 * 60) * 1000).toISOString();
+      const dormantRes = await fetch(`http://127.0.0.1:${httpServer.port}/v1/tokens/prewarm`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "argon", manual: true, idempotencyKey: "manual-dormant-acceptance" }),
+      }).then((r) => r.json());
+      assert.strictEqual(dormantRes.status, "dispatched", "dormant top-of-window quota must be accepted for prewarm");
+      assert.strictEqual(dormantRes.cancelledEarly, true);
+      assert.strictEqual(dormantRes.durationMs, 42);
+      delete fakeQuota.argonPercentage;
+      delete fakeQuota.argonResetTime;
+
+      // 3. Multi-account forwarding
+      fakeQuota.accounts = {
+        "alpha@test.com": { antigravityPercentage: 100, antigravityResetTime: new Date(Date.now() - 1000).toISOString(), fetchedAt: new Date().toISOString() },
+        "beta@test.com": { antigravityPercentage: 100, antigravityResetTime: new Date(Date.now() - 1000).toISOString(), fetchedAt: new Date().toISOString() },
+      };
+      const missingAccountRes = await fetch(`http://127.0.0.1:${httpServer.port}/v1/tokens/prewarm`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "antigravity", manual: true, account: "gamma@test.com", idempotencyKey: "multi-account-missing" }),
+      }).then((r) => r.json());
+      assert.strictEqual(missingAccountRes.status, "skipped");
+      assert.strictEqual(missingAccountRes.error, "Account 'gamma@test.com' quota telemetry was not found.");
+
+      const multiAccRes = await fetch(`http://127.0.0.1:${httpServer.port}/v1/tokens/prewarm`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "antigravity", manual: true, account: "alpha@test.com", idempotencyKey: "multi-account-forward" }),
+      }).then((r) => r.json());
+      assert.strictEqual(multiAccRes.status, "dispatched");
+      assert.strictEqual(multiAccRes.account, "alpha@test.com");
+      assert.ok(dispatchedCalls.some((c) => c.account === "alpha@test.com"), "dispatcher received the forwarded account parameter");
+      delete fakeQuota.accounts;
+      delete fakeQuota.antigravityResetTime;
+
       process.env.INTEGRATED_POWER_STATE_ROOT = path.join(temp, "different-process-default");
       const workspaces = await fetch(`http://127.0.0.1:${httpServer.port}/v1/workspaces`).then((response) => response.json());
       assert.deepStrictEqual(workspaces.workspaces.map((item) => item.workspaceId), [workspaceId]);
@@ -781,6 +832,15 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
       assert.strictEqual((await client.getTaskDetails(scopedTask.id, { workspacePath: temp })).task.revision, queuedApproval.expectedRevision);
       await client.approve(approval.id, queuedApproval.expectedRevision);
       assert.strictEqual((await client.listApprovals({ workspacePath: temp })).approvals.some((item) => item.id === approval.id), false);
+
+      const prewarmNotifsFirst = await client.claimPrewarmNotifications();
+      assert.strictEqual(prewarmNotifsFirst.ok, true);
+      assert.ok(Array.isArray(prewarmNotifsFirst.notifications));
+      assert.ok(prewarmNotifsFirst.notifications.length > 0, "prewarm notifications queue contains emitted events");
+      assert.ok(prewarmNotifsFirst.notifications.some((n) => n.status === "dispatched" || n.status === "skipped"));
+      const prewarmNotifsSecond = await client.claimPrewarmNotifications();
+      assert.strictEqual(prewarmNotifsSecond.ok, true);
+      assert.deepStrictEqual(prewarmNotifsSecond.notifications, [], "prewarm notification queue is drained upon claim");
       const card = await fetch(`http://127.0.0.1:${httpServer.port}/.well-known/agent-card.json`).then((response) => response.json());
       assert.strictEqual(card.supportedInterfaces[0].protocolBinding, "HTTP+JSON");
       const integrations = await fetch(`http://127.0.0.1:${httpServer.port}/v1/integrations`).then((response) => response.json());
@@ -866,9 +926,169 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
         await schedulerServer.close();
       }
     }
+    {
+      const schedulerMultiRoot = path.join(temp, "scheduler-multi-account");
+      const scheduledBroker = new IntegratedPowerBroker(new EncryptedEventLedger(path.join(schedulerMultiRoot, "broker", "events.enc.jsonl"), Buffer.alloc(32, 55)), []);
+      await scheduledBroker.initialize();
+      const dispatchedAccounts = [];
+      const multiAccountQuota = async () => ({
+        lastSync: new Date().toISOString(),
+        accounts: {
+          "user-a@example.com": { antigravityPercentage: 100, antigravityResetTime: new Date(Date.now() - 1000).toISOString(), fetchedAt: new Date().toISOString() },
+          "user-b@example.com": { antigravityPercentage: 100, antigravityResetTime: new Date(Date.now() - 1000).toISOString(), fetchedAt: new Date().toISOString() },
+        },
+      });
+      const schedulerServer = await startBrokerServer(scheduledBroker, 0, {
+        stateRoot: schedulerMultiRoot,
+        tokenStatusReader: multiAccountQuota,
+        prewarmDispatcher: async (_target, _model, _root, account) => {
+          dispatchedAccounts.push(account);
+          return { spawned: true };
+        },
+      });
+      try {
+        const schedulerBase = `http://127.0.0.1:${schedulerServer.port}`;
+        const schedulerSettings = await fetch(`${schedulerBase}/v1/settings/quota`).then((r) => r.json());
+        await fetch(`${schedulerBase}/v1/settings/quota`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ expectedRevision: schedulerSettings.revision, initializeFrom: "ide", idempotencyKey: "multi-acc-sched", settings: { pollIntervalMs: 500, prewarmModes: { antigravity: "always", opus: "click", codex: "click" } } }),
+        });
+        const deadline = Date.now() + 3500;
+        while (dispatchedAccounts.length < 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+        assert.ok(dispatchedAccounts.includes("user-a@example.com") && dispatchedAccounts.includes("user-b@example.com"), "scheduler dispatches all configured accounts under multi-account telemetry");
+      } finally {
+        await schedulerServer.close();
+      }
+    }
     const afterHttpRestart = new IntegratedPowerBroker(new EncryptedEventLedger(path.join(temp, "events.enc.jsonl"), Buffer.alloc(32, 7)), createFirstWaveAdapters());
     await afterHttpRestart.initialize();
     assert.strictEqual(afterHttpRestart.getTask(persistedTaskId).title, "scoped UI task", "HTTP-created task state survives broker reconstruction from the same ledger");
+
+    // --- Prewarm honest verification & per-consumer notification cursor isolation ---
+    {
+      const honestVerifyRoot = path.join(temp, "honest-verify-broker");
+      const honestBroker = new IntegratedPowerBroker(
+        new EncryptedEventLedger(path.join(honestVerifyRoot, "broker", "events.enc.jsonl"), Buffer.alloc(32, 77)),
+        [],
+      );
+      await honestBroker.initialize();
+
+      let currentFakeQuota = {
+        lastSync: new Date().toISOString(),
+        antigravityPercentage: 100,
+        antigravityResetTime: new Date(Date.now() - 1000).toISOString(),
+        accounts: {
+          "dormant-acct@example.com": {
+            antigravityPercentage: 100,
+            antigravityResetTime: new Date(Date.now() + (5 * 3600 - 5 * 60) * 1000).toISOString(),
+            fetchedAt: Date.now(),
+          },
+        },
+      };
+
+      let fakeDispatcherCallCount = 0;
+      const honestServer = await startBrokerServer(honestBroker, 0, {
+        stateRoot: honestVerifyRoot,
+        tokenStatusReader: async () => ({
+          ...currentFakeQuota,
+          lastSync: new Date().toISOString(),
+          accounts: {
+            "dormant-acct@example.com": {
+              ...currentFakeQuota.accounts["dormant-acct@example.com"],
+              fetchedAt: Date.now(),
+            },
+          },
+        }),
+        prewarmDispatcher: async () => {
+          fakeDispatcherCallCount++;
+          return { spawned: true, cancelledEarly: true, durationMs: 25 };
+        },
+        prewarmVerifyDelayMs: 40,
+        prewarmVerifyRetryDelayMs: 0,
+      });
+
+      try {
+        const client = new BrokerClient(() => honestServer.port);
+
+        // a. 99.99% manual prewarm rejection (status: "skipped")
+        currentFakeQuota.antigravityPercentage = 99.99;
+        const skippedPrewarm = await fetch(`http://127.0.0.1:${honestServer.port}/v1/tokens/prewarm`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: "antigravity", manual: true, idempotencyKey: "test-reject-9999" }),
+        }).then((r) => r.json());
+        assert.strictEqual(skippedPrewarm.status, "skipped", "99.99% quota must be rejected as skipped");
+        assert.strictEqual(skippedPrewarm.timerConfirmed, false);
+        assert.ok(skippedPrewarm.error && skippedPrewarm.error.includes("not 100% full"));
+        assert.strictEqual(fakeDispatcherCallCount, 0, "rejected prewarm must not call dispatcher");
+        // Drain skipped notification from subtest (a) so subtests (b) and (c) yield exactly 4 notifications
+        await client.claimPrewarmNotifications();
+
+        // b. verifyTimer emits status: "verified" & timerConfirmed: true when mock telemetry shows quota drop (99.4%)
+        currentFakeQuota.antigravityPercentage = 100;
+        currentFakeQuota.antigravityResetTime = new Date(Date.now() - 1000).toISOString();
+        const dispatchedVerified = await fetch(`http://127.0.0.1:${honestServer.port}/v1/tokens/prewarm`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: "antigravity", manual: true, idempotencyKey: "test-verified-dispatch" }),
+        }).then((r) => r.json());
+        assert.strictEqual(dispatchedVerified.status, "dispatched");
+        assert.strictEqual(fakeDispatcherCallCount, 1);
+
+        // Simulate quota dropping upon remote verification
+        currentFakeQuota.antigravityPercentage = 99.4;
+        await new Promise((resolve) => setTimeout(resolve, 80));
+
+        // Poll via consumer "test-consumer-verified"
+        const verifiedNotifs = await client.claimPrewarmNotifications("test-consumer-verified");
+        assert.strictEqual(verifiedNotifs.ok, true);
+        assert.ok(verifiedNotifs.notifications.some((n) => n.status === "verified" && n.timerConfirmed === true), "verification check confirms remote quota drop");
+        assert.ok(verifiedNotifs.notifications.every((n) => typeof n.seqId === "number"), "all notifications carry seqId");
+
+        // c. verifyTimer emits status: "unconfirmed" & timerConfirmed: false when mock telemetry remains 100% dormant
+        currentFakeQuota.accounts["dormant-acct@example.com"].antigravityPercentage = 100;
+        // set reset time to dormant window (>= 5h - 15m)
+        currentFakeQuota.accounts["dormant-acct@example.com"].antigravityResetTime = new Date(Date.now() + (5 * 3600 - 5 * 60) * 1000).toISOString();
+        const dispatchedUnconfirmed = await fetch(`http://127.0.0.1:${honestServer.port}/v1/tokens/prewarm`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: "antigravity", account: "dormant-acct@example.com", manual: true, idempotencyKey: "test-unconfirmed-dispatch" }),
+        }).then((r) => r.json());
+        assert.strictEqual(dispatchedUnconfirmed.status, "dispatched");
+        assert.strictEqual(dispatchedUnconfirmed.account, "dormant-acct@example.com");
+
+        // Telemetry remains 100% and timer does not activate
+        await new Promise((resolve) => setTimeout(resolve, 80));
+
+        const unconfirmedNotifs = await client.claimPrewarmNotifications("test-consumer-unconfirmed");
+        assert.strictEqual(unconfirmedNotifs.ok, true);
+        assert.ok(unconfirmedNotifs.notifications.some((n) => n.status === "unconfirmed" && n.timerConfirmed === false && n.level === "warn" && n.account === "dormant-acct@example.com"), "verification check flags unconfirmed timer when telemetry remains dormant 100%");
+
+        // d. Per-consumer notification cursor isolation
+        const ipccNotifs = await client.claimPrewarmNotifications("ipcc");
+        assert.strictEqual(ipccNotifs.ok, true);
+        assert.strictEqual(ipccNotifs.notifications.length, 4, "ipcc consumer gets all 4 notifications (2 from b, 2 from c)");
+
+        const vsixNotifs = await client.claimPrewarmNotifications("vsix");
+        assert.strictEqual(vsixNotifs.ok, true);
+        assert.strictEqual(vsixNotifs.notifications.length, ipccNotifs.notifications.length, "vsix consumer receives identical notifications independently");
+        assert.deepStrictEqual(vsixNotifs.notifications.map((n) => n.id), ipccNotifs.notifications.map((n) => n.id));
+
+        // Subsequent calls for ipcc and vsix return empty without new events
+        const ipccFollowUp = await client.claimPrewarmNotifications("ipcc");
+        assert.deepStrictEqual(ipccFollowUp.notifications, [], "ipcc cursor advanced to end");
+        const vsixFollowUp = await client.claimPrewarmNotifications("vsix");
+        assert.deepStrictEqual(vsixFollowUp.notifications, [], "vsix cursor advanced to end");
+
+        // Legacy claim without consumer drains the queue
+        const legacyClaim = await client.claimPrewarmNotifications();
+        assert.ok(legacyClaim.notifications.length > 0, "legacy claim receives remaining items in queue");
+        const legacyClaimDrained = await client.claimPrewarmNotifications();
+        assert.deepStrictEqual(legacyClaimDrained.notifications, [], "legacy claim drains the queue");
+      } finally {
+        await honestServer.close();
+      }
+    }
 
     // --- /v1/tokens/status: schema passthrough + ?force=1 -------------------
     // The broker must surface the original token_status.json fields (absolute
@@ -1011,11 +1231,11 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
     } finally {
       if (savedLocalAppData === undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA = savedLocalAppData;
       if (savedStateRootEnv === undefined) delete process.env.INTEGRATED_POWER_STATE_ROOT; else process.env.INTEGRATED_POWER_STATE_ROOT = savedStateRootEnv;
-      fs.rmSync(stateRoot, { recursive: true, force: true });
+      fs.rmSync(stateRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
     console.log("broker tests passed");
   } finally {
-    fs.rmSync(temp, { recursive: true, force: true });
+    fs.rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 

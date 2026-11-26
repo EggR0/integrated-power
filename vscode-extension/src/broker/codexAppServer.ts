@@ -21,11 +21,32 @@ type ServerRequestHandler = (message: JsonRpcMessage) => void | Promise<void>;
 export class CodexAppServerAdapter implements AgentAdapter {
   public readonly provider: ProviderId = "openai.codex.app";
   private readonly running = new Map<string, { process: ChildProcessWithoutNullStreams; client?: JsonRpcStdioClient; threadId?: string; turnId?: string }>();
+  private static cachedCapability?: {
+    capability: AgentCapability;
+    cachedAt: number;
+    executable?: string;
+    envExe?: string;
+  };
 
   public constructor(private readonly executable?: string) {}
 
+  public static clearCache(): void {
+    CodexAppServerAdapter.cachedCapability = undefined;
+  }
+
   public async discover(): Promise<AgentCapability> {
-    const candidates = this.executable ? [this.executable] : process.env.INTEGRATED_POWER_CODEX_EXE ? [process.env.INTEGRATED_POWER_CODEX_EXE] : await findCodexCandidates();
+    const envExe = process.env.INTEGRATED_POWER_CODEX_EXE;
+    const now = Date.now();
+    if (
+      CodexAppServerAdapter.cachedCapability &&
+      now - CodexAppServerAdapter.cachedCapability.cachedAt < 60_000 &&
+      CodexAppServerAdapter.cachedCapability.executable === this.executable &&
+      CodexAppServerAdapter.cachedCapability.envExe === envExe
+    ) {
+      return CodexAppServerAdapter.cachedCapability.capability;
+    }
+
+    const candidates = this.executable ? [this.executable] : envExe ? [envExe] : await findCodexCandidates();
     const executable = await firstCallable(candidates) ?? candidates[0];
     const callable = Boolean(executable && await canExecute(executable));
     const installed = isCodexInstalled();
@@ -36,7 +57,7 @@ export class CodexAppServerAdapter implements AgentAdapter {
       : installed
         ? "Codex 환경이 설치되어 있습니다 (~/.codex). Codex App Server 및 세션 대기 중입니다."
         : "Codex CLI가 설치되어 있지 않거나 PATH에 없습니다.";
-    return {
+    const capability: AgentCapability = {
       provider: this.provider,
       label: "Codex App Server",
       available: callable,
@@ -47,6 +68,13 @@ export class CodexAppServerAdapter implements AgentAdapter {
       endpoint: executable,
       reason,
     };
+    CodexAppServerAdapter.cachedCapability = {
+      capability,
+      cachedAt: now,
+      executable: this.executable,
+      envExe,
+    };
+    return capability;
   }
 
   public async connectConversation(_conversationId: string): Promise<void> {
@@ -235,17 +263,9 @@ async function findCodexCandidates(): Promise<string[]> {
   }
 
   // 4. PATH lookup
-  const names = process.platform === "win32" ? ["codex.cmd", "codex.exe", "codex"] : ["codex"];
-  const { execFile } = await import("child_process");
-  const { promisify } = await import("util");
-  const execFileAsync = promisify(execFile);
-  for (const name of names) {
-    try {
-      const result = await execFileAsync(process.platform === "win32" ? "where.exe" : "which", [name], { windowsHide: true, timeout: 3000 });
-      const found = String(result.stdout).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      candidates.push(...found);
-    } catch { /* try next candidate */ }
-  }
+  const names = process.platform === "win32" ? ["codex.exe", "codex.cmd", "codex"] : ["codex"];
+  const onPath = findExecutableOnPath(names);
+  if (onPath) candidates.push(onPath);
   return [...new Set(candidates)];
 }
 
@@ -403,7 +423,7 @@ export function findCodexCliSync(): string | undefined {
     }
   }
 
-  const names = process.platform === "win32" ? ["codex.cmd", "codex.exe", "codex"] : ["codex"];
+  const names = process.platform === "win32" ? ["codex.exe", "codex.cmd", "codex"] : ["codex"];
   return findExecutableOnPath(names);
 }
 
@@ -448,8 +468,8 @@ let cachedCodexRateLimits: { fetchedAt: number; data: LiveCodexRateLimits } | un
 
 export async function fetchLiveCodexRateLimits(force = false): Promise<LiveCodexRateLimits | undefined> {
   const now = Date.now();
-  // 20 second cache to keep it fresh and responsive without overhead
-  if (!force && cachedCodexRateLimits && now - cachedCodexRateLimits.fetchedAt < 20_000) {
+  // 60 second cache to keep it fresh and responsive without overhead
+  if (!force && cachedCodexRateLimits && now - cachedCodexRateLimits.fetchedAt < 60_000) {
     return cachedCodexRateLimits.data;
   }
 
