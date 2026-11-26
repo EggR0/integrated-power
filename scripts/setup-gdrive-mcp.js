@@ -2,12 +2,13 @@
 // Integrated Power: Google Drive MCP Helper & Self-Contained Authenticator
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
 const https = require('https');
 const { exec } = require('child_process');
 
-const HOME_DIR = process.env.USERPROFILE || process.env.HOME || 'C:\\Users\\jsp0';
+const HOME_DIR = process.env.USERPROFILE || process.env.HOME || os.homedir();
 const CONFIG_DIR = path.join(HOME_DIR, '.config', 'google-drive-mcp');
 const OAUTH_KEY_PATH = process.env.GDRIVE_OAUTH_PATH || path.join(CONFIG_DIR, 'gcp-oauth.keys.json');
 const CREDENTIALS_PATH = process.env.GDRIVE_CREDENTIALS_PATH || path.join(CONFIG_DIR, '.gdrive-server-credentials.json');

@@ -804,6 +804,15 @@ test("future reset alone does not prove an active countdown for full quota", () 
   assert.ok(weekly.refreshFull.includes("47h") || weekly.refreshFull.includes("48h"));
 });
 
+test("formatQuotaPercentage prevents sub-100 values from rounding up to 100.00", () => {
+  assert.strictEqual(shared.formatQuotaPercentage(100, 2), "100.00");
+  assert.strictEqual(shared.formatQuotaPercentage(99.99995, 2), "100.00");
+  assert.strictEqual(shared.formatQuotaPercentage(99.99833, 2), "99.99");
+  assert.strictEqual(shared.formatQuotaPercentage(99.99833, 1), "99.9");
+  assert.strictEqual(shared.formatQuotaPercentage(66.35528, 2), "66.36");
+  assert.strictEqual(shared.formatQuotaPercentage(0, 2), "0.00");
+});
+
 if (failures) {
   console.error(`\n${failures} quota-core test(s) failed`);
   process.exit(1);

@@ -1273,6 +1273,29 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
       } finally {
         await noAccountPrewarmServer.close();
       }
+      // Verify [QUOTA] logging when an account reports gemini+opus but omits argon
+      const missingGroupServer = await startTokenServer(broker, 0, {
+        stateRoot: path.join(stateRoot, "missing-group-log"),
+        autoSchedule: false,
+        tokenStatusReader: async () => ({
+          activeIdeAccountEmail: "user@example.com",
+          accounts: {
+            "user@example.com": { email: "user@example.com", isIdeActive: true, antigravityPercentage: 95, opusPercentage: 80 },
+          },
+          antigravityPercentage: 95,
+          opusPercentage: 80,
+          taskRouting: "normal",
+          lastSync: new Date().toISOString(),
+          localComputeStatus: { endpointHealth: "offline", loadedModels: [], gpus: [] },
+        }),
+      });
+      try {
+        await fetch(`http://127.0.0.1:${missingGroupServer.port}/v1/tokens/status`).then((r) => r.json());
+        const qLogs = await fetch(`http://127.0.0.1:${missingGroupServer.port}/v1/logs?lines=25`).then((r) => r.json());
+        assert.ok(qLogs.lines.some((line) => line.includes("[QUOTA] Unreported model groups hidden") && line.includes("user@example.com=[argon]")), `/v1/logs must record unreported model groups: ${JSON.stringify(qLogs.lines)}`);
+      } finally {
+        await missingGroupServer.close();
+      }
     } finally {
       if (savedLocalAppData === undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA = savedLocalAppData;
       if (savedAppData === undefined) delete process.env.APPDATA; else process.env.APPDATA = savedAppData;

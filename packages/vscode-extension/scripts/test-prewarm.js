@@ -155,7 +155,7 @@ assert.strictEqual(weeklyEarlyCountdownAt100Metric.isReady, false, "166.5h remai
 assert.strictEqual(weeklyEarlyCountdownAt100Metric.canPrewarm, false);
 assert.strictEqual(shared.canTriggerPrewarm(weeklyEarlyCountdownAt100Metric), false);
 
-// 2b. Weekly micro-usage (99.99833%, e.g. yip1004 after minimal ping) must immediately show live countdown and block prewarm.
+// 2b. Weekly micro-usage (99.99833%, e.g. primary account after minimal ping) must immediately show live countdown and block prewarm.
 const weeklyMicroUsageMetric = shared.buildTokenMetric("Weekly", {
   antigravityWeeklyPercentage: 99.99833,
   antigravityWeeklyResetTime: resetIn(166.85),

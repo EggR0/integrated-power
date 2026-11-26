@@ -54,6 +54,22 @@ export function formatRefreshCountdown(value: string | Date | number | null | un
   };
 }
 
+/**
+ * Format a percentage (0–100) without rounding sub-100 values (e.g. 99.99833) up to "100.00".
+ * Only values >= 99.9999 render as 100; anything below caps at 99.99 / 99.9.
+ */
+export function formatQuotaPercentage(pct: number, decimals = 2): string {
+  if (!Number.isFinite(pct)) return (0).toFixed(decimals);
+  const clamped = Math.max(0, Math.min(100, pct));
+  if (clamped >= 99.9999) return (100).toFixed(decimals);
+  const formatted = clamped.toFixed(decimals);
+  if (Number(formatted) >= 100) {
+    const step = Math.pow(10, -decimals);
+    return (100 - step).toFixed(decimals);
+  }
+  return formatted;
+}
+
 /** Whole number with the default locale grouping (display only). */
 export function formatNumber(value: unknown): string {
   return new Intl.NumberFormat().format(toFiniteNumber(value));

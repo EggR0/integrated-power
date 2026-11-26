@@ -560,6 +560,11 @@ function renderTokenStatus(tokenStatus) {
             const { isIde, isAgy2 } = resolveWebviewAccountFlags(email, acc, status);
             const hasErr = Boolean(acc?.error);
             const badge = formatWebviewActiveBadge(isIde, isAgy2, hasErr);
+            const fmtPct = (v) => (IPQuota?.formatQuotaPercentage ? IPQuota.formatQuotaPercentage(v, 1) : Number(v).toFixed(1));
+            const summaryItems = [];
+            if (acc?.antigravityPercentage != null) summaryItems.push(`<span>Gemini 5h: <strong>${fmtPct(acc.antigravityPercentage)}%</strong></span>`);
+            if (acc?.argonWeeklyPercentage != null) summaryItems.push(`<span>Argon 주간: <strong>${fmtPct(acc.argonWeeklyPercentage)}%</strong></span>`);
+            if (acc?.opusPercentage != null) summaryItems.push(`<span>Claude: <strong>${fmtPct(acc.opusPercentage)}%</strong></span>`);
             return `
               <div class="account-card" style="padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); font-size: 11px; min-width: 0;">
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 4px; min-width: 0;">
@@ -568,9 +573,7 @@ function renderTokenStatus(tokenStatus) {
                 </div>
                 ${hasErr ? `<div style="color: #f59e0b; font-size: 10px;">⚠️ ${escapeHtml(acc.error)}</div>` : `
                   <div style="display: flex; flex-wrap: wrap; gap: 8px; color: var(--text-secondary); font-size: 10px;">
-                    <span>Gemini 5h: <strong>${acc.antigravityPercentage != null ? acc.antigravityPercentage.toFixed(1) + "%" : "N/A"}</strong></span>
-                    <span>Argon 주간: <strong>${acc.argonWeeklyPercentage != null ? acc.argonWeeklyPercentage.toFixed(1) + "%" : "N/A"}</strong></span>
-                    <span>Claude: <strong>${acc.opusPercentage != null ? acc.opusPercentage.toFixed(1) + "%" : "N/A"}</strong></span>
+                    ${summaryItems.length ? summaryItems.join("") : `<span>쿼터 대기 중</span>`}
                   </div>
                 `}
               </div>
@@ -615,6 +618,28 @@ function renderTokenStatus(tokenStatus) {
     const agyTitleFull = primaryAccountEmail || "Antigravity";
     const agyTitleMedium = primaryAccountEmail ? primaryAccountEmail.split("@")[0] : "Antigravity";
     const agyTitleShort = primaryAccountEmail ? primaryAccountEmail.split("@")[0].slice(0, 10) : "Agy";
+    const modelGroups = [
+      {
+        title: "Gemini",
+        metrics: [antigravity, antigravityWeekly],
+        available: !antigravity.unavailable || !antigravityWeekly.unavailable,
+      },
+      {
+        title: "Argon 4",
+        metrics: argonMetrics,
+        titleVariants: { full: "Gemini 4 Argon", medium: "Argon 4", short: "Argon" },
+        available: !argon.unavailable || !argonWeekly.unavailable,
+      },
+      {
+        title: "Claude",
+        metrics: [opus, opusWeekly],
+        available: !opus.unavailable || !opusWeekly.unavailable,
+      },
+    ];
+    const hasAnyGroup = modelGroups.some((g) => g.available);
+    const visibleGroups = hasAnyGroup
+      ? modelGroups.filter((g) => g.available)
+      : modelGroups.filter((g) => g.title !== "Argon 4");
     sections.push(`
       <details class="token-section" data-section="antigravity" ${sectionStates.antigravity !== false ? "open" : ""}>
         <summary>
@@ -630,9 +655,7 @@ function renderTokenStatus(tokenStatus) {
           </span>
         </summary>
         <div class="capacity-groups">
-          ${renderCapacityGroup("Gemini", [antigravity, antigravityWeekly])}
-          ${renderCapacityGroup("Argon 4", argonMetrics, { full: "Gemini 4 Argon", medium: "Argon 4", short: "Argon" })}
-          ${renderCapacityGroup("Claude", [opus, opusWeekly])}
+          ${visibleGroups.map((g) => renderCapacityGroup(g.title, g.metrics, g.titleVariants)).join("")}
         </div>
       </details>
     `);

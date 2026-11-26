@@ -59,9 +59,6 @@ def merge_legacy_directories():
 
 DEFAULT_TARGET_WORKSPACE = 'file:///d:/Workspace/Integrated%20POWER'
 LEGACY_WORKSPACE_PATTERNS = [
-    'file:///c:/Users/jsp0/Documents/Intergrated%20POWER',
-    'file:///c:/Users/jsp0/Documents/Intergrated POWER',
-    'file:///c%3A/Users/jsp0/Documents/Intergrated%20POWER',
     'Intergrated%20POWER',
     'Intergrated POWER'
 ]

@@ -1749,7 +1749,7 @@ export class DashboardController implements vscode.Disposable {
     if (this.sharedQuotaSettingsReady && this.brokerController) {
       if (!isManual) return; // Once/Always scheduling belongs to the shared broker.
       try {
-        const targetAccount = this.state.tokenStatus?.activeAccountEmail || "yip1004@gmail.com";
+        const targetAccount = this.state.tokenStatus?.activeIdeAccountEmail || this.state.tokenStatus?.activeAccountEmail || "";
         const result = await this.brokerController.getClient().prewarm({
           model: modelKey,
           window: windowType,
@@ -1867,10 +1867,10 @@ export class DashboardController implements vscode.Disposable {
       }
     } else {
       // Gemini, Argon & Claude: Use agy CLI with verified lowest-tier model, prewarm-cwd, AGY_ACCOUNT, --output-format stream-json, and instant cancel
-      const targetAccount = this.state.tokenStatus?.activeAccountEmail || "yip1004@gmail.com";
+      const targetAccount = this.state.tokenStatus?.activeIdeAccountEmail || this.state.tokenStatus?.activeAccountEmail || "";
       const agyCandidates = [
         process.env.AGY_PATH,
-        path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe"),
+        process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe") : "",
         process.env.USERPROFILE ? path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe") : "",
       ].filter(Boolean) as string[];
       const agyBin = agyCandidates.find((candidate) => fs.existsSync(candidate)) || agyCandidates[0];

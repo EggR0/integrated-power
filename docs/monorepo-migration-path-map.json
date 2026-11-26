@@ -20,7 +20,7 @@
     }
   },
   "hooks": [
-    "C:\\Users\\jsp0\\.gemini\\config\\plugins\\ip-orchestrator-plugin\\hooks.json",
+    "%USERPROFILE%\\.gemini\\config\\plugins\\ip-orchestrator-plugin\\hooks.json",
     "D:\\Workspace\\Integrated POWER\\.agents\\hooks.json"
   ],
   "verificationTargets": [

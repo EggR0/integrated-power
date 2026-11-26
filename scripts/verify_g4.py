@@ -13,9 +13,9 @@ from sync_history import (
 )
 
 # 1. Test should_migrate_uri logic across multiple legacy patterns
-assert should_migrate_uri("file:///c:/Users/jsp0/Documents/Intergrated%20POWER", DEFAULT_TARGET_WORKSPACE) == True
-assert should_migrate_uri("file:///c:/Users/jsp0/Documents/Intergrated POWER", DEFAULT_TARGET_WORKSPACE) == True
-assert should_migrate_uri("file:///c%3A/Users/jsp0/Documents/Intergrated%20POWER", DEFAULT_TARGET_WORKSPACE) == True
+assert should_migrate_uri("file:///c:/Users/user/Documents/Intergrated%20POWER", DEFAULT_TARGET_WORKSPACE) == True
+assert should_migrate_uri("file:///c:/Users/user/Documents/Intergrated POWER", DEFAULT_TARGET_WORKSPACE) == True
+assert should_migrate_uri("file:///c%3A/Users/user/Documents/Intergrated%20POWER", DEFAULT_TARGET_WORKSPACE) == True
 assert should_migrate_uri("file:///d:/Workspace/Integrated%20POWER", DEFAULT_TARGET_WORKSPACE) == False
 assert should_migrate_uri("file:///c:/obsidian/1%20Project/apple%20game", DEFAULT_TARGET_WORKSPACE) == False
 
@@ -25,7 +25,7 @@ legacy_info = {
     'trajectory_id': 'aaaa1111-bbbb-2222-cccc-333344445555',
     'title': 'Legacy C Drive Session',
     'step_count': 10,
-    'workspace_uri': 'file:///c:/Users/jsp0/Documents/Intergrated%20POWER',
+    'workspace_uri': 'file:///c:/Users/user/Documents/Intergrated%20POWER',
     'mtime': 1780000000,
     'ctime': 1770000000,
     'branch': 'main'

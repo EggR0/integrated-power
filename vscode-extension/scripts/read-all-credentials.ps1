@@ -230,21 +230,24 @@ if (Test-Path $adcPath) {
         $adcRaw = [IO.File]::ReadAllText($adcPath)
         $adc = $adcRaw | ConvertFrom-Json
         $agyaCmd = "$env:LOCALAPPDATA\agy\bin\agya.cmd"
-        $gcpProject = "project-cd8f7986-520d-4fbc-85f"
+        $gcpProject = $adc.quota_project_id
+        if (-not $gcpProject) { $gcpProject = $env:GOOGLE_CLOUD_PROJECT }
         if (Test-Path $agyaCmd) {
             $cmdText = [IO.File]::ReadAllText($agyaCmd)
             if ($cmdText -match 'GOOGLE_CLOUD_PROJECT=([^\r\n]+)') {
                 $gcpProject = $matches[1].Trim().Trim('"', "'", ' ')
             }
         }
-        $results.gcpProjects[$gcpProject] = @{
-            projectId = $gcpProject
-            label = "agya (Vertex AI)"
-            authType = "adc"
-            client_id = $adc.client_id
-            client_secret = $adc.client_secret
-            refresh_token = $adc.refresh_token
-            models = @("gemini-4-argon-high", "gemini-2.0-flash", "gemini-1.5-pro")
+        if ($gcpProject) {
+            $results.gcpProjects[$gcpProject] = @{
+                projectId = $gcpProject
+                label = "agya (Vertex AI)"
+                authType = "adc"
+                client_id = $adc.client_id
+                client_secret = $adc.client_secret
+                refresh_token = $adc.refresh_token
+                models = @("gemini-4-argon-high", "gemini-2.0-flash", "gemini-1.5-pro")
+            }
         }
     } catch {}
 }

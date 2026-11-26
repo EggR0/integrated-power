@@ -241,6 +241,34 @@ export function tryServeStaticFile(
   return true;
 }
 
+function summarizeMissingModelGroups(tokenStatus: unknown): string {
+  if (!tokenStatus || typeof tokenStatus !== "object") return "";
+  const ts = tokenStatus as Record<string, any>;
+  const checkGroups = (obj: Record<string, any>): string[] => {
+    if (!obj || obj.error) return [];
+    const hasGemini = typeof obj.antigravityPercentage === "number" || typeof obj.antigravityWeeklyPercentage === "number";
+    const hasArgon = typeof obj.argonPercentage === "number" || typeof obj.argonWeeklyPercentage === "number";
+    const hasOpus = typeof obj.opusPercentage === "number" || typeof obj.opusWeeklyPercentage === "number";
+    if (!hasGemini && !hasArgon && !hasOpus) return [];
+    const missing: string[] = [];
+    if (!hasGemini) missing.push("gemini");
+    if (!hasArgon) missing.push("argon");
+    if (!hasOpus) missing.push("opus");
+    return missing;
+  };
+  const parts: string[] = [];
+  if (ts.accounts && typeof ts.accounts === "object" && !Array.isArray(ts.accounts) && Object.keys(ts.accounts).length > 0) {
+    for (const key of Object.keys(ts.accounts).sort((a, b) => a.localeCompare(b))) {
+      const missing = checkGroups(ts.accounts[key]);
+      if (missing.length) parts.push(`${key}=[${missing.join(", ")}]`);
+    }
+  } else {
+    const missing = checkGroups(ts);
+    if (missing.length) parts.push(`default=[${missing.join(", ")}]`);
+  }
+  return parts.join("; ");
+}
+
 export async function startBrokerServer(
   broker: IntegratedPowerBroker,
   requestedPort = 0,
@@ -258,6 +286,7 @@ export async function startBrokerServer(
   let quotaNotificationQueue = Promise.resolve();
   let serverClosed = false;
   let lastLoggedAuthState = "";
+  let lastLoggedMissingGroupsKey = "";
   const serverClosedRef = { closed: false };
   let nextPrewarmSeqId = 1;
   const prewarmConsumerCursors = new Map<string, number>();
@@ -556,8 +585,22 @@ export async function startBrokerServer(
       }
       if (request.method === "GET" && url.pathname === "/v1/tokens/status") {
         const force = url.searchParams.get("force") === "1" || url.searchParams.get("force") === "true";
+        const logMissingGroups = (ts: unknown) => {
+          const summary = summarizeMissingModelGroups(ts);
+          if (summary !== lastLoggedMissingGroupsKey) {
+            const hadPrior = Boolean(lastLoggedMissingGroupsKey);
+            lastLoggedMissingGroupsKey = summary;
+            if (summary) {
+              appendBrokerLog(stateRoot, `[QUOTA] Unreported model groups hidden (not returned by API): ${summary}`);
+            } else if (hadPrior) {
+              appendBrokerLog(stateRoot, `[QUOTA] All Antigravity model groups reported by API.`);
+            }
+          }
+        };
         if (options.tokenStatusReader) {
-          return send(response, 200, { ok: true, forced: false, tokenStatus: await readTokenStatus() });
+          const tokenStatus = await readTokenStatus();
+          logMissingGroups(tokenStatus);
+          return send(response, 200, { ok: true, forced: false, tokenStatus });
         }
         const refreshed = force ? await requestForceRefresh() : false;
         const tokenStatus = await scanLiveTokenStatus({ force: force && !refreshed });
@@ -568,6 +611,7 @@ export async function startBrokerServer(
           lastLoggedAuthState = authKey;
           appendBrokerLog(stateRoot, `[AUTH] Active accounts updated: IDE=${ide || "none"}, 2.0=${agy2 || "none"}`);
         }
+        logMissingGroups(tokenStatus);
         return send(response, 200, { ok: true, forced: refreshed, tokenStatus });
       }
       if (url.pathname === "/v1/settings/quota" && request.method === "GET") {

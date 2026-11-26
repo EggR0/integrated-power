@@ -2,6 +2,7 @@
 // Integrated Power: Google Drive Ingestion (Option B) & Artifact Offloader (Option C)
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as https from 'https';
 import { CreateTaskInput, TaskEnvelope } from './protocol';
@@ -64,7 +65,7 @@ export class GoogleDriveAuth {
   private cachedTokens: DriveTokenData | null = null;
 
   constructor(config?: DriveStorageConfig) {
-    const homeDir = process.env.USERPROFILE || process.env.HOME || 'C:\\Users\\jsp0';
+    const homeDir = process.env.USERPROFILE || process.env.HOME || os.homedir();
     const baseDir = config?.configDir || path.join(homeDir, '.config', 'google-drive-mcp');
     this.oauthKeyPath = config?.oauthKeyPath || path.join(baseDir, 'gcp-oauth.keys.json');
     this.credentialsPath = config?.credentialsPath || path.join(baseDir, '.gdrive-server-credentials.json');

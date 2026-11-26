@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.2] - 2026-11-26
+
+### Fixed & Hardened
+
+- **Generalized Unreported Model-Group Auto-Hiding & `[QUOTA]` Logging (`packages/control-center`, `packages/vscode-extension/webview`, `src/broker/server.ts`)**:
+  - Automatically hide any unreported model block (`Gemini`, `Argon 4`, `Claude`) across Control Center cards, Home Activity Rings, and IDE Webview when the API returns other groups without it (restoring automatically if reported later).
+  - Log unreported model groups once per state change to `broker.log` (`[QUOTA] Unreported model groups hidden...`) and Control Center's token activity list.
+- **Prevent `100.00%` Rounding Illusion (`packages/shared/quota/format.ts`, `metric.ts`, `packages/control-center/src/main.js`)**:
+  - Added `formatQuotaPercentage` so sub-100 values (e.g., `99.99833%`) format as `99.99%` instead of rounding up to `100.00%`.
+- **PII Scrubbing & VSIX Packaging Hygiene (`.vscodeignore`, scripts, changelogs)**:
+  - Removed hardcoded personal emails, local usernames, and GCP project IDs across repository scripts, docs, and changelogs, and excluded `.integrated-power/**` worktrees and test scripts from VSIX packaging.
+
 ## [0.14.1] - 2026-11-26
 
 ### Fixed & Improved

@@ -5,6 +5,7 @@ import {
   clampPollInterval,
   buildTokenMetric,
   absoluteTokenText,
+  formatQuotaPercentage,
   buildGaugeTickGradient,
   calculateCapacitySummary,
   localServerBadge,
@@ -39,7 +40,7 @@ const API = "http://127.0.0.1:" + BROKER_PORT;
 // ?broker= override in dev) so the label never lies about which process is up.
 {
   const _footer = document.getElementById("broker-footer");
-  if (_footer) _footer.textContent = `v0.14.1 · loopback ${BROKER_PORT}`;
+  if (_footer) _footer.textContent = `v0.14.2 · loopback ${BROKER_PORT}`;
   // Every endpoint label in the settings tab reflects the actual broker port
   // (BROKER_PORT), so dev ?broker=<port> runs never show a stale 37241 URL.
   const _setEndpoint = (id, value) => {
@@ -104,6 +105,7 @@ const state = {
   autoStartEnabled: false,
   logs: { path: "", lines: [] },
   recentEvents: [],
+  lastLoggedHiddenGroupsKey: "",
   mainProvider: "google.antigravity.ide",
   brokerOnline: false,
   lastSyncAt: null,
@@ -213,9 +215,9 @@ function applyTheme(themeName) {
   const footerTheme = $("footer-version-theme");
   if (footerTheme) {
     const themeLabels = {
-      titanium: "Integrated Power v0.14.1 · Smoked Titanium Liquid Glass",
-      pearl: "Integrated Power v0.14.1 · Pearl White Liquid Glass",
-      cashmere: "Integrated Power v0.14.1 · Warm Cashmere Stone",
+      titanium: "Integrated Power v0.14.2 · Smoked Titanium Liquid Glass",
+      pearl: "Integrated Power v0.14.2 · Pearl White Liquid Glass",
+      cashmere: "Integrated Power v0.14.2 · Warm Cashmere Stone",
     };
     footerTheme.textContent = themeLabels[chosen] || themeLabels.titanium;
   }
@@ -476,10 +478,16 @@ function switchTab(targetTab) {
 const gaugeTicksEnabled = () => localStorage.getItem("ip_gauge_ticks") !== "false";
 
 function renderHomeActivityRings(ts) {
-  const geminiPct = Math.max(0, Math.min(100, ts?.antigravityPercentage ?? 100));
-  const opusPct = Math.max(0, Math.min(100, ts?.opusPercentage ?? 100));
-  const codexPct = Math.max(0, Math.min(100, ts?.codexPercentage ?? 100));
-  const argonPct = Math.max(0, Math.min(100, ts?.argonWeeklyPercentage ?? 100));
+  const hasGemini = typeof ts?.antigravityPercentage === "number" && Number.isFinite(ts.antigravityPercentage);
+  const hasOpus = typeof ts?.opusPercentage === "number" && Number.isFinite(ts.opusPercentage);
+  const hasCodex = typeof ts?.codexPercentage === "number" && Number.isFinite(ts.codexPercentage);
+  const rawArgon = ts?.argonWeeklyPercentage ?? ts?.argonPercentage;
+  const hasArgon = typeof rawArgon === "number" && Number.isFinite(rawArgon);
+
+  const geminiPct = hasGemini ? Math.max(0, Math.min(100, ts.antigravityPercentage)) : 0;
+  const opusPct = hasOpus ? Math.max(0, Math.min(100, ts.opusPercentage)) : 0;
+  const codexPct = hasCodex ? Math.max(0, Math.min(100, ts.codexPercentage)) : 0;
+  const argonPct = hasArgon ? Math.max(0, Math.min(100, rawArgon)) : 0;
 
   const cGemini = 464.95; // 2 * pi * 74
   const cOpus = 364.42;   // 2 * pi * 58
@@ -499,19 +507,23 @@ function renderHomeActivityRings(ts) {
   setRing("ring-codex-fill", cCodex, codexPct);
   setRing("ring-argon-fill", cArgon, argonPct);
 
-  if ($("ring-metric-gemini")) $("ring-metric-gemini").textContent = `${geminiPct.toFixed(0)}%`;
-  if ($("ring-metric-opus")) $("ring-metric-opus").textContent = `${opusPct.toFixed(0)}%`;
-  if ($("ring-metric-codex")) $("ring-metric-codex").textContent = `${codexPct.toFixed(0)}%`;
-  if ($("ring-metric-argon")) $("ring-metric-argon").textContent = `${argonPct.toFixed(0)}%`;
+  if ($("ring-metric-gemini")) $("ring-metric-gemini").textContent = hasGemini ? `${formatQuotaPercentage(geminiPct, 0)}%` : "미제공";
+  if ($("ring-metric-opus")) $("ring-metric-opus").textContent = hasOpus ? `${formatQuotaPercentage(opusPct, 0)}%` : "미제공";
+  if ($("ring-metric-codex")) $("ring-metric-codex").textContent = hasCodex ? `${formatQuotaPercentage(codexPct, 0)}%` : "미제공";
+  if ($("ring-metric-argon")) $("ring-metric-argon").textContent = hasArgon ? `${formatQuotaPercentage(argonPct, 0)}%` : "미제공";
 
   const argonRow = $("ring-row-argon");
   const ringCenterStatus = $("ring-center-status");
   const argonFill = $("ring-argon-fill");
 
-  if (argonPct <= 25) {
+  if (argonRow) {
+    argonRow.style.display = hasArgon ? "" : "none";
+  }
+
+  if (hasArgon && argonPct <= 25) {
     if (argonRow) {
       argonRow.classList.add("alert");
-      if ($("ring-metric-argon")) $("ring-metric-argon").textContent = `${argonPct.toFixed(0)}% (경고)`;
+      if ($("ring-metric-argon")) $("ring-metric-argon").textContent = `${formatQuotaPercentage(argonPct, 0)}% (경고)`;
     }
     if (ringCenterStatus) {
       ringCenterStatus.textContent = "주의";
@@ -876,6 +888,7 @@ function renderAccountCard(acc, grid, anchorEl, ideEmail = "", agy2Email = "") {
     // 1. Gemini block
     const geminiBlock = document.createElement("div");
     geminiBlock.className = "model-block";
+    geminiBlock.dataset.modelGroup = "gemini";
     const geminiTitleRow = document.createElement("div");
     geminiTitleRow.className = "model-name-row";
     const geminiH4 = document.createElement("h4");
@@ -893,6 +906,7 @@ function renderAccountCard(acc, grid, anchorEl, ideEmail = "", agy2Email = "") {
     // 2. Argon block
     const argonBlock = document.createElement("div");
     argonBlock.className = "model-block";
+    argonBlock.dataset.modelGroup = "argon";
     argonBlock.style.marginTop = "14px";
     argonBlock.style.paddingTop = "14px";
     argonBlock.style.borderTop = "1px solid var(--glass-border-subtle)";
@@ -913,6 +927,7 @@ function renderAccountCard(acc, grid, anchorEl, ideEmail = "", agy2Email = "") {
     // 3. Claude block
     const claudeBlock = document.createElement("div");
     claudeBlock.className = "model-block";
+    claudeBlock.dataset.modelGroup = "opus";
     claudeBlock.style.marginTop = "14px";
     claudeBlock.style.paddingTop = "14px";
     claudeBlock.style.borderTop = "1px solid var(--glass-border-subtle)";
@@ -942,6 +957,52 @@ function renderAccountCard(acc, grid, anchorEl, ideEmail = "", agy2Email = "") {
 
   updateAccountCardData(card, acc, ideEmail, agy2Email);
   return card;
+}
+
+function syncModelBlockVisibility(cardEl, windows) {
+  if (!cardEl) return [];
+  const groups = [
+    {
+      key: "gemini",
+      label: "Gemini",
+      available: !windows["gemini-5h"]?.unavailable || !windows["gemini-weekly"]?.unavailable,
+    },
+    {
+      key: "argon",
+      label: "Argon 4",
+      available: !windows["argon-5h"]?.unavailable || !windows["argon-weekly"]?.unavailable,
+    },
+    {
+      key: "opus",
+      label: "Claude",
+      available: !windows["opus-5h"]?.unavailable || !windows["opus-weekly"]?.unavailable,
+    },
+  ];
+  const hasAny = groups.some((g) => g.available);
+  const hiddenLabels = [];
+  let visibleIdx = 0;
+
+  for (const g of groups) {
+    const block = cardEl.querySelector(`.model-block[data-model-group="${g.key}"]`);
+    if (!block) continue;
+    const hide = hasAny && !g.available;
+    block.style.display = hide ? "none" : "";
+    if (hide) {
+      hiddenLabels.push(g.label);
+    } else {
+      if (visibleIdx === 0) {
+        block.style.marginTop = "0";
+        block.style.paddingTop = "0";
+        block.style.borderTop = "none";
+      } else {
+        block.style.marginTop = "14px";
+        block.style.paddingTop = "14px";
+        block.style.borderTop = "1px solid var(--glass-border-subtle)";
+      }
+      visibleIdx += 1;
+    }
+  }
+  return hiddenLabels;
 }
 
 function updateAccountCardData(card, acc, ideEmail = "", agy2Email = "") {
@@ -980,7 +1041,7 @@ function updateAccountCardData(card, acc, ideEmail = "", agy2Email = "") {
         ? noDataText
         : m.isWeeklyExhausted
           ? "0.00% remaining (Weekly exhausted)"
-          : `${m.percentage.toFixed(2)}% remaining`;
+          : `${formatQuotaPercentage(m.percentage, 2)}% remaining`;
       valEl.title = m.tooltip || "";
     }
     const countdownEl = row.querySelector(".window-countdown");
@@ -1051,9 +1112,10 @@ function updateAccountCardData(card, acc, ideEmail = "", agy2Email = "") {
       tokensEl.textContent = text || "";
     }
   }
+  return syncModelBlockVisibility(card, windows);
 }
 
-function updateProviderMetrics(prefix, accTs, email) {
+function updateProviderMetrics(prefix, accTs, email, cardEl) {
   const windows = {
     "gemini-5h": buildTokenMetric("5Hours", accTs, "antigravity", "Gemini 5Hours", "antigravityWeekly"),
     "gemini-weekly": buildTokenMetric("Weekly", accTs, "antigravityWeekly", "Gemini Weekly"),
@@ -1075,7 +1137,7 @@ function updateProviderMetrics(prefix, accTs, email) {
         ? noDataText
         : m.isWeeklyExhausted
           ? "0.00% remaining (Weekly exhausted)"
-          : `${m.percentage.toFixed(2)}% remaining`;
+          : `${formatQuotaPercentage(m.percentage, 2)}% remaining`;
       label.title = m.tooltip || "";
     }
     const reset = $(`reset-${elId}`);
@@ -1148,6 +1210,7 @@ function updateProviderMetrics(prefix, accTs, email) {
       abs.textContent = text || "";
     }
   }
+  return syncModelBlockVisibility(cardEl, windows);
 }
 
 function renderTokens() {
@@ -1176,10 +1239,12 @@ function renderTokens() {
     agy2Email,
     isLegacyFallback: orderedAccounts.length === 0,
   });
+  const hiddenEntries = [];
   const slot1Ts = orderedAccounts.length === 0
     ? rawTs
     : (slot1Acc ? getPrimaryTokenStatus(rawTs, slot1Acc) : {});
-  updateProviderMetrics("", slot1Ts, slot1Acc?.email);
+  const slot1Hidden = updateProviderMetrics("", slot1Ts, slot1Acc?.email, card1);
+  if (slot1Hidden.length) hiddenEntries.push(`${slot1Acc?.email || "default"}=[${slot1Hidden.join(", ")}]`);
 
   // 3. Update Slot 2 (#provider-antigravity-2) — visible only when 2+ distinct accounts exist
   const slot2Acc = orderedAccounts[1] || null;
@@ -1200,7 +1265,8 @@ function renderTokens() {
       agy2Email,
       isLegacyFallback: false,
     });
-    updateProviderMetrics("agy2", getPrimaryTokenStatus(rawTs, slot2Acc), slot2Acc.email);
+    const slot2Hidden = updateProviderMetrics("agy2", getPrimaryTokenStatus(rawTs, slot2Acc), slot2Acc.email, card2);
+    if (slot2Hidden.length) hiddenEntries.push(`${slot2Acc.email}=[${slot2Hidden.join(", ")}]`);
   } else if (card2) {
     card2.dataset.slotEmpty = "true";
     card2.dataset.accountEmail = "";
@@ -1220,7 +1286,7 @@ function renderTokens() {
         ? noDataText
         : m.isWeeklyExhausted
           ? "0.00% remaining (Weekly exhausted)"
-          : `${m.percentage.toFixed(2)}% remaining`;
+          : `${formatQuotaPercentage(m.percentage, 2)}% remaining`;
       label.title = m.tooltip || "";
     }
     const reset = $(`reset-${id}`);
@@ -1294,7 +1360,16 @@ function renderTokens() {
       if (!acc || !acc.email) continue;
       const slug = acc.email.replace(/[^a-zA-Z0-9_-]/g, "_");
       validSlugs.add(slug);
-      renderAccountCard(acc, grid, openaiCard, ideEmail, agy2Email);
+      const card = renderAccountCard(acc, grid, openaiCard, ideEmail, agy2Email);
+      const extraHidden = card ? syncModelBlockVisibility(card, {
+        "gemini-5h": { unavailable: acc.antigravityPercentage == null },
+        "gemini-weekly": { unavailable: acc.antigravityWeeklyPercentage == null },
+        "argon-5h": { unavailable: acc.argonPercentage == null },
+        "argon-weekly": { unavailable: acc.argonWeeklyPercentage == null },
+        "opus-5h": { unavailable: acc.opusPercentage == null },
+        "opus-weekly": { unavailable: acc.opusWeeklyPercentage == null },
+      }) : [];
+      if (extraHidden.length) hiddenEntries.push(`${acc.email}=[${extraHidden.join(", ")}]`);
     }
 
     grid.querySelectorAll(":scope > [id^='provider-account-']").forEach((el) => {
@@ -1303,6 +1378,14 @@ function renderTokens() {
         el.remove();
       }
     });
+  }
+
+  const hiddenKey = hiddenEntries.join("; ");
+  if (hiddenKey !== state.lastLoggedHiddenGroupsKey) {
+    state.lastLoggedHiddenGroupsKey = hiddenKey;
+    if (hiddenKey) {
+      recordRecentEvent(`미제공 쿼터 그룹 자동 숨김 (API 미반환): ${hiddenKey}`);
+    }
   }
 
   if (providerDndController) {

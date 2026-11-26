@@ -2,6 +2,7 @@
 // Verification suite for Google Drive MCP unlazy gates
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -32,7 +33,7 @@ if (arg === '--check-package') {
   }
 } else if (arg === '--check-helper') {
   const helperPath = path.join(__dirname, 'setup-gdrive-mcp.js');
-  const homeDir = process.env.USERPROFILE || process.env.HOME || 'C:\\Users\\jsp0';
+  const homeDir = process.env.USERPROFILE || process.env.HOME || os.homedir();
   const configDir = path.join(homeDir, '.config', 'google-drive-mcp');
 
   if (fs.existsSync(helperPath) && fs.existsSync(configDir)) {
@@ -66,7 +67,7 @@ if (arg === '--check-package') {
   process.exit(1);
 } else if (arg === '--check-mcp-config') {
   const mcpConfigPath = path.join(
-    process.env.USERPROFILE || 'C:\\Users\\jsp0',
+    process.env.USERPROFILE || os.homedir(),
     '.gemini',
     'config',
     'mcp_config.json'

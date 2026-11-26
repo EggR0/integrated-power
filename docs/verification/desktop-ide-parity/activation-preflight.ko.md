@@ -7,13 +7,13 @@
 - Windows 설치 앱: `C:\Program Files\Integrated Power Control Center\integrated-power-control-center.exe`, 파일/제품 버전 `0.8.0`.
 - 해당 실행 파일 SHA-256: `3E580686789CB4EC3235DF6C5E1C186FC1A4BC5534EC93433682954C02AE2BAE`.
 - 기존 설치는 HKLM에 등록된 MSI이며 Publisher는 `eggr`이다.
-- Antigravity IDE 설치 경로: `C:\Users\jsp0\AppData\Local\Programs\Antigravity IDE`.
-- 확장 인덱스 `C:\Users\jsp0\.antigravity-ide\extensions\extensions.json`에 등록된 대상은 `eggr0.integrated-power` 버전 `0.9.21`이다.
+- Antigravity IDE 설치 경로: `%LOCALAPPDATA%\Programs\Antigravity IDE`.
+- 확장 인덱스 `%USERPROFILE%\.antigravity-ide\extensions\extensions.json`에 등록된 대상은 `eggr0.integrated-power` 버전 `0.9.21`이다.
 - 설치된 확장의 `webview/main.js`, `styles.css`, `quota-core.js`에는 새 눈금 구현의 `buildGaugeTickGradient`, `progress-ticks`, `data-segments`가 없다. `main.js`와 `styles.css`에는 기존 모델별 프리웜 컨트롤이 있다. 즉 새 눈금 패키지는 아직 설치되지 않았다.
 - 이전 `eggr.integrated-power-0.9.1` 폴더도 남아 있지만, 폴더 존재만으로 두 확장이 활성화됐다고 판단하지 않는다. 삭제하지 않는다.
 - 현재 `127.0.0.1:37241` LISTENING 소유 PID는 `356`, 프로세스는 `Antigravity IDE`다. 이는 점검 시각의 값이며 적용 직전에 다시 확인해야 한다.
 - 현재 health는 `{ok:true,service:"integrated-power-broker"}`이며 새 schema 필드가 없는 기존 브로커다. 임의로 PID를 종료하지 않는다.
-- 데스크톱 상태 루트는 `C:\Users\jsp0\AppData\Local\IntegratedPower\state`이며 기존 암호화 원장, DPAPI 키 파일 및 과거 SQLite 백업이 존재한다. 내용은 출력하지 않았다.
+- 데스크톱 상태 루트는 `%LOCALAPPDATA%\IntegratedPower\state`이며 기존 암호화 원장, DPAPI 키 파일 및 과거 SQLite 백업이 존재한다. 내용은 출력하지 않았다.
 
 ## 점검에서 발견한 수정 대상
 

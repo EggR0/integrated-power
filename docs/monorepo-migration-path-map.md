@@ -60,7 +60,7 @@ D:\Workspace\Integrated POWER\
 
 ## 4. External Callers & Hook Inventory
 
-1. **`C:\Users\jsp0\.gemini\config\plugins\ip-orchestrator-plugin\hooks.json`**:
+1. **`%USERPROFILE%\.gemini\config\plugins\ip-orchestrator-plugin\hooks.json`**:
    - Original: `cmd /c "d:\Workspace\integrated-power-control-center\scripts\ensure-broker.cmd"`
    - Target: `cmd /c "d:\Workspace\Integrated POWER\packages\control-center\scripts\ensure-broker.cmd"`
    - Fallback: `d:\Workspace\integrated-power-control-center\scripts\ensure-broker.cmd` forwards to target.

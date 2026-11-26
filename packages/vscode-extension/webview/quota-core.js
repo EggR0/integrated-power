@@ -52,6 +52,7 @@ var IPQuota = (() => {
     detectRefilledQuotaWindows: () => detectRefilledQuotaWindows,
     executePrewarmPing: () => executePrewarmPing,
     formatNumber: () => formatNumber,
+    formatQuotaPercentage: () => formatQuotaPercentage,
     formatRefreshCountdown: () => formatRefreshCountdown,
     formatResetTime: () => formatResetTime,
     formatTokenCount: () => formatTokenCount,
@@ -378,6 +379,17 @@ var IPQuota = (() => {
       short: `\xB7 ${diffMins}m`
     };
   }
+  function formatQuotaPercentage(pct, decimals = 2) {
+    if (!Number.isFinite(pct)) return 0 .toFixed(decimals);
+    const clamped = Math.max(0, Math.min(100, pct));
+    if (clamped >= 99.9999) return 100 .toFixed(decimals);
+    const formatted = clamped.toFixed(decimals);
+    if (Number(formatted) >= 100) {
+      const step = Math.pow(10, -decimals);
+      return (100 - step).toFixed(decimals);
+    }
+    return formatted;
+  }
   function formatNumber(value) {
     return new Intl.NumberFormat().format(toFiniteNumber(value));
   }
@@ -510,7 +522,9 @@ var IPQuota = (() => {
       }
     }
     const displayPercentage = isWeeklyExhausted ? 0 : percentage;
-    const mainText = isWeeklyExhausted ? "0.00%" : percentage !== void 0 ? `${percentage.toFixed(2)}%` : "Unavailable";
+    const pct2 = percentage !== void 0 ? formatQuotaPercentage(percentage, 2) : void 0;
+    const pct1 = percentage !== void 0 ? formatQuotaPercentage(percentage, 1) : void 0;
+    const mainText = isWeeklyExhausted ? "0.00%" : pct2 !== void 0 ? `${pct2}%` : "Unavailable";
     let subtextFull = "Waiting for quota data";
     let subtextMedium = "Waiting";
     let subtextShort = "Waiting";
@@ -518,10 +532,10 @@ var IPQuota = (() => {
       subtextFull = "0.00% remaining (Weekly exhausted)";
       subtextMedium = "0.00%";
       subtextShort = "0.0%";
-    } else if (percentage !== void 0) {
-      subtextFull = `${percentage.toFixed(2)}% remaining`;
-      subtextMedium = `${percentage.toFixed(2)}%`;
-      subtextShort = `${percentage.toFixed(1)}%`;
+    } else if (pct2 !== void 0 && pct1 !== void 0) {
+      subtextFull = `${pct2}% remaining`;
+      subtextMedium = `${pct2}%`;
+      subtextShort = `${pct1}%`;
     }
     let effectiveResetTime = rawResetTime;
     if (isWeeklyExhausted && pairedWeeklyPrefix) {

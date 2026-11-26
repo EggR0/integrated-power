@@ -16,7 +16,7 @@
         </div>
         <div class="titlebar-center">
           <span class="titlebar-title">IPCC · 통신 통합 관제소</span>
-          <span id="broker-footer" class="titlebar-version-badge">v0.14.1 · loopback 37241</span>
+          <span id="broker-footer" class="titlebar-version-badge">v0.14.2 · loopback 37241</span>
         </div>
         <div class="titlebar-right">
           <span id="titlebar-broker-status" class="titlebar-status-text">
@@ -132,7 +132,7 @@
               <div class="provider-models">
                 <div id="antigravity-account-error" class="account-error-banner" style="display: none;"></div>
                 <!-- Gemini -->
-                <div class="model-block">
+                <div class="model-block" data-model-group="gemini">
                   <div class="model-name-row">
                     <h4>Gemini</h4>
                     <button id="prewarm-gemini-5h" class="prewarm-action apple-tactile" type="button" data-prewarm-window="antigravity" data-window-id="gemini-5h"><span class="prewarm-action-full">⚡ Pre-warm</span><span class="prewarm-action-medium">⚡ Prewarm</span><span class="prewarm-action-short">⚡ Pre</span></button>
@@ -158,7 +158,7 @@
                 </div>
 
                 <!-- Argon 4 -->
-                <div class="model-block" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--glass-border-subtle);">
+                <div class="model-block" data-model-group="argon" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--glass-border-subtle);">
                   <div class="model-name-row">
                     <h4>Gemini 4 Argon</h4>
                     <button id="prewarm-argon-weekly" class="prewarm-action apple-tactile" type="button" data-prewarm-window="argon" data-window-id="argon-weekly"><span class="prewarm-action-full">⚡ Pre-warm</span><span class="prewarm-action-medium">⚡ Prewarm</span><span class="prewarm-action-short">⚡ Pre</span></button>
@@ -184,7 +184,7 @@
                 </div>
 
                 <!-- Claude -->
-                <div class="model-block" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--glass-border-subtle);">
+                <div class="model-block" data-model-group="opus" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--glass-border-subtle);">
                   <div class="model-name-row">
                     <h4>Claude</h4>
                     <button id="prewarm-opus-5h" class="prewarm-action apple-tactile" type="button" data-prewarm-window="opus" data-window-id="opus-5h"><span class="prewarm-action-full">⚡ Pre-warm</span><span class="prewarm-action-medium">⚡ Prewarm</span><span class="prewarm-action-short">⚡ Pre</span></button>
@@ -223,7 +223,7 @@
               <div class="provider-models">
                 <div id="antigravity-2-account-error" class="account-error-banner" style="display: none;"></div>
                 <!-- Gemini -->
-                <div class="model-block">
+                <div class="model-block" data-model-group="gemini">
                   <div class="model-name-row">
                     <h4>Gemini</h4>
                     <button id="prewarm-agy2-gemini-5h" class="prewarm-action apple-tactile" type="button" data-account-prewarm="antigravity" data-window-id="gemini-5h"><span class="prewarm-action-full">⚡ Pre-warm</span><span class="prewarm-action-medium">⚡ Prewarm</span><span class="prewarm-action-short">⚡ Pre</span></button>
@@ -249,7 +249,7 @@
                 </div>
 
                 <!-- Argon 4 -->
-                <div class="model-block" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--glass-border-subtle);">
+                <div class="model-block" data-model-group="argon" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--glass-border-subtle);">
                   <div class="model-name-row">
                     <h4>Gemini 4 Argon</h4>
                     <button id="prewarm-agy2-argon-weekly" class="prewarm-action apple-tactile" type="button" data-account-prewarm="argon" data-window-id="argon-weekly"><span class="prewarm-action-full">⚡ Pre-warm</span><span class="prewarm-action-medium">⚡ Prewarm</span><span class="prewarm-action-short">⚡ Pre</span></button>
@@ -275,7 +275,7 @@
                 </div>
 
                 <!-- Claude -->
-                <div class="model-block" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--glass-border-subtle);">
+                <div class="model-block" data-model-group="opus" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--glass-border-subtle);">
                   <div class="model-name-row">
                     <h4>Claude</h4>
                     <button id="prewarm-agy2-opus-5h" class="prewarm-action apple-tactile" type="button" data-account-prewarm="opus" data-window-id="opus-5h"><span class="prewarm-action-full">⚡ Pre-warm</span><span class="prewarm-action-medium">⚡ Prewarm</span><span class="prewarm-action-short">⚡ Pre</span></button>
@@ -1136,7 +1136,7 @@
 
       <footer class="statusbar">
         <span id="status" class="muted">브로커 상태를 확인하는 중…</span>
-        <span id="footer-version-theme">Integrated Power v0.14.1 · Smoked Titanium Liquid Glass</span>
+        <span id="footer-version-theme">Integrated Power v0.14.2 · Smoked Titanium Liquid Glass</span>
       </footer>
     </div>
     <script type="module" src="/src/main.js"></script>

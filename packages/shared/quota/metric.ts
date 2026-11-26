@@ -25,7 +25,7 @@ import {
   clamp,
 } from "./capacity";
 import { calculateEffective5HourQuota } from "./capacity";
-import { formatRefreshCountdown, formatTokenCount } from "./format";
+import { formatQuotaPercentage, formatRefreshCountdown, formatTokenCount } from "./format";
 
 /** Build the existing desktop gauge divider gradient for an equal-segment track. */
 export function buildGaugeTickGradient(segments: number): string {
@@ -192,10 +192,12 @@ export function buildTokenMetric(
   }
 
   const displayPercentage = isWeeklyExhausted ? 0.0 : percentage;
+  const pct2 = percentage !== undefined ? formatQuotaPercentage(percentage, 2) : undefined;
+  const pct1 = percentage !== undefined ? formatQuotaPercentage(percentage, 1) : undefined;
   const mainText = isWeeklyExhausted
     ? "0.00%"
-    : percentage !== undefined
-      ? `${percentage.toFixed(2)}%`
+    : pct2 !== undefined
+      ? `${pct2}%`
       : "Unavailable";
 
   let subtextFull = "Waiting for quota data";
@@ -205,10 +207,10 @@ export function buildTokenMetric(
     subtextFull = "0.00% remaining (Weekly exhausted)";
     subtextMedium = "0.00%";
     subtextShort = "0.0%";
-  } else if (percentage !== undefined) {
-    subtextFull = `${percentage.toFixed(2)}% remaining`;
-    subtextMedium = `${percentage.toFixed(2)}%`;
-    subtextShort = `${percentage.toFixed(1)}%`;
+  } else if (pct2 !== undefined && pct1 !== undefined) {
+    subtextFull = `${pct2}% remaining`;
+    subtextMedium = `${pct2}%`;
+    subtextShort = `${pct1}%`;
   }
 
   let effectiveResetTime = rawResetTime;

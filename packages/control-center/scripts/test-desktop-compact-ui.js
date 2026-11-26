@@ -115,8 +115,8 @@ const broker = http.createServer(async (request, response) => {
         activeIdeAccountEmail: "ide@example.com",
         activeAgy2AccountEmail: "agy2@example.com",
         accounts: {
-          "ide@example.com": { email: "ide@example.com", isIdeActive: true, isAgy2Active: false, antigravityPercentage: 92, antigravityWeeklyPercentage: 88, argonWeeklyPercentage: 95, opusPercentage: 90, opusWeeklyPercentage: 85 },
-          "agy2@example.com": { email: "agy2@example.com", isIdeActive: false, isAgy2Active: true, antigravityPercentage: 79, antigravityWeeklyPercentage: 75, argonWeeklyPercentage: 80, opusPercentage: 70, opusWeeklyPercentage: 65 },
+          "ide@example.com": { email: "ide@example.com", isIdeActive: true, isAgy2Active: false, antigravityPercentage: 92, antigravityWeeklyPercentage: 99.99833, opusPercentage: 90, opusWeeklyPercentage: 85 },
+          "agy2@example.com": { email: "agy2@example.com", isIdeActive: false, isAgy2Active: true, antigravityPercentage: 79, antigravityWeeklyPercentage: 75, argonWeeklyPercentage: 80 },
         },
         lastSync: new Date().toISOString(),
       };
@@ -221,6 +221,10 @@ const readAccountHeaders=()=>({
   slot2EmailDisplay:doc.getElementById("antigravity-2-account-email")?.style.display||"",
   slot2State:doc.getElementById("antigravity-2-provider-state-tag")?.textContent||"",
   slot2Class:doc.getElementById("antigravity-2-provider-state-tag")?.className||"",
+  slot1WeeklyLabel:doc.getElementById("label-gemini-weekly")?.textContent||"",
+  slot1ArgonHidden:doc.querySelector('#provider-antigravity [data-model-group="argon"]')?.style.display==="none",
+  slot2ArgonVisible:doc.querySelector('#provider-antigravity-2 [data-model-group="argon"]')?.style.display!=="none",
+  slot2OpusHidden:doc.querySelector('#provider-antigravity-2 [data-model-group="opus"]')?.style.display==="none",
 });
 const multiSplitHeaders=readAccountHeaders();
 const multiSplitWideLabels=[...doc.querySelectorAll(".provider-toggle,.provider-state-tag,.status-pill,.prewarm-action")].filter(e=>e.getClientRects().length).map(e=>{const range=doc.createRange();range.selectNodeContents(e);const lines=[...new Set([...range.getClientRects()].map(rect=>Math.round(rect.top)))];return {label:(e.innerText||"").trim(),overflow:e.tagName==="BUTTON"&&e.scrollWidth>e.clientWidth+1,lines};}).filter(item=>item.overflow||item.lines.length>1);
@@ -284,6 +288,10 @@ document.title=JSON.stringify({results,legacyToast,actionStates,codexCountdown,w
     assert.equal(multiSplitHeaders.slot2EmailDisplay, "none", "duplicate account-email-tag must stay hidden in slot 2");
     assert.equal(multiSplitHeaders.slot2State, "Active 2.0", `slot 2 state tag must show Active 2.0: ${JSON.stringify(multiSplitHeaders)}`);
     assert(multiSplitHeaders.slot2Class.includes("active-agy2"), `slot 2 state tag must include active-agy2 class: ${JSON.stringify(multiSplitHeaders)}`);
+    assert.equal(multiSplitHeaders.slot1WeeklyLabel, "99.99% remaining", `99.99833% must format as 99.99% remaining, never 100.00%: ${JSON.stringify(multiSplitHeaders)}`);
+    assert.equal(multiSplitHeaders.slot1ArgonHidden, true, `unreported Argon block must be hidden on slot 1: ${JSON.stringify(multiSplitHeaders)}`);
+    assert.equal(multiSplitHeaders.slot2ArgonVisible, true, `reported Argon block must stay visible on slot 2: ${JSON.stringify(multiSplitHeaders)}`);
+    assert.equal(multiSplitHeaders.slot2OpusHidden, true, `unreported Claude block must be hidden on slot 2: ${JSON.stringify(multiSplitHeaders)}`);
     assert.equal(multiSplitWideLabels.length, 0, `multi-account provider badges must stay single-line at 900px: ${JSON.stringify(multiSplitWideLabels)}`);
     for (const item of multiSplitCompact) {
       assert(item.scrollWidth <= item.clientWidth, `multi-account horizontal overflow at ${item.width}px: ${JSON.stringify(item)}`);

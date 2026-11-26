@@ -1386,12 +1386,12 @@ function getBaselineAgyAccount(): string {
   try {
     if (fs.existsSync(stateFile)) {
       const current = fs.readFileSync(stateFile, "utf8").trim();
-      if (current && current.includes("@") && current !== "yip1004@gmail.com") {
+      if (current && current.includes("@")) {
         return current;
       }
     }
   } catch {}
-  return "egg.r0000@gmail.com";
+  return "";
 }
 
 function killProcessTreeWindows(pid: number | undefined): void {
@@ -1416,7 +1416,7 @@ async function spawnPrewarm(
   const startedAt = Date.now();
   return new Promise((resolve) => {
     let finished = false;
-    let baselineAccount = "egg.r0000@gmail.com";
+    let baselineAccount = "";
     let needsContextSwitch = false;
 
     const restoreBaseline = async () => {
@@ -1509,8 +1509,8 @@ async function spawnPrewarm(
         });
       } else {
         baselineAccount = getBaselineAgyAccount();
-        const targetAccount = account || "yip1004@gmail.com";
-        needsContextSwitch = !targetAccount.includes("project-") && targetAccount !== baselineAccount;
+        const targetAccount = account || "";
+        needsContextSwitch = Boolean(targetAccount && baselineAccount && !targetAccount.includes("project-") && targetAccount !== baselineAccount);
 
         (async () => {
           try {

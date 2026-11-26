@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
 import * as cp from "child_process";
@@ -1887,7 +1888,7 @@ export class DashboardController implements vscode.Disposable {
       }
       const agyCandidates = [
         process.env.AGY_PATH,
-        path.join(process.env.LOCALAPPDATA || "C:\\Users\\jsp0\\AppData\\Local", "agy", "bin", "agy.exe"),
+        path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "agy", "bin", "agy.exe"),
         process.env.USERPROFILE ? path.join(process.env.USERPROFILE, ".gemini", "bin", "agy.exe") : "",
       ].filter(Boolean) as string[];
       const agyBin = agyCandidates.find((candidate) => fs.existsSync(candidate)) || agyCandidates[0];

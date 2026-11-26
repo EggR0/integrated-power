@@ -181,6 +181,29 @@ try {
   });
   assert(bothActiveHtml.includes("both@example.com") && bothActiveHtml.includes(">Active IDE · 2.0<"), "Dual login must show account email and Active IDE · 2.0 badge");
 
+  // Unreported model group hiding + floor-safe percentage formatting (99.99833 -> 99.99%, never 100.00%)
+  const missingArgonHtml = webviewSandbox.renderTokenStatus({
+    activeIdeAccountEmail: "ide@example.com",
+    accounts: {
+      "ide@example.com": { email: "ide@example.com", isIdeActive: true, antigravityPercentage: 99.99833, opusPercentage: 88 },
+    },
+    antigravityPercentage: 99.99833,
+    opusPercentage: 88,
+  });
+  assert(!missingArgonHtml.includes("Gemini 4 Argon"), "Unreported Argon group must be automatically hidden when API omits it");
+  assert(missingArgonHtml.includes("99.99% remaining") && !missingArgonHtml.includes("100.00% remaining"), "99.99833% must display 99.99%, never round up to 100.00%");
+
+  const missingOpusHtml = webviewSandbox.renderTokenStatus({
+    activeIdeAccountEmail: "ide@example.com",
+    accounts: {
+      "ide@example.com": { email: "ide@example.com", isIdeActive: true, antigravityPercentage: 75, argonWeeklyPercentage: 90 },
+    },
+    antigravityPercentage: 75,
+    argonWeeklyPercentage: 90,
+  });
+  const section1Match = missingOpusHtml.match(/data-section="antigravity"[\s\S]*?<\/details>/);
+  assert(section1Match && !section1Match[0].includes("<h3><span class=\"text-full\">Claude</span>") && section1Match[0].includes("Gemini 4 Argon"), "Any unreported model group (Claude) must hide while reported groups (Gemini, Argon 4) remain visible");
+
   // When a browser is installed, measure the actual broker panel at narrow widths.
   const os = require("os");
   const { execFileSync } = require("child_process");
@@ -226,6 +249,7 @@ try {
           },
           antigravityPercentage: 68, antigravityTokensLeft: 680, antigravityMax: 1000, antigravityResetTime: "2026-10-13T06:00:00Z",
           antigravityWeeklyPercentage: 47, antigravityWeeklyTokensLeft: 4700, antigravityWeeklyMax: 10000, antigravityWeeklyResetTime: "2026-10-17T00:00:00Z",
+          argonWeeklyPercentage: 95, argonWeeklyResetTime: "2026-10-17T00:00:00Z",
           opusPercentage: 52, opusTokensLeft: 520, opusMax: 1000, opusResetTime: "2026-10-13T05:00:00Z",
           opusWeeklyPercentage: 35, opusWeeklyTokensLeft: 3500, opusWeeklyMax: 10000, opusWeeklyResetTime: "2026-10-17T00:00:00Z",
           codexPercentage: 84, codexTokensLeft: 840, codexMax: 1000, codexResetTime: "2026-10-13T06:30:00Z",
