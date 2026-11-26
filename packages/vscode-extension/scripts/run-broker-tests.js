@@ -1021,7 +1021,17 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
         assert.strictEqual(skippedPrewarm.timerConfirmed, false);
         assert.ok(skippedPrewarm.error && skippedPrewarm.error.includes("not 100% full"));
         assert.strictEqual(fakeDispatcherCallCount, 0, "rejected prewarm must not call dispatcher");
-        // Drain skipped notification from subtest (a) so subtests (b) and (c) yield exactly 4 notifications
+        // a2. 99.99833% weekly micro-usage prewarm rejection (status: "skipped")
+        currentFakeQuota.antigravityWeeklyPercentage = 99.99833;
+        const skippedWeeklyMicro = await fetch(`http://127.0.0.1:${honestServer.port}/v1/tokens/prewarm`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: "antigravity", window: "weekly", manual: true, idempotencyKey: "test-reject-weekly-9999833" }),
+        }).then((r) => r.json());
+        assert.strictEqual(skippedWeeklyMicro.status, "skipped", "99.99833% weekly micro-usage must be rejected as skipped");
+        assert.ok(skippedWeeklyMicro.error && skippedWeeklyMicro.error.includes("not 100% full"));
+        currentFakeQuota.antigravityWeeklyPercentage = 100;
+        // Drain skipped notifications from subtests (a)/(a2) so subtests (b) and (c) yield expected counts
         await client.claimPrewarmNotifications();
 
         // b. verifyTimer emits status: "verified" & timerConfirmed: true when mock telemetry shows quota drop (99.4%)
@@ -1257,6 +1267,9 @@ fs.writeFileSync(path.join(workspaceRoot, 'reports', 'local_llm_metrics.csv'), '
         }).then((r) => r.json());
         assert.strictEqual(noAccountRes.status, "failed", "prewarm without an account must fail rather than fallback to a hardcoded email");
         assert.strictEqual(noAccountRes.error, "No target Antigravity account specified for prewarm.");
+        const logsRes = await fetch(`http://127.0.0.1:${noAccountPrewarmServer.port}/v1/logs?lines=25`).then((r) => r.json());
+        assert.strictEqual(logsRes.ok, true, "/v1/logs must return ok: true");
+        assert.ok(Array.isArray(logsRes.lines) && logsRes.lines.some((line) => line.includes("[BROKER] HTTP broker listening")), "/v1/logs must include broker startup log line");
       } finally {
         await noAccountPrewarmServer.close();
       }

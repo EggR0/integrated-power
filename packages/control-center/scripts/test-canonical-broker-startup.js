@@ -139,14 +139,14 @@ async function main() {
     await waitForHealth(port, mcp);
     const mcpHealth = await getJson(port, "/health");
     assert.equal(mcpHealth.service, "integrated-power-broker");
-    assert.equal(mcpHealth.brokerVersion, "0.14.0");
+    assert.equal(mcpHealth.brokerVersion, "0.14.1");
     const mcpTasks = await getJson(port, "/v1/tasks");
     assert.ok(mcpTasks.tasks.some((entry) => entry.id === task.id), "MCP-hosted HTTP broker exposes the same canonical ledger tasks");
   } finally {
     await stop(mcp);
   }
 
-  process.stdout.write(JSON.stringify({ port, taskId: task.id, canonicalLedger: path.join(stateRoot, "broker", "events.enc.jsonl"), httpRestartContinuity: true, mcpStarted: true, mcpHttpAutoStarted: true, mcpHealthVersion: "0.14.0" }));
+  process.stdout.write(JSON.stringify({ port, taskId: task.id, canonicalLedger: path.join(stateRoot, "broker", "events.enc.jsonl"), httpRestartContinuity: true, mcpStarted: true, mcpHttpAutoStarted: true, mcpHealthVersion: "0.14.1" }));
 }
 
 function freePort() {

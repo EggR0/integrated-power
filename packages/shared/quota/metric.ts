@@ -225,9 +225,9 @@ export function buildTokenMetric(
   const weeklyKnownForPrewarm = !pairedWeeklyPrefix
     || (typeof weeklyExactForPrewarm === "number" && Number.isFinite(weeklyExactForPrewarm) && weeklyExactForPrewarm >= 0 && weeklyExactForPrewarm <= 100)
     || (weeklyExactForPrewarm === undefined && typeof weeklyLeftForPrewarm === "number" && typeof weeklyMaxForPrewarm === "number" && weeklyMaxForPrewarm > 0 && weeklyLeftForPrewarm >= 0 && weeklyLeftForPrewarm <= weeklyMaxForPrewarm);
-  const is5HourAt100 = label === "5Hours" && percentage !== undefined && percentage >= 99.995 && !isWeeklyExhausted;
+  const is5HourAt100 = label === "5Hours" && percentage !== undefined && percentage >= 99.9999 && !isWeeklyExhausted;
   const is5HourReady = is5HourAt100 && weeklyKnownForPrewarm;
-  const isWeeklyAt100 = label === "Weekly" && percentage !== undefined && percentage >= 99.995;
+  const isWeeklyAt100 = label === "Weekly" && percentage !== undefined && percentage >= 99.9999;
   const resetDate = effectiveResetTime ? new Date(effectiveResetTime) : undefined;
   const resetEpoch = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : undefined;
   const diffMs = resetEpoch !== undefined ? resetEpoch - Date.now() : undefined;
@@ -236,7 +236,7 @@ export function buildTokenMetric(
   // If the reset countdown is already actively ticking down (less than full duration),
   // the window has already started its rolling cycle and is not eligible for prewarm.
   const is5HourActiveCountdown = label === "5Hours" && diffMs !== undefined && diffMs > 0 && diffMs < 5 * 3600 * 1000 - 15 * 60 * 1000;
-  const isWeeklyActiveCountdown = label === "Weekly" && diffMs !== undefined && diffMs > 0 && diffMs < 168 * 3600 * 1000 - 4 * 3600 * 1000;
+  const isWeeklyActiveCountdown = label === "Weekly" && diffMs !== undefined && diffMs > 0 && diffMs < 168 * 3600 * 1000 - 1 * 3600 * 1000;
   const isPrewarmed = false;
   let refreshFull = "";
   let refreshMedium = "";

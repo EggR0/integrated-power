@@ -1,7 +1,7 @@
 {
   "name": "integrated-power-control-center",
   "private": true,
-  "version": "0.14.0",
+  "version": "0.14.1",
   "scripts": {
     "dev": "node ./scripts/dev.js",
     "test": "node ./scripts/test-broker-package.js && node ./scripts/test-canonical-broker-startup.js && node ./scripts/test-api-read-state.js && node ./scripts/test-desktop-compact-ui.js && node ./scripts/test-hub-e2e.js && node ./scripts/verify-live-e2e.js",

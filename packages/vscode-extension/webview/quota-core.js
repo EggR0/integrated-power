@@ -534,15 +534,15 @@ var IPQuota = (() => {
     const weeklyLeftForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}TokensLeft`] : void 0;
     const weeklyMaxForPrewarm = pairedWeeklyPrefix ? status[`${pairedWeeklyPrefix}Max`] : void 0;
     const weeklyKnownForPrewarm = !pairedWeeklyPrefix || typeof weeklyExactForPrewarm === "number" && Number.isFinite(weeklyExactForPrewarm) && weeklyExactForPrewarm >= 0 && weeklyExactForPrewarm <= 100 || weeklyExactForPrewarm === void 0 && typeof weeklyLeftForPrewarm === "number" && typeof weeklyMaxForPrewarm === "number" && weeklyMaxForPrewarm > 0 && weeklyLeftForPrewarm >= 0 && weeklyLeftForPrewarm <= weeklyMaxForPrewarm;
-    const is5HourAt100 = label === "5Hours" && percentage !== void 0 && percentage >= 99.995 && !isWeeklyExhausted;
+    const is5HourAt100 = label === "5Hours" && percentage !== void 0 && percentage >= 99.9999 && !isWeeklyExhausted;
     const is5HourReady = is5HourAt100 && weeklyKnownForPrewarm;
-    const isWeeklyAt100 = label === "Weekly" && percentage !== void 0 && percentage >= 99.995;
+    const isWeeklyAt100 = label === "Weekly" && percentage !== void 0 && percentage >= 99.9999;
     const resetDate = effectiveResetTime ? new Date(effectiveResetTime) : void 0;
     const resetEpoch = resetDate && !Number.isNaN(resetDate.getTime()) ? resetDate.getTime() : void 0;
     const diffMs = resetEpoch !== void 0 ? resetEpoch - Date.now() : void 0;
     const countdown = formatRefreshCountdown(effectiveResetTime);
     const is5HourActiveCountdown = label === "5Hours" && diffMs !== void 0 && diffMs > 0 && diffMs < 5 * 3600 * 1e3 - 15 * 60 * 1e3;
-    const isWeeklyActiveCountdown = label === "Weekly" && diffMs !== void 0 && diffMs > 0 && diffMs < 168 * 3600 * 1e3 - 4 * 3600 * 1e3;
+    const isWeeklyActiveCountdown = label === "Weekly" && diffMs !== void 0 && diffMs > 0 && diffMs < 168 * 3600 * 1e3 - 1 * 3600 * 1e3;
     const isPrewarmed = false;
     let refreshFull = "";
     let refreshMedium = "";

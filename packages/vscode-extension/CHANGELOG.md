@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.14.1] - 2026-11-26
+
+### Fixed & Improved
+
+- **Weekly & 5-Hour Micro-Usage Countdown Precision (`packages/shared/quota/metric.ts`, `src/broker/server.ts`, `src/DashboardController.ts`)**:
+  - Tightened dormant 100% threshold from `99.995` to `99.9999` and weekly active countdown slack from 4h to 1h so real micro-usage (e.g., `99.99833%` weekly remaining after a minimal ping) immediately shows its live countdown instead of being overwritten with `· Refreshes in 168h 0m`.
+- **Bounded Broker/Discrepancy Logging & Tail Reader (`src/broker/server.ts`, `src/AgyQuotaClient.ts`, `packages/control-center/src/main.js`)**:
+  - Added automatic size-bounded tail trimming for `broker.log` (2 MB → 1 MB) and `quota_discrepancy.log` (1 MB → 256 KB) using atomic temp-file replacement.
+  - Optimized `GET /v1/logs` to read only the tail chunk (256 KB), added startup/active-account-change/route-error logging, and surfaced recent pre-warm events in Control Center's token activity list.
+
 ## [0.14.0] - 2026-11-26
 
 ### Added & Changed

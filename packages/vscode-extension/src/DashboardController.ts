@@ -1670,7 +1670,7 @@ export class DashboardController implements vscode.Disposable {
       const fiveHPct = typeof (status as any)[`${prefix}Percentage`] === "number"
         ? Number((status as any)[`${prefix}Percentage`])
         : 0;
-      if (fiveHPct < 99.995) {
+      if (fiveHPct < 99.9999) {
         return { eligible: false, reason: `${label} quota is not 100% full (${fiveHPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
       }
 
@@ -1705,7 +1705,7 @@ export class DashboardController implements vscode.Disposable {
       if (weeklyPct === undefined) {
         return { eligible: false, reason: `${label} weekly quota data unavailable.`, prefix, targetModel, cliModel, label };
       }
-      if (weeklyPct < 99.995) {
+      if (weeklyPct < 99.9999) {
         return { eligible: false, reason: `${label} quota is not 100% full (${weeklyPct.toFixed(1)}% remaining). Pre-warm only operates on 100% Ready windows.`, prefix, targetModel, cliModel, label };
       }
 
@@ -1713,7 +1713,7 @@ export class DashboardController implements vscode.Disposable {
       const weeklyResetTimeStr = (status as any)[`${weeklyPrefix}ResetTime`];
       const weeklyResetEpoch = weeklyResetTimeStr ? Date.parse(weeklyResetTimeStr) : NaN;
       const weeklyDiffMs = Number.isFinite(weeklyResetEpoch) ? weeklyResetEpoch - Date.now() : undefined;
-      if (weeklyDiffMs !== undefined && weeklyDiffMs > 0 && weeklyDiffMs < 168 * 3600 * 1000 - 4 * 3600 * 1000) {
+      if (weeklyDiffMs !== undefined && weeklyDiffMs > 0 && weeklyDiffMs < 168 * 3600 * 1000 - 1 * 3600 * 1000) {
         const waitHours = Math.ceil(weeklyDiffMs / 3600000);
         return { eligible: false, reason: `${label} 주간 타이머가 이미 시작되어 재충전 중입니다 (${waitHours}시간 남음). 일주일(168시간)이 꽉 차 있을 때만 실행할 수 있습니다.`, prefix, targetModel, cliModel, label };
       }

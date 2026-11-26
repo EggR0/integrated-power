@@ -419,12 +419,32 @@ export class AgyQuotaClient {
     try {
       const dir = resolveIntegratedPowerStateRoot();
       fs.mkdirSync(dir, { recursive: true });
+      const logPath = path.join(dir, 'quota_discrepancy.log');
       const slot = key.slice(key.indexOf('|') + 1);
       fs.appendFileSync(
-        path.join(dir, 'quota_discrepancy.log'),
+        logPath,
         JSON.stringify({ at: new Date().toISOString(), slot, previous: prev.pct, current: pct, ageMs: Date.now() - prev.at, reset, groups: rawGroups }) + '\n',
         'utf8',
       );
+      const maxBytes = 1024 * 1024;
+      const keepBytes = 256 * 1024;
+      const stat = fs.statSync(logPath);
+      if (stat.size > maxBytes) {
+        const fd = fs.openSync(logPath, 'r');
+        try {
+          const readLen = Math.min(keepBytes, stat.size);
+          const buf = Buffer.allocUnsafe(readLen);
+          fs.readSync(fd, buf, 0, readLen, stat.size - readLen);
+          const text = buf.toString('utf8');
+          const firstNl = text.indexOf('\n');
+          const trimmed = firstNl >= 0 ? text.slice(firstNl + 1) : text;
+          const tmp = `${logPath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+          fs.writeFileSync(tmp, trimmed, 'utf8');
+          fs.renameSync(tmp, logPath);
+        } finally {
+          fs.closeSync(fd);
+        }
+      }
     } catch {
       // diagnostics must never affect quota collection
     }

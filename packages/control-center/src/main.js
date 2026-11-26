@@ -39,7 +39,7 @@ const API = "http://127.0.0.1:" + BROKER_PORT;
 // ?broker= override in dev) so the label never lies about which process is up.
 {
   const _footer = document.getElementById("broker-footer");
-  if (_footer) _footer.textContent = `v0.14.0 · loopback ${BROKER_PORT}`;
+  if (_footer) _footer.textContent = `v0.14.1 · loopback ${BROKER_PORT}`;
   // Every endpoint label in the settings tab reflects the actual broker port
   // (BROKER_PORT), so dev ?broker=<port> runs never show a stale 37241 URL.
   const _setEndpoint = (id, value) => {
@@ -103,6 +103,7 @@ const state = {
   pollInterval: quotaSettings.pollIntervalMs,
   autoStartEnabled: false,
   logs: { path: "", lines: [] },
+  recentEvents: [],
   mainProvider: "google.antigravity.ide",
   brokerOnline: false,
   lastSyncAt: null,
@@ -212,9 +213,9 @@ function applyTheme(themeName) {
   const footerTheme = $("footer-version-theme");
   if (footerTheme) {
     const themeLabels = {
-      titanium: "Integrated Power v0.14.0 · Smoked Titanium Liquid Glass",
-      pearl: "Integrated Power v0.14.0 · Pearl White Liquid Glass",
-      cashmere: "Integrated Power v0.14.0 · Warm Cashmere Stone",
+      titanium: "Integrated Power v0.14.1 · Smoked Titanium Liquid Glass",
+      pearl: "Integrated Power v0.14.1 · Pearl White Liquid Glass",
+      cashmere: "Integrated Power v0.14.1 · Warm Cashmere Stone",
     };
     footerTheme.textContent = themeLabels[chosen] || themeLabels.titanium;
   }
@@ -1500,9 +1501,9 @@ function renderTokens() {
   const actList = $("token-activity-list");
   if (actList) {
     actList.replaceChildren();
-    const activities = Array.isArray(ts.activity) && ts.activity.length ? ts.activity : [
-      "브로커에서 활동 기록을 받아오지 못했습니다.",
-    ];
+    const baseActivities = Array.isArray(ts.activity) ? ts.activity : [];
+    const merged = [...state.recentEvents, ...baseActivities.filter((a) => !state.recentEvents.includes(a))].slice(0, 20);
+    const activities = merged.length ? merged : ["브로커에서 활동 기록을 받아오지 못했습니다."];
     for (const act of activities) {
       actList.append(node("li", `• ${act}`));
     }
@@ -2014,6 +2015,13 @@ async function refreshHub({ force = false } = {}) {
   renderHubSettings();
 }
 
+function recordRecentEvent(text) {
+  if (!text) return;
+  const stamp = new Date().toLocaleTimeString();
+  const entry = `[${stamp}] ${text}`;
+  state.recentEvents = [entry, ...state.recentEvents.filter((item) => item !== entry)].slice(0, 15);
+}
+
 async function refreshLogs() {
   try {
     const res = await api("/v1/logs?lines=160");
@@ -2142,6 +2150,7 @@ async function refreshOnce({ force = false } = {}) {
               }
 
               const msg = item.message || item.title || (typeof item === "string" ? item : `프리웜: ${item.model || item.target || "모델"}`);
+              recordRecentEvent(msg);
               if (item.status === "verified" || item.timerConfirmed === true) {
                 showToast(`✅ [Pre-warm 확인] ${msg}`, false);
                 sendDesktopNotification("✅ [Integrated Power] 프리웜 타이머 시작 확인", msg);

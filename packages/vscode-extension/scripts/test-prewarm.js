@@ -138,7 +138,7 @@ assert.strictEqual(weeklyTopMetric.isReady, true, "167.5h remaining must be reco
 assert.strictEqual(weeklyTopMetric.canPrewarm, true, "prewarm must be allowed when weekly window is full at 167.5h");
 assert.strictEqual(shared.canTriggerPrewarm(weeklyTopMetric), true);
 
-// 2. Weekly at 100% with active countdown (< 164h remaining) is NOT eligible for prewarm.
+// 2. Weekly at 100% with active countdown (< 167h remaining) is NOT eligible for prewarm.
 const weeklyActiveCountdownMetric = shared.buildTokenMetric("Weekly", {
   antigravityWeeklyPercentage: 100,
   antigravityWeeklyResetTime: resetIn(150),
@@ -146,6 +146,25 @@ const weeklyActiveCountdownMetric = shared.buildTokenMetric("Weekly", {
 assert.strictEqual(weeklyActiveCountdownMetric.isReady, false);
 assert.strictEqual(weeklyActiveCountdownMetric.canPrewarm, false);
 assert.strictEqual(shared.canTriggerPrewarm(weeklyActiveCountdownMetric), false);
+
+const weeklyEarlyCountdownAt100Metric = shared.buildTokenMetric("Weekly", {
+  antigravityWeeklyPercentage: 100,
+  antigravityWeeklyResetTime: resetIn(166.5),
+}, "antigravityWeekly", "Gemini Weekly");
+assert.strictEqual(weeklyEarlyCountdownAt100Metric.isReady, false, "166.5h remaining (>1h elapsed) must count down even at 100%");
+assert.strictEqual(weeklyEarlyCountdownAt100Metric.canPrewarm, false);
+assert.strictEqual(shared.canTriggerPrewarm(weeklyEarlyCountdownAt100Metric), false);
+
+// 2b. Weekly micro-usage (99.99833%, e.g. yip1004 after minimal ping) must immediately show live countdown and block prewarm.
+const weeklyMicroUsageMetric = shared.buildTokenMetric("Weekly", {
+  antigravityWeeklyPercentage: 99.99833,
+  antigravityWeeklyResetTime: resetIn(166.85),
+}, "antigravityWeekly", "Gemini Weekly");
+assert.strictEqual(weeklyMicroUsageMetric.isReady, false, "99.99833% weekly micro-usage must not be classified as dormant 100% Ready");
+assert.strictEqual(weeklyMicroUsageMetric.canPrewarm, false);
+assert.strictEqual(shared.canTriggerPrewarm(weeklyMicroUsageMetric), false);
+assert.notStrictEqual(weeklyMicroUsageMetric.refreshFull, "· Refreshes in 168h 0m", "99.99833% weekly micro-usage must display live countdown, not 168h 0m");
+assert.match(weeklyMicroUsageMetric.refreshFull, /^· Refreshes in 166h (?:50|51)m$/);
 
 // 3. Partial usage (99.99%) with top-of-window reset must NEVER be classified as dormant 100% or isDormantTopReset.
 const partial5hTopMetric = shared.buildTokenMetric("5Hours", {

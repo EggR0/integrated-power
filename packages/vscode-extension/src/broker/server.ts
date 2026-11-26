@@ -257,6 +257,7 @@ export async function startBrokerServer(
   const quotaNotificationStatePath = path.join(stateRoot, "broker", "quota-notification-state.json");
   let quotaNotificationQueue = Promise.resolve();
   let serverClosed = false;
+  let lastLoggedAuthState = "";
   const serverClosedRef = { closed: false };
   let nextPrewarmSeqId = 1;
   const prewarmConsumerCursors = new Map<string, number>();
@@ -414,8 +415,8 @@ export async function startBrokerServer(
         const requestedLines = Number.parseInt(url.searchParams.get("lines") ?? "160", 10);
         const lines = Number.isFinite(requestedLines) ? Math.min(500, Math.max(20, requestedLines)) : 160;
         const logPath = path.join(stateRoot, "broker.log");
-        const content = await fs.promises.readFile(logPath, "utf8").catch(() => "");
-        return send(response, 200, { path: logPath, lines: content.split(/\r?\n/).filter(Boolean).slice(-lines) });
+        const tailLines = await readTailLogLines(logPath, lines);
+        return send(response, 200, { ok: true, path: logPath, lines: tailLines });
       }
       if (request.method === "GET" && (url.pathname === "/mcp" || url.pathname === "/sse")) {
         response.writeHead(200, {
@@ -560,6 +561,13 @@ export async function startBrokerServer(
         }
         const refreshed = force ? await requestForceRefresh() : false;
         const tokenStatus = await scanLiveTokenStatus({ force: force && !refreshed });
+        const ide = (tokenStatus as any)?.activeIdeAccountEmail || "";
+        const agy2 = (tokenStatus as any)?.activeAgy2AccountEmail || "";
+        const authKey = `${ide}|${agy2}`;
+        if (authKey !== lastLoggedAuthState) {
+          lastLoggedAuthState = authKey;
+          appendBrokerLog(stateRoot, `[AUTH] Active accounts updated: IDE=${ide || "none"}, 2.0=${agy2 || "none"}`);
+        }
         return send(response, 200, { ok: true, forced: refreshed, tokenStatus });
       }
       if (url.pathname === "/v1/settings/quota" && request.method === "GET") {
@@ -757,8 +765,10 @@ export async function startBrokerServer(
         const taskId = request.url ? new URL(request.url, "http://127.0.0.1").pathname.match(/tasks\/([^/]+)/)?.[1] : undefined;
         return send(response, 409, { error: error.message, currentRevision: error.currentRevision, task: taskId ? broker.getTask(decodeURIComponent(taskId)) : undefined });
       }
+      const errMsg = error instanceof Error ? error.message : String(error);
+      appendBrokerLog(stateRoot, `[BROKER] Route error ${request.method ?? "GET"} ${request.url ?? "/"}: ${errMsg}`);
       const tooLarge = error instanceof RequestBodyTooLargeError;
-      return send(response, tooLarge ? 413 : 400, { error: error instanceof Error ? error.message : String(error) });
+      return send(response, tooLarge ? 413 : 400, { error: errMsg });
     }
   });
   await new Promise<void>((resolve, reject) => {
@@ -767,6 +777,7 @@ export async function startBrokerServer(
   });
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : requestedPort;
+  appendBrokerLog(stateRoot, `[BROKER] HTTP broker listening on http://127.0.0.1:${port} (v${brokerVersion()})`);
   let schedulerActive = false;
   let lastSchedulerPoll = 0;
   const schedulerTimer = options.autoSchedule === false ? undefined : setInterval(() => {
@@ -1089,7 +1100,7 @@ async function executePrewarmRequest(
       if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: resolvedAccount, status: "skipped", message: `${prefix} requires fresh, reported 5-hour quota data before pre-warm.` });
       return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: resolvedAccount, error: `${prefix} requires fresh, reported 5-hour quota data before pre-warm.` } });
     }
-    if (fiveHour < 99.995) {
+    if (fiveHour < 99.9999) {
       if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} quota is not 100% full (${fiveHour.toFixed(2)}%).`);
       if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: resolvedAccount, status: "skipped", message: `${prefix} quota is not 100% full (${fiveHour.toFixed(2)}%).` });
       return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: resolvedAccount, error: `${prefix} quota is not 100% full (${fiveHour.toFixed(2)}%).` } });
@@ -1119,7 +1130,7 @@ async function executePrewarmRequest(
       if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: resolvedAccount, status: "skipped", message: `${prefix} requires fresh, reported weekly quota data before pre-warm.` });
       return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: resolvedAccount, error: `${prefix} requires fresh, reported weekly quota data before pre-warm.` } });
     }
-    if (weekly < 99.995) {
+    if (weekly < 99.9999) {
       if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} weekly quota is not 100% full (${weekly.toFixed(2)}%).`);
       if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: resolvedAccount, status: "skipped", message: `${prefix} weekly quota is not 100% full (${weekly.toFixed(2)}%).` });
       return rememberPrewarmResult(state, statePath, idempotencyKey, fingerprint, { httpStatus: 200, result: { ok: true, status: "skipped", timerConfirmed: false, model: prefix, targetModel: resolved.model, account: resolvedAccount, error: `${prefix} weekly quota is not 100% full (${weekly.toFixed(2)}%).` } });
@@ -1127,7 +1138,7 @@ async function executePrewarmRequest(
     const weeklyResetTimeStr = accountData ? (accountData[`${weeklyPrefix}ResetTime`] || weeklyPool?.resetTime) : ((liveStatus as any)[`${weeklyPrefix}ResetTime`] || weeklyPool?.resetTime);
     const weeklyResetDate = weeklyResetTimeStr ? new Date(weeklyResetTimeStr) : undefined;
     const weeklyDiffMs = weeklyResetDate && !Number.isNaN(weeklyResetDate.getTime()) ? weeklyResetDate.getTime() - Date.now() : undefined;
-    if (weeklyDiffMs !== undefined && weeklyDiffMs > 0 && weeklyDiffMs < 168 * 3600 * 1000 - 4 * 3600 * 1000) {
+    if (weeklyDiffMs !== undefined && weeklyDiffMs > 0 && weeklyDiffMs < 168 * 3600 * 1000 - 1 * 3600 * 1000) {
       const waitHours = Math.ceil(weeklyDiffMs / 3600000);
       if (manual) appendBrokerLog(stateRoot, `[PREWARM] Skipped: ${prefix} weekly quota timer is already active (${waitHours}h remaining).`);
       if (manual) emitNotification?.({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), level: "warn", target: prefix, targetModel: resolved.model, account: resolvedAccount, status: "skipped", message: `${prefix} weekly quota timer is already active (${waitHours}h remaining). Pre-warm requires a full 168-hour window.` });
@@ -1140,7 +1151,7 @@ async function executePrewarmRequest(
   const baselineResetMs = baseline.resetMs;
   const baselineMeasuredMs = baseline.measuredMs;
   const fullWindowMs = windowType === "weekly" ? 168 * 3600 * 1000 : 5 * 3600 * 1000;
-  const activeThresholdMs = windowType === "weekly" ? 168 * 3600 * 1000 - 4 * 3600 * 1000 : 5 * 3600 * 1000 - 15 * 60 * 1000;
+  const activeThresholdMs = windowType === "weekly" ? 168 * 3600 * 1000 - 1 * 3600 * 1000 : 5 * 3600 * 1000 - 15 * 60 * 1000;
   const dispatchedAt = Date.now();
 
   const claimId = crypto.createHash("sha256").update(windowKey).digest("hex").slice(0, 24);
@@ -1204,7 +1215,7 @@ async function executePrewarmRequest(
         const postIsPostDispatch = postMeasuredMs === undefined || postMeasuredMs > dispatchedAt;
         const sufficientTelemetryElapsed = wallElapsedSinceDispatch >= 12_000 && timeElapsedBetweenMeasurements >= 12_000 && postIsPostDispatch;
 
-        const cond1 = postPct !== undefined && (postPct < 99.995 || (baselinePct !== undefined && postPct < baselinePct - 0.001));
+        const cond1 = postPct !== undefined && (postPct < 99.9999 || (baselinePct !== undefined && postPct < baselinePct - 0.0005));
         const cond2 = (baselineResetMs === undefined || baselineResetMs <= dispatchedAt) && postResetMs !== undefined && postResetMs > Date.now();
         const cond3 = postIsActive && !baselineWasActive;
         const cond4 = sufficientTelemetryElapsed && postResetMs !== undefined && baselineResetMs !== undefined && postResetMs > Date.now() && Math.abs(postResetMs - baselineResetMs) <= 3_000;
@@ -1317,6 +1328,49 @@ function writePrewarmState(filePath: string, state: PersistedPrewarmArbitration)
   fs.renameSync(temporary, filePath);
 }
 
+function trimTextFileToTail(filePath: string, maxBytes: number, keepBytes: number): void {
+  const stat = fs.statSync(filePath);
+  if (stat.size <= maxBytes) return;
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const readLen = Math.min(keepBytes, stat.size);
+    const buf = Buffer.allocUnsafe(readLen);
+    fs.readSync(fd, buf, 0, readLen, stat.size - readLen);
+    const text = buf.toString("utf8");
+    const firstNl = text.indexOf("\n");
+    const trimmed = firstNl >= 0 ? text.slice(firstNl + 1) : text;
+    const tmp = `${filePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+    fs.writeFileSync(tmp, trimmed, "utf8");
+    fs.renameSync(tmp, filePath);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+async function readTailLogLines(filePath: string, maxLines: number, maxReadBytes = 256 * 1024): Promise<string[]> {
+  try {
+    const stat = await fs.promises.stat(filePath);
+    if (stat.size === 0) return [];
+    const readLen = Math.min(maxReadBytes, stat.size);
+    const offset = stat.size - readLen;
+    const handle = await fs.promises.open(filePath, "r");
+    try {
+      const buf = Buffer.allocUnsafe(readLen);
+      const { bytesRead } = await handle.read(buf, 0, readLen, offset);
+      let text = buf.subarray(0, bytesRead).toString("utf8");
+      if (offset > 0) {
+        const firstNl = text.indexOf("\n");
+        if (firstNl >= 0) text = text.slice(firstNl + 1);
+      }
+      return text.split(/\r?\n/).filter(Boolean).slice(-maxLines);
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return [];
+  }
+}
+
 export function appendBrokerLog(stateRoot: string | undefined, message: string): void {
   const root = stateRoot || process.env.INTEGRATED_POWER_STATE_ROOT || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), ".local", "share"), "IntegratedPower", "state");
   const logPath = path.join(root, "broker.log");
@@ -1325,8 +1379,9 @@ export function appendBrokerLog(stateRoot: string | undefined, message: string):
   try {
     fs.mkdirSync(root, { recursive: true });
     fs.appendFileSync(logPath, line, "utf8");
+    trimTextFileToTail(logPath, 2 * 1024 * 1024, 1 * 1024 * 1024);
   } catch {}
-  console.log(message);
+  console.error(message);
 }
 
 function rememberPrewarmResult(
